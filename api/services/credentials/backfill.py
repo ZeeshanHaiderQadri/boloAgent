@@ -14,6 +14,7 @@ from typing import Any
 
 from api.services.credentials.envelope import (
     EnvelopeError,
+    decrypt_envelope,
     has_envelope_markers,
     is_envelope,
     key_id,
@@ -76,3 +77,40 @@ def plan_backfill(
         pending.append((row_id, data))
 
     return pending, len(rows) - len(pending)
+
+
+def plan_downgrade(
+    rows: Sequence[tuple[int, Any]],
+    keys: Sequence[str],
+) -> list[tuple[int, dict[str, Any]]]:
+    """Decrypt every envelope back to plaintext for a migration rollback.
+
+    Returns all updates before the caller writes any of them, so a single
+    unreadable row aborts the downgrade instead of leaving a half-converted
+    table. Rows that are already plaintext are left alone.
+    """
+    if not keys:
+        raise EnvelopeError(
+            "No credential encryption key is configured; cannot decrypt "
+            "credentials for a downgrade"
+        )
+
+    updates: list[tuple[int, dict[str, Any]]] = []
+    for row_id, raw in rows:
+        data = as_credential_dict(raw)
+        if is_envelope(data):
+            try:
+                updates.append((row_id, decrypt_envelope(data, keys)))
+            except EnvelopeError as exc:
+                raise EnvelopeError(
+                    f"Credential row {row_id} cannot be decrypted with the "
+                    "configured keys"
+                ) from exc
+            continue
+        if has_envelope_markers(data):
+            raise EnvelopeError(
+                f"Credential row {row_id} has encryption envelope fields but is "
+                "not a valid v1 fernet envelope"
+            )
+
+    return updates

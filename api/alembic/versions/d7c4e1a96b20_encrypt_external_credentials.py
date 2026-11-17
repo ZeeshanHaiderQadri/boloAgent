@@ -11,9 +11,10 @@ Keys are loaded and every existing envelope's key id is validated before the
 "nothing to encrypt" case returns, so a missing or wrong key fails the upgrade
 even when the backfill already ran.
 
-The migration requires BOLO_CREDENTIAL_ENCRYPTION_KEYS. Downgrade intentionally
-does not decrypt secrets; roll back the application code instead and keep the
-encrypted envelopes.
+Downgrade decrypts the rows back to plaintext, which is what a pre-encryption
+application expects. It validates every row first and writes nothing if any
+envelope cannot be decrypted with the configured keys; in that case restore the
+database backup instead.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ import os
 import sqlalchemy as sa
 from alembic import op
 
-from api.services.credentials.backfill import plan_backfill
+from api.services.credentials.backfill import plan_backfill, plan_downgrade
 from api.services.credentials.envelope import (
     EnvelopeError,
     build_envelope,
@@ -92,7 +93,42 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    logger.warning(
-        "Credential encryption backfill is not reversed. Restore from backup if "
-        "you need the previous plaintext representation."
+    bind = op.get_bind()
+    rows = bind.execute(
+        sa.text("SELECT id, credential_data FROM external_credentials")
+    ).fetchall()
+
+    try:
+        keys = _load_keys()
+        updates = plan_downgrade(
+            [(row.id, row.credential_data) for row in rows], keys
+        )
+    except EnvelopeError as exc:
+        raise RuntimeError(
+            f"Credential encryption downgrade failed: {exc}. Restore the "
+            "pre-upgrade database backup if the key is unavailable."
+        ) from exc
+
+    if not updates:
+        logger.info(
+            "Credential encryption downgrade: %d row(s), no envelopes to decrypt",
+            len(rows),
+        )
+        return
+
+    for row_id, data in updates:
+        bind.execute(
+            sa.text(
+                "UPDATE external_credentials "
+                "SET credential_data = CAST(:payload AS JSON) "
+                "WHERE id = :id"
+            ),
+            {"payload": json.dumps(data), "id": row_id},
+        )
+
+    logger.info(
+        "Credential encryption downgrade: decrypted %d row(s), left %d plaintext "
+        "row(s) untouched",
+        len(updates),
+        len(rows) - len(updates),
     )

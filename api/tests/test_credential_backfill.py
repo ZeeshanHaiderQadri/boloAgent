@@ -7,7 +7,7 @@ import json
 import pytest
 from cryptography.fernet import Fernet
 
-from api.services.credentials.backfill import plan_backfill
+from api.services.credentials.backfill import plan_backfill, plan_downgrade
 from api.services.credentials.envelope import EnvelopeError, build_envelope
 
 
@@ -59,4 +59,27 @@ def test_malformed_envelope_rows_abort_the_plan():
 
     with pytest.raises(EnvelopeError, match="row 9"):
         plan_backfill(rows, keys)
+
+
+def test_downgrade_decrypts_envelopes_and_leaves_plaintext_rows():
+    keys = [_key()]
+    rows = [
+        (1, build_envelope({"token": "encrypted"}, keys)),
+        (2, {"token": "already-plain"}),
+    ]
+
+    assert plan_downgrade(rows, keys) == [(1, {"token": "encrypted"})]
+
+
+def test_downgrade_requires_a_key():
+    with pytest.raises(EnvelopeError, match="No credential encryption key"):
+        plan_downgrade([(1, build_envelope({"token": "x"}, [_key()]))], [])
+
+
+def test_downgrade_aborts_on_an_unknown_key():
+    rows = [(4, build_envelope({"token": "x"}, [_key()]))]
+
+    with pytest.raises(EnvelopeError, match="row 4"):
+        plan_downgrade(rows, [_key()])
+
 
