@@ -34,6 +34,18 @@ function New-HexSecret([int]$ByteCount) {
     return ($buffer | ForEach-Object { $_.ToString('x2') }) -join ''
 }
 
+# Fernet key: 32 random bytes encoded as URL-safe base64.
+function New-FernetKey {
+    $buffer = [byte[]]::new(32)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($buffer)
+    } finally {
+        $rng.Dispose()
+    }
+    return [Convert]::ToBase64String($buffer).Replace('+', '-').Replace('/', '_')
+}
+
 function Read-SecretValue([string]$Prompt) {
     $readHostCommand = Get-Command Read-Host
     if ($readHostCommand.Parameters.ContainsKey('MaskInput')) {
@@ -247,6 +259,7 @@ $postgresPassword = New-HexSecret 32
 $redisPassword = New-HexSecret 32
 $minioRootUser = "bolo$((New-HexSecret 6).Substring(0, 12))"
 $minioRootPassword = New-HexSecret 32
+$credentialEncryptionKeys = New-FernetKey
 
 $envLines = @(
     '# Container registry for Bolo images'
@@ -269,6 +282,11 @@ $envLines = @(
     '# MINIO_ACCESS_KEY / MINIO_SECRET_KEY.'
     "MINIO_ROOT_USER=$minioRootUser"
     "MINIO_ROOT_PASSWORD=$minioRootPassword"
+    ''
+    '# Application-level encryption for stored third-party credentials. Back this up'
+    '# separately from the database: losing every key makes stored credentials'
+    '# unrecoverable.'
+    "BOLO_CREDENTIAL_ENCRYPTION_KEYS=$credentialEncryptionKeys"
     ''
     '# Telemetry (set to false to disable)'
     "ENABLE_TELEMETRY=$EnableTelemetry"

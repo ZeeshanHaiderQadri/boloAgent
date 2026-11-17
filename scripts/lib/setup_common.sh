@@ -26,6 +26,13 @@ bolo_fail() {
     exit 1
 }
 
+# Generate a Fernet key for credential encryption: 32 random bytes encoded as
+# URL-safe base64. Every installer must provision one before the API starts,
+# because the API refuses to boot without it outside the test environment.
+bolo_generate_credential_key() {
+    openssl rand -base64 32 | tr '+/' '-_'
+}
+
 bolo_project_dir() {
     if [[ -n "${BOLO_DEPLOY_PROJECT_DIR:-}" ]]; then
         printf '%s\n' "$BOLO_DEPLOY_PROJECT_DIR"

@@ -277,6 +277,17 @@ services:
 
       OSS_JWT_SECRET: "${OSS_JWT_SECRET:?OSS_JWT_SECRET must be set to a strong secret}"
 
+      # Application-level encryption key for stored third-party credentials.
+      # Required: the API and worker refuse to start without it. Installers
+      # generate this automatically; existing installs must add it to .env
+      # before upgrading (see docs/deployment/update.mdx). Back it up separately
+      # from the database — losing every key makes stored credentials unreadable.
+      BOLO_CREDENTIAL_ENCRYPTION_KEYS: "${BOLO_CREDENTIAL_ENCRYPTION_KEYS:?BOLO_CREDENTIAL_ENCRYPTION_KEYS must be set before starting the API}"
+
+      # Set to true only after the backfill has run and every pre-encryption
+      # worker has been drained; then plaintext rows are rejected.
+      BOLO_CREDENTIAL_ENCRYPTION_REQUIRE: "${BOLO_CREDENTIAL_ENCRYPTION_REQUIRE:-false}"
+
       # Telephony media WebSocket capability token. The carrier dials the media
       # socket back, so its URL is caller-visible and the ids in it are otherwise
       # guessable. Set a secret in .env to have providers sign that URL and the

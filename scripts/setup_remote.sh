@@ -330,6 +330,7 @@ POSTGRES_PASSWORD=$(openssl rand -hex 32)
 REDIS_PASSWORD=$(openssl rand -hex 32)
 MINIO_ROOT_USER="bolo$(openssl rand -hex 6)"
 MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
+BOLO_CREDENTIAL_ENCRYPTION_KEYS=$(bolo_generate_credential_key)
 
 cat > .env << ENV_EOF
 # Remote deployments run with production signaling and HTTPS defaults
@@ -367,6 +368,12 @@ REDIS_PASSWORD=$REDIS_PASSWORD
 # MINIO_ACCESS_KEY / MINIO_SECRET_KEY.
 MINIO_ROOT_USER=$MINIO_ROOT_USER
 MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD
+
+# Application-level encryption for stored third-party credentials. Back this up
+# separately from the database: losing every key makes stored credentials
+# unrecoverable. Rotate by appending the new key after a comma, running
+# scripts/rotate_credential_keys.py, then removing the old key.
+BOLO_CREDENTIAL_ENCRYPTION_KEYS=$BOLO_CREDENTIAL_ENCRYPTION_KEYS
 
 # Telemetry (set to false to disable)
 ENABLE_TELEMETRY=$ENABLE_TELEMETRY

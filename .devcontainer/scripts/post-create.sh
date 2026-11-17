@@ -97,6 +97,14 @@ step "Copying example env files into place"
 copy_env_with_docker_hostnames "$ROOT_DIR/api/.env.example"      "$ROOT_DIR/api/.env"
 copy_env_with_docker_hostnames "$ROOT_DIR/api/.env.test.example" "$ROOT_DIR/api/.env.test"
 copy_if_missing "$UI_ENV_EXAMPLE" "$UI_ENV_FILE"
+
+# The API refuses to start outside the test environment without a credential
+# encryption key. Generate one on first bootstrap; api/.env is gitignored.
+if ! grep -q '^BOLO_CREDENTIAL_ENCRYPTION_KEYS=' "$ROOT_DIR/api/.env"; then
+  printf '\n# Local credential encryption key (generated on first start).\nBOLO_CREDENTIAL_ENCRYPTION_KEYS="%s"\n' \
+    "$(openssl rand -base64 32 | tr '+/' '-_')" >> "$ROOT_DIR/api/.env"
+  echo "Generated BOLO_CREDENTIAL_ENCRYPTION_KEYS in api/.env"
+fi
 step_done
 
 step "Switching pipecat to editable install from workspace"
