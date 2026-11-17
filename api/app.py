@@ -57,6 +57,14 @@ mcp_app = mcp.http_app(path="/", stateless_http=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Credential rows are encrypted at rest. Fail before serving traffic if the
+    # key is missing rather than discovering it on the first credential read.
+    from api.services.credentials.cipher import (
+        require_credential_encryption_configured,
+    )
+
+    require_credential_encryption_configured()
+
     async with mcp_app.lifespan(app):
         # warmup arq pool
         await get_arq_redis()

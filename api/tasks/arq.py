@@ -86,7 +86,16 @@ from api.tasks.workflow_completion import (
 )
 
 
+async def on_startup(_ctx):
+    from api.services.credentials.cipher import (
+        require_credential_encryption_configured,
+    )
+
+    require_credential_encryption_configured()
+
+
 class WorkerSettings:
+    on_startup = on_startup
     functions = [
         func(process_builder_run, timeout=900),
         run_integrations_post_workflow_run,

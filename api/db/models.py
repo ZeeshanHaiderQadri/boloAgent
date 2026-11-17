@@ -1252,12 +1252,10 @@ class ExternalCredentialModel(Base):
         default=WebhookCredentialType.NONE.value,
     )
 
-    # Encrypted credential data (JSON)
-    # Structure depends on credential_type:
-    # - api_key: {"header_name": "X-API-Key", "api_key": "value"}
-    # - bearer_token: {"token": "value"}
-    # - basic_auth: {"username": "user", "password": "value"}
-    # - custom_header: {"header_name": "X-Custom", "header_value": "value"}
+    # Application-encrypted credential payload. The plaintext structure depends
+    # on credential_type; at rest this column holds an envelope written by
+    # api/services/credentials/cipher.py:
+    # {"v": 1, "alg": "fernet", "key_id": "...", "ciphertext": "..."}
     credential_data = Column(JSON, nullable=False, default=dict)
 
     # Audit fields
