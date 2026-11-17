@@ -18,5 +18,7 @@ jobs:
           # Config files location
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          # Use PAT to trigger deployment workflow
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # Use the built-in token so the workflow works without a PAT.
+          # Note: PRs and releases created with GITHUB_TOKEN do not trigger
+          # downstream workflows.
+          token: ${{ secrets.GITHUB_TOKEN }}
