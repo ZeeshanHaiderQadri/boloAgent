@@ -29,7 +29,10 @@ def as_credential_dict(value: Any) -> dict[str, Any]:
     migration rather than being encrypted as if it were a credential.
     """
     if value is None:
-        return {}
+        raise EnvelopeError(
+            "credential_data is null; a null row is malformed, not an empty "
+            "credential"
+        )
     if isinstance(value, str):
         try:
             value = json.loads(value)

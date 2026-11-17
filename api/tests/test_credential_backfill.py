@@ -61,6 +61,19 @@ def test_malformed_envelope_rows_abort_the_plan():
         plan_backfill(rows, keys)
 
 
+def test_json_null_rows_abort_instead_of_becoming_empty_credentials():
+    keys = [_key()]
+
+    with pytest.raises(EnvelopeError, match="null"):
+        plan_backfill([(11, None)], keys)
+
+    with pytest.raises(EnvelopeError, match="JSON object"):
+        plan_backfill([(12, "null")], keys)
+
+    with pytest.raises(EnvelopeError, match="null"):
+        plan_downgrade([(13, None)], keys)
+
+
 def test_downgrade_decrypts_envelopes_and_leaves_plaintext_rows():
     keys = [_key()]
     rows = [
