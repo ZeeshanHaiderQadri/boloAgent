@@ -17,6 +17,9 @@ UPSTREAM_URL="https://github.com/ZeeshanHaiderQadri/bolo.git"
 BASE_DIR="$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" && pwd)"
 cd "$BASE_DIR"
 
+# shellcheck source=lib/setup_common.sh
+. "$BASE_DIR/scripts/lib/setup_common.sh"
+
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
     echo -e "${RED}Error: not a git repository. Run this from inside your cloned fork.${NC}"
     exit 1
@@ -154,6 +157,22 @@ for pair in "api/.env.example|api/.env" "api/.env.test.example|api/.env.test" "u
         echo -e "${GREEN}✓ created $dst from $src${NC}"
     else
         echo -e "${YELLOW}⚠ $src not found, skipping${NC}"
+    fi
+done
+
+# The examples keep the credential encryption key commented out, but the API
+# refuses to start without one outside the test environment and tests need one
+# to store credentials. Generate a per-checkout key so a fork never shares one.
+for env_file in api/.env api/.env.test; do
+    if [[ -f "$env_file" ]] && ! grep -qE '^BOLO_CREDENTIAL_ENCRYPTION_KEYS=' "$env_file"; then
+        {
+            echo ""
+            echo "# Application-level encryption for stored third-party credentials. Back this"
+            echo "# up separately from the database: losing every key makes existing encrypted"
+            echo "# credentials unrecoverable."
+            printf 'BOLO_CREDENTIAL_ENCRYPTION_KEYS=%s\n' "$(bolo_generate_credential_key)"
+        } >> "$env_file"
+        echo -e "${GREEN}✓ added BOLO_CREDENTIAL_ENCRYPTION_KEYS to $env_file${NC}"
     fi
 done
 echo ""

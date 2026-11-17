@@ -81,6 +81,32 @@ def test_compose_requires_and_passes_the_key_to_the_api():
     ) in compose
 
 
+def test_fork_bootstrap_generates_the_key_for_both_env_files():
+    script = _read("scripts/setup_fork.sh")
+
+    assert '. "$BASE_DIR/scripts/lib/setup_common.sh"' in script
+    assert "bolo_generate_credential_key" in script
+    assert "for env_file in api/.env api/.env.test" in script
+    assert "BOLO_CREDENTIAL_ENCRYPTION_KEYS" in script
+
+
+def test_windows_fork_bootstrap_generates_the_key_for_both_env_files():
+    script = _read("scripts/setup_fork.ps1")
+
+    assert "function New-FernetKey" in script
+    assert "foreach ($envFile in @('api/.env', 'api/.env.test'))" in script
+    assert "BOLO_CREDENTIAL_ENCRYPTION_KEYS=$(New-FernetKey)" in script
+
+
+def test_force_overwrite_warning_names_credential_loss():
+    script = _read("scripts/setup_remote.sh")
+
+    assert (
+        "replace the credential encryption key "
+        "(existing encrypted credentials become unrecoverable)" in script
+    )
+
+
 def test_upgrade_docs_require_the_key_before_updating_and_a_separate_backup():
     update_docs = _read("docs/deployment/update.mdx")
 

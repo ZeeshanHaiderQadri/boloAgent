@@ -236,6 +236,7 @@ if [[ "${BOLO_FORCE_OVERWRITE:-}" != "1" && "${BOLO_SKIP_DOWNLOAD:-}" != "1" ]];
         echo ""
         echo -e "${RED}Refusing to continue - re-running setup would:${NC}"
         echo -e "${RED}  - overwrite .env (invalidates sessions, breaks TURN auth)${NC}"
+        echo -e "${RED}  - replace the credential encryption key (existing encrypted credentials become unrecoverable)${NC}"
         echo -e "${RED}  - regenerate SSL certificates${NC}"
         echo -e "${RED}  - replace the validated remote deployment bundle${NC}"
         echo ""
