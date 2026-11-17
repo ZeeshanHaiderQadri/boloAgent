@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generate the Bolo brand assets (wordmark, mark, inverse lockup, imprint, favicon).
 
-Bolo is a white-label fork of Dograh (BSD-2-Clause). The upstream Dograh
-lettering is a commercial typeface, so this script does not reuse any upstream
-artwork: it draws the Bolo mark from scratch and renders the wordmark with a
-locally installed geometric sans.
+Bolo is a BSD-2-Clause white-label fork of an upstream voice AI platform. The
+upstream lettering is a commercial typeface, so this script does not reuse any
+upstream artwork: it draws the Bolo mark from scratch and renders the wordmark
+with a locally installed geometric sans.
 
 Usage:
     python3 scripts/brand/generate_brand_assets.py

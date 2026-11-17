@@ -45,9 +45,9 @@ source venv/bin/activate && set -a && source api/.env && set +a && python -m scr
 
 ## Upstream & White-Label Conventions
 
-Bolo is a white-label fork of **Dograh** (BSD 2-Clause, © 2025 Zansat Technologies
-Private Limited). The upstream copyright notice is retained verbatim in `LICENSE`,
-and attribution lives in `NOTICE`. Keep both intact when redistributing.
+Bolo is a white-label fork of an upstream voice AI platform (BSD 2-Clause). The
+upstream copyright notice is retained verbatim in `LICENSE`, and attribution lives
+in `NOTICE`. Keep both intact when redistributing.
 
 A handful of upstream identifiers are **deliberately preserved** because they are
 contracts with code we do not own. Do not rename them:

@@ -57,8 +57,8 @@ services:
       - app-network
 
   minio:
-    # Built from the community MinIO fork by github.com/dograh-hq/minio; upstream
-    # MinIO no longer publishes images.
+    # Built from a community MinIO fork; upstream MinIO no longer publishes
+    # images.
     image: ${MINIO_REGISTRY:-dograhai}/minio:2026.09.22
     container_name: minio
     command: server /data --console-address ":9001"

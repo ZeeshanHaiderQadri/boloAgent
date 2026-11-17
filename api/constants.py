@@ -80,9 +80,9 @@ ENABLE_SIGNUP = os.getenv("ENABLE_SIGNUP", "true").lower() == "true"
 STACK_AUTH_PROJECT_ID = os.getenv("STACK_AUTH_PROJECT_ID")
 STACK_PUBLISHABLE_CLIENT_KEY = os.getenv("STACK_PUBLISHABLE_CLIENT_KEY")
 BOLO_MPS_SECRET_KEY = os.getenv("BOLO_MPS_SECRET_KEY", None)
-# Host of the upstream Dograh Managed Platform Services (MPS). This is an
-# external service that Bolo consumes; it is not part of this repository.
-# Override it to use a self-hosted MPS deployment instead.
+# Host of the upstream Managed Platform Services (MPS). This is an external
+# service that Bolo consumes; it is not part of this repository. Override it to
+# use a self-hosted MPS deployment instead.
 MPS_API_URL = os.getenv("MPS_API_URL", "https://services.dograh.com")
 BOLO_DEPLOYMENT_ID = os.getenv(
     "BOLO_DEPLOYMENT_ID", "oss" if DEPLOYMENT_MODE == "oss" else "us"

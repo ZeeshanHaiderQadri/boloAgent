@@ -647,8 +647,8 @@ redisinternal:
     limits: { cpu: 500m, memory: 256Mi }
 
 minio:
-  # MinIO built from the community fork by github.com/dograh-hq/minio (upstream
-  # MinIO no longer publishes images). Root creds are shared with the app (single
+  # MinIO built from a community fork (upstream MinIO no longer publishes
+  # images). Root creds are shared with the app (single
   # source of truth) so they can't drift; the app creates its bucket on first use.
   image:
     registry: docker.io
