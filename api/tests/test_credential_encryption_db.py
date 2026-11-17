@@ -6,9 +6,13 @@ from uuid import uuid4
 import pytest
 from cryptography.fernet import Fernet
 from loguru import logger
+from sqlalchemy import update
 
 from api.db.models import ExternalCredentialModel
-from api.services.credentials.cipher import CredentialEncryptionError
+from api.services.credentials.cipher import (
+    CredentialEncryptionError,
+    encrypt_credential_data,
+)
 from api.services.credentials.envelope import build_envelope, is_envelope
 from api.utils.credential_auth import build_auth_header
 from scripts.rotate_credential_keys import rotate_credentials
@@ -200,6 +204,43 @@ async def test_update_reselect_stays_organization_scoped(db_session, monkeypatch
 
     assert updated is None
     assert await _stored_credential_data(db_session, credential.id) == before
+
+
+@pytest.mark.asyncio
+async def test_reads_decrypt_a_freshly_loaded_row_not_the_in_memory_copy(
+    db_session, async_session
+):
+    """A read must decrypt the stored envelope on a real load.
+
+    ``create_credential`` hands back an object whose ``credential_data`` was
+    decrypted in place. Change the stored envelope behind that object's back,
+    expire its attributes so the next access reloads from the database, and read
+    through the client again: getting the new secret proves decryption happens
+    on load, not by reusing the in-memory value.
+    """
+    user, org = await _org(db_session)
+    credential = await db_session.create_credential(
+        organization_id=org.id,
+        user_id=user.id,
+        name="Fresh load",
+        credential_type="bearer_token",
+        credential_data={"token": "stale-in-memory"},
+    )
+    credential_id = credential.id
+    credential_uuid = credential.credential_uuid
+    async with db_session.async_session() as session:
+        await session.execute(
+            update(ExternalCredentialModel)
+            .where(ExternalCredentialModel.id == credential_id)
+            .values(credential_data=encrypt_credential_data({"token": "fresh-from-db"}))
+        )
+        await session.flush()
+    async_session.expire(credential)
+
+    fetched = await db_session.get_credential_by_uuid(credential_uuid, org.id)
+
+    assert fetched.credential_data == {"token": "fresh-from-db"}
+    assert build_auth_header(fetched) == {"Authorization": "Bearer fresh-from-db"}
 
 
 @pytest.mark.asyncio
