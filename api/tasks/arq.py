@@ -3,7 +3,11 @@
 import ssl
 from urllib.parse import urlparse
 
-from api.constants import REDIS_URL, TEXT_CHAT_INACTIVITY_SWEEP_INTERVAL_MINUTES
+from api.constants import (
+    LEADS_SCRAPER_TIMEOUT_SECONDS,
+    REDIS_URL,
+    TEXT_CHAT_INACTIVITY_SWEEP_INTERVAL_MINUTES,
+)
 
 # Setup logging - this is now idempotent and safe to call multiple times
 from api.logging_config import setup_logging
@@ -63,6 +67,11 @@ from api.tasks.campaign_tasks import (
     sync_campaign_source,
 )
 from api.tasks.knowledge_base_processing import process_knowledge_base_document
+from api.tasks.lead_tasks import (
+    run_lead_auto_dispatch,
+    run_lead_search,
+    sync_lead_call_outcomes,
+)
 from api.tasks.run_integrations import run_integrations_post_workflow_run
 from api.tasks.text_chat_completion import finalize_completed_text_chat
 from api.tasks.text_chat_inactivity import (
@@ -85,6 +94,8 @@ class WorkerSettings:
         sync_campaign_source,
         process_campaign_batch,
         process_knowledge_base_document,
+        func(run_lead_search, timeout=LEADS_SCRAPER_TIMEOUT_SECONDS + 120),
+        func(run_lead_auto_dispatch, timeout=300),
         deliver_webhook,
         complete_inactive_text_chat_session,
         finalize_completed_text_chat,
@@ -111,6 +122,13 @@ class WorkerSettings:
             sweep_inactive_text_chat_sessions,
             minute=set(range(0, 60, TEXT_CHAT_INACTIVITY_SWEEP_INTERVAL_MINUTES)),
             second=30,
+            run_at_startup=True,
+        ),
+        # Copy finished outbound call results into the lead CRM timeline.
+        cron(
+            sync_lead_call_outcomes,
+            minute=set(range(0, 60, 2)),
+            second=20,
             run_at_startup=True,
         ),
     ]

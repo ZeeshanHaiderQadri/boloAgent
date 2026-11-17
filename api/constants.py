@@ -285,3 +285,30 @@ OSS_JWT_SECRET = os.getenv("OSS_JWT_SECRET", "change-me-in-production")
 OSS_JWT_EXPIRY_HOURS = int(os.getenv("OSS_JWT_EXPIRY_HOURS", "720"))  # 30 days
 
 TUNER_BASE_URL = os.getenv("TUNER_BASE_URL", "https://api.usetuner.ai")
+
+# Lead Generation -----------------------------------------------------------
+# Internal base URL of the gosom/google-maps-scraper web container. The service
+# is not authenticated; keep it on the private compose network.
+LEADS_SCRAPER_URL = os.getenv(
+    "LEADS_SCRAPER_URL", "http://google-maps-scraper:8080"
+).rstrip("/")
+# Overall budget for one discovery job (the scraper itself takes >= 3 minutes).
+LEADS_SCRAPER_TIMEOUT_SECONDS = int(os.getenv("LEADS_SCRAPER_TIMEOUT_SECONDS", "900"))
+LEADS_SCRAPER_POLL_INTERVAL_SECONDS = float(
+    os.getenv("LEADS_SCRAPER_POLL_INTERVAL_SECONDS", "5")
+)
+LEADS_MAX_SEARCH_DEPTH = int(os.getenv("LEADS_MAX_SEARCH_DEPTH", "10"))
+# The operator asks for this many leads up front; the worker stops the scraper
+# as soon as the search has that many results (instead of running to max_time).
+LEADS_DEFAULT_TARGET_RESULTS = int(os.getenv("LEADS_DEFAULT_TARGET_RESULTS", "25"))
+LEADS_MAX_TARGET_RESULTS = int(os.getenv("LEADS_MAX_TARGET_RESULTS", "1000"))
+# "demo" generates deterministic sample businesses so the feature works without
+# Chromium; "google_maps" submits jobs to the scraper container.
+LEADS_DEFAULT_PROVIDER = os.getenv("LEADS_DEFAULT_PROVIDER", "demo")
+LEADS_ENABLE_DEMO_PROVIDER = (
+    os.getenv("LEADS_ENABLE_DEMO_PROVIDER", "true").lower() == "true"
+)
+# Hard caps so a wide filter cannot exhaust memory or fill a PDF/PNG file.
+LEADS_EXPORT_MAX_ROWS = int(os.getenv("LEADS_EXPORT_MAX_ROWS", "5000"))
+LEADS_EXPORT_MAX_TABLE_ROWS = int(os.getenv("LEADS_EXPORT_MAX_TABLE_ROWS", "250"))
+LEADS_DISPATCH_MAX_LEADS = int(os.getenv("LEADS_DISPATCH_MAX_LEADS", "1000"))

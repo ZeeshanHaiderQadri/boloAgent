@@ -109,7 +109,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         <LeadFormsProvider>
           <div className="flex min-h-screen w-full">
             <AppSidebar />
-            <SidebarInset className="flex-1">
+            <SidebarInset className="min-w-0 flex-1">
               <BackendStatusBanner />
               {!isWorkflowEditor && <AppHeader />}
 

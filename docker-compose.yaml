@@ -79,6 +79,22 @@ services:
     networks:
       - app-network
 
+  # Lead Generation discovery. Gated behind the "leads" profile so default
+  # installs stay lean; enable with:
+  #   docker compose --profile leads up -d
+  # The API reaches it internally via LEADS_SCRAPER_URL. Results take at least
+  # ~3 minutes per search and stay on the internal volume, never the host.
+  google-maps-scraper:
+    image: gosom/google-maps-scraper:latest
+    container_name: google-maps-scraper
+    profiles: ["leads"]
+    command: ["-web", "-addr", ":8080", "-data-folder", "/data"]
+    volumes:
+      - gmapsdata:/data
+    restart: unless-stopped
+    networks:
+      - app-network
+
   bolo-init:
     image: bash:5.2
     container_name: bolo_init
@@ -253,6 +269,12 @@ services:
       FORCE_TURN_RELAY: "${FORCE_TURN_RELAY:-false}"
       SERVER_IP: "${SERVER_IP:-}"
 
+      # Lead Generation. The discovery service is behind the "leads" profile;
+      # without it the built-in demo provider keeps the feature usable.
+      LEADS_SCRAPER_URL: "${LEADS_SCRAPER_URL:-http://google-maps-scraper:8080}"
+      LEADS_SCRAPER_TIMEOUT_SECONDS: "${LEADS_SCRAPER_TIMEOUT_SECONDS:-900}"
+      LEADS_ENABLE_DEMO_PROVIDER: "${LEADS_ENABLE_DEMO_PROVIDER:-true}"
+
       OSS_JWT_SECRET: "${OSS_JWT_SECRET:?OSS_JWT_SECRET must be set to a strong secret}"
 
       # Telephony media WebSocket capability token. The carrier dials the media
@@ -365,6 +387,8 @@ volumes:
   nginx-generated:
     driver: local
   coturn-generated:
+    driver: local
+  gmapsdata:
     driver: local
 
 networks:

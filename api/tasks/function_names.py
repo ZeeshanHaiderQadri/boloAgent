@@ -8,3 +8,6 @@ class FunctionNames:
     DELIVER_WEBHOOK = "deliver_webhook"
     COMPLETE_INACTIVE_TEXT_CHAT_SESSION = "complete_inactive_text_chat_session"
     FINALIZE_COMPLETED_TEXT_CHAT = "finalize_completed_text_chat"
+    RUN_LEAD_SEARCH = "run_lead_search"
+    RUN_LEAD_AUTO_DISPATCH = "run_lead_auto_dispatch"
+    SYNC_LEAD_CALL_OUTCOMES = "sync_lead_call_outcomes"

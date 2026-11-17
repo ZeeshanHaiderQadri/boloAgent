@@ -1713,3 +1713,245 @@ class KnowledgeBaseChunkModel(Base):
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Lead generation / CRM
+# ---------------------------------------------------------------------------
+
+
+class LeadSearchModel(Base):
+    """One Google Maps (or demo) discovery job and its result set."""
+
+    __tablename__ = "lead_searches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    name = Column(String(255), nullable=False)
+    category = Column(String(255), nullable=True)
+    location = Column(String(255), nullable=True)
+    country_code = Column(String(2), nullable=True)
+    language = Column(String(10), nullable=False, default="en")
+    provider = Column(String(32), nullable=False, default="demo")
+    # Provider-specific knobs (depth, radius, email extraction, proxies...).
+    params = Column(JSON, nullable=False, default=dict)
+    # queued | running | stopping | completed | stopped | failed | cancelled
+    status = Column(String(32), nullable=False, default="queued")
+    # How many leads the operator asked for. The worker finalizes the search
+    # once the result set reaches this number.
+    target_results = Column(Integer, nullable=True)
+    external_job_id = Column(String(191), nullable=True)
+    results_count = Column(Integer, nullable=False, default=0)
+    new_leads_count = Column(Integer, nullable=False, default=0)
+    # Campaign created automatically when the search finishes (optional).
+    auto_call_campaign_id = Column(
+        Integer, ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True
+    )
+    auto_call_error = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        Index("ix_lead_searches_org_id", "organization_id"),
+        Index("ix_lead_searches_org_status", "organization_id", "status"),
+        Index("ix_lead_searches_created_at", "created_at"),
+    )
+
+
+class LeadProjectModel(Base):
+    """A saved collection of leads ("list") within an organization.
+
+    Projects are flat and org-scoped. A lead belongs to at most one project via
+    ``LeadModel.project_id``; NULL means the lead only lives in the CRM. Leads
+    are never duplicated: moving a lead between projects only changes the link.
+    """
+
+    __tablename__ = "lead_projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization = relationship("OrganizationModel")
+    name = Column(String(255), nullable=False)
+    created_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    # Project names must be unique within an organization.
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_lead_projects_org_name"),
+        Index("ix_lead_projects_org_created", "organization_id", "created_at"),
+    )
+
+
+class LeadModel(Base):
+    """An organization-wide business contact, deduplicated across searches."""
+
+    __tablename__ = "leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Stable identity within the org: place id / cid, else a hash of identity
+    # fields. Enforced unique so repeated searches enrich instead of duplicating.
+    dedupe_key = Column(String(191), nullable=False)
+    title = Column(String(512), nullable=False)
+    category = Column(String(255), nullable=True)
+    address = Column(Text, nullable=True)
+    city = Column(String(255), nullable=True)
+    state = Column(String(255), nullable=True)
+    country = Column(String(255), nullable=True)
+    postal_code = Column(String(32), nullable=True)
+    phone = Column(String(64), nullable=True)
+    phone_e164 = Column(String(32), nullable=True)
+    email = Column(String(320), nullable=True)
+    website = Column(String(1024), nullable=True)
+    place_id = Column(String(255), nullable=True)
+    cid = Column(String(64), nullable=True)
+    rating = Column(Float, nullable=True)
+    review_count = Column(Integer, nullable=True, default=0)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    open_hours = Column(JSON, nullable=False, default=dict)
+    # Full provider row, kept so new fields can be surfaced without a re-scrape.
+    raw_data = Column(JSON, nullable=False, default=dict)
+    # new | contacted | interested | not_interested | won | lost | do_not_call
+    crm_status = Column(String(32), nullable=False, default="new")
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    # Optional saved project (list) this lead belongs to. ON DELETE SET NULL
+    # keeps the lead in the CRM when its project is deleted.
+    project_id = Column(
+        Integer,
+        ForeignKey("lead_projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    project = relationship("LeadProjectModel")
+    tags = Column(JSON, nullable=False, default=list)
+    notes = Column(Text, nullable=True)
+    last_contacted_at = Column(DateTime(timezone=True), nullable=True)
+    next_follow_up_at = Column(DateTime(timezone=True), nullable=True)
+    source = Column(String(32), nullable=False, default="google_maps")
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "dedupe_key", name="uq_leads_organization_dedupe_key"
+        ),
+        Index("ix_leads_org_status", "organization_id", "crm_status"),
+        Index("ix_leads_org_phone", "organization_id", "phone_e164"),
+        Index("ix_leads_org_created_at", "organization_id", "created_at"),
+        Index("ix_leads_org_owner", "organization_id", "owner_user_id"),
+        Index("ix_leads_org_project", "organization_id", "project_id"),
+    )
+
+
+class LeadSearchResultModel(Base):
+    """Many-to-many link between a search and the org-wide lead records."""
+
+    __tablename__ = "lead_search_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    search_id = Column(
+        Integer,
+        ForeignKey("lead_searches.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    lead_id = Column(
+        Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        UniqueConstraint("search_id", "lead_id", name="uq_lead_search_results_pair"),
+        Index("ix_lead_search_results_search_id", "search_id"),
+        Index("ix_lead_search_results_lead_id", "lead_id"),
+    )
+
+
+class LeadActivityModel(Base):
+    """Append-only CRM timeline for a lead (notes, status changes, dispatches)."""
+
+    __tablename__ = "lead_activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    lead_id = Column(
+        Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    # created | note | status_change | campaign | call | system
+    activity_type = Column(String(32), nullable=False)
+    title = Column(String(255), nullable=True)
+    body = Column(Text, nullable=True)
+    extra_metadata = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("ix_lead_activities_lead_created", "lead_id", "created_at"),
+        Index("ix_lead_activities_org_id", "organization_id"),
+    )
+
+
+class LeadCampaignDispatchModel(Base):
+    """Maps a lead row to the campaign row generated from it for outbound calls."""
+
+    __tablename__ = "lead_campaign_dispatches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    lead_id = Column(
+        Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
+    )
+    campaign_id = Column(
+        Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False
+    )
+    # Mirrors the generated CSV source_uuid so call outcomes can be joined back.
+    source_uuid = Column(String(191), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "campaign_id", "source_uuid", name="uq_lead_dispatch_campaign_source"
+        ),
+        Index("ix_lead_campaign_dispatches_lead", "lead_id"),
+        Index("ix_lead_campaign_dispatches_campaign", "campaign_id"),
+    )

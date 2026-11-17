@@ -623,6 +623,28 @@ export type BuilderTurnRequest = {
 };
 
 /**
+ * BulkLeadUpdateRequest
+ */
+export type BulkLeadUpdateRequest = {
+    /**
+     * Lead Ids
+     */
+    lead_ids: Array<number>;
+    /**
+     * Crm Status
+     */
+    crm_status?: 'new' | 'contacted' | 'interested' | 'not_interested' | 'won' | 'lost' | 'do_not_call' | null;
+    /**
+     * Tags
+     */
+    tags?: Array<string> | null;
+    /**
+     * Add Tags
+     */
+    add_tags?: Array<string> | null;
+};
+
+/**
  * CalculatorToolDefinition
  *
  * Tool definition for Calculator tools.
@@ -2897,6 +2919,970 @@ export type LastCampaignSettingsResponse = {
     rate_limit_per_second?: number;
     schedule_config?: ScheduleConfigResponse | null;
     circuit_breaker?: CircuitBreakerConfigResponse | null;
+};
+
+/**
+ * LeadActivityCreateRequest
+ */
+export type LeadActivityCreateRequest = {
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Body
+     */
+    body: string;
+};
+
+/**
+ * LeadActivityResponse
+ */
+export type LeadActivityResponse = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Activity Type
+     */
+    activity_type: string;
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Body
+     */
+    body?: string | null;
+    /**
+     * Metadata
+     */
+    metadata?: {
+        [key: string]: unknown;
+    };
+    /**
+     * User Id
+     */
+    user_id?: number | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * LeadCallResponse
+ */
+export type LeadCallResponse = {
+    /**
+     * Workflow Run Id
+     */
+    workflow_run_id: number;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Campaign Id
+     */
+    campaign_id: number;
+    /**
+     * Campaign Name
+     */
+    campaign_name: string;
+    /**
+     * Retry Count
+     */
+    retry_count?: number | null;
+    /**
+     * Recording Url
+     */
+    recording_url?: string | null;
+    /**
+     * Transcript Url
+     */
+    transcript_url?: string | null;
+    /**
+     * Call Id
+     */
+    call_id?: string | null;
+    /**
+     * Call Status
+     */
+    call_status?: string | null;
+    /**
+     * Call Disposition
+     */
+    call_disposition?: string | null;
+    /**
+     * Mapped Call Disposition
+     */
+    mapped_call_disposition?: string | null;
+    /**
+     * Call Tags
+     */
+    call_tags?: Array<string>;
+    /**
+     * Summary
+     */
+    summary?: string | null;
+};
+
+/**
+ * LeadDetailResponse
+ */
+export type LeadDetailResponse = {
+    lead: LeadResponse;
+    /**
+     * Activities
+     */
+    activities: Array<LeadActivityResponse>;
+    /**
+     * Calls
+     */
+    calls: Array<LeadCallResponse>;
+    /**
+     * Searches
+     */
+    searches: Array<LeadSearchLinkResponse>;
+};
+
+/**
+ * LeadDispatchRequest
+ */
+export type LeadDispatchRequest = {
+    /**
+     * Lead Ids
+     */
+    lead_ids: Array<number>;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Workflow Id
+     */
+    workflow_id: number;
+    /**
+     * Telephony Configuration Id
+     */
+    telephony_configuration_id?: number | null;
+    /**
+     * Max Concurrency
+     */
+    max_concurrency?: number | null;
+    /**
+     * Rate Limit Per Second
+     */
+    rate_limit_per_second?: number;
+    /**
+     * Start Immediately
+     */
+    start_immediately?: boolean;
+};
+
+/**
+ * LeadDispatchResponse
+ */
+export type LeadDispatchResponse = {
+    /**
+     * Campaign Id
+     */
+    campaign_id: number;
+    /**
+     * Campaign Name
+     */
+    campaign_name: string;
+    /**
+     * Dispatched
+     */
+    dispatched: number;
+    /**
+     * Skipped
+     */
+    skipped?: Array<LeadDispatchSkipped>;
+    /**
+     * Warnings
+     */
+    warnings?: Array<string>;
+};
+
+/**
+ * LeadDispatchSkipped
+ */
+export type LeadDispatchSkipped = {
+    /**
+     * Lead Id
+     */
+    lead_id: number;
+    /**
+     * Reason
+     */
+    reason: string;
+};
+
+/**
+ * LeadFacetsResponse
+ *
+ * Filter values available in the CRM for the current organization.
+ */
+export type LeadFacetsResponse = {
+    /**
+     * Countries
+     */
+    countries?: Array<string>;
+    /**
+     * States
+     */
+    states?: Array<string>;
+    /**
+     * Cities
+     */
+    cities?: Array<string>;
+    /**
+     * Categories
+     */
+    categories?: Array<string>;
+};
+
+/**
+ * LeadListResponse
+ */
+export type LeadListResponse = {
+    /**
+     * Leads
+     */
+    leads: Array<LeadResponse>;
+    /**
+     * Total Count
+     */
+    total_count: number;
+    /**
+     * Page
+     */
+    page: number;
+    /**
+     * Limit
+     */
+    limit: number;
+    /**
+     * Total Pages
+     */
+    total_pages: number;
+};
+
+/**
+ * LeadMetaResponse
+ */
+export type LeadMetaResponse = {
+    /**
+     * Statuses
+     */
+    statuses: Array<string>;
+    /**
+     * Providers
+     */
+    providers: Array<string>;
+    /**
+     * Default Provider
+     */
+    default_provider: string;
+    /**
+     * Demo Enabled
+     */
+    demo_enabled: boolean;
+    /**
+     * Export Formats
+     */
+    export_formats: Array<string>;
+    /**
+     * Max Dispatch Leads
+     */
+    max_dispatch_leads: number;
+};
+
+/**
+ * LeadProjectAssignRequest
+ */
+export type LeadProjectAssignRequest = {
+    /**
+     * Lead Ids
+     */
+    lead_ids: Array<number>;
+};
+
+/**
+ * LeadProjectAssignmentResponse
+ */
+export type LeadProjectAssignmentResponse = {
+    /**
+     * Assigned
+     */
+    assigned: number;
+    project: LeadProjectResponse;
+};
+
+/**
+ * LeadProjectCreateRequest
+ */
+export type LeadProjectCreateRequest = {
+    /**
+     * Name
+     */
+    name: string;
+    filters?: LeadProjectFilters | null;
+};
+
+/**
+ * LeadProjectFilters
+ *
+ * The CRM filter set used to collect a project's leads.
+ *
+ * Mirrors the lead list filters so "save these results as a project" assigns
+ * exactly the leads the operator is looking at, without client-side paging.
+ */
+export type LeadProjectFilters = {
+    /**
+     * Search Id
+     */
+    search_id?: number | null;
+    /**
+     * Status
+     */
+    status?: 'new' | 'contacted' | 'interested' | 'not_interested' | 'won' | 'lost' | 'do_not_call' | null;
+    /**
+     * Q
+     */
+    q?: string | null;
+    /**
+     * Has Phone
+     */
+    has_phone?: boolean | null;
+    /**
+     * Has Website
+     */
+    has_website?: boolean | null;
+    /**
+     * Has Email
+     */
+    has_email?: boolean | null;
+    /**
+     * Country
+     */
+    country?: string | null;
+    /**
+     * State
+     */
+    state?: string | null;
+    /**
+     * City
+     */
+    city?: string | null;
+    /**
+     * Category
+     */
+    category?: string | null;
+    /**
+     * Tag
+     */
+    tag?: string | null;
+};
+
+/**
+ * LeadProjectListResponse
+ */
+export type LeadProjectListResponse = {
+    /**
+     * Projects
+     */
+    projects: Array<LeadProjectResponse>;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
+ * LeadProjectResponse
+ */
+export type LeadProjectResponse = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Lead Count
+     */
+    lead_count?: number;
+    /**
+     * Callable Count
+     */
+    callable_count?: number;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+};
+
+/**
+ * LeadProjectUpdateRequest
+ */
+export type LeadProjectUpdateRequest = {
+    /**
+     * Name
+     */
+    name: string;
+};
+
+/**
+ * LeadResponse
+ */
+export type LeadResponse = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Category
+     */
+    category?: string | null;
+    /**
+     * Address
+     */
+    address?: string | null;
+    /**
+     * City
+     */
+    city?: string | null;
+    /**
+     * State
+     */
+    state?: string | null;
+    /**
+     * Country
+     */
+    country?: string | null;
+    /**
+     * Postal Code
+     */
+    postal_code?: string | null;
+    /**
+     * Phone
+     */
+    phone?: string | null;
+    /**
+     * Phone E164
+     */
+    phone_e164?: string | null;
+    /**
+     * Email
+     */
+    email?: string | null;
+    /**
+     * Website
+     */
+    website?: string | null;
+    /**
+     * Place Id
+     */
+    place_id?: string | null;
+    /**
+     * Cid
+     */
+    cid?: string | null;
+    /**
+     * Rating
+     */
+    rating?: number | null;
+    /**
+     * Review Count
+     */
+    review_count?: number | null;
+    /**
+     * Latitude
+     */
+    latitude?: number | null;
+    /**
+     * Longitude
+     */
+    longitude?: number | null;
+    /**
+     * Open Hours
+     */
+    open_hours?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Crm Status
+     */
+    crm_status: string;
+    /**
+     * Owner User Id
+     */
+    owner_user_id?: number | null;
+    /**
+     * Project Id
+     */
+    project_id?: number | null;
+    /**
+     * Tags
+     */
+    tags?: Array<string>;
+    /**
+     * Notes
+     */
+    notes?: string | null;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Last Contacted At
+     */
+    last_contacted_at?: string | null;
+    /**
+     * Next Follow Up At
+     */
+    next_follow_up_at?: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+};
+
+/**
+ * LeadSearchCreateRequest
+ */
+export type LeadSearchCreateRequest = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Location
+     */
+    location: string;
+    /**
+     * Country Code
+     */
+    country_code?: string;
+    /**
+     * Language
+     */
+    language?: string;
+    /**
+     * Provider
+     */
+    provider?: string | null;
+    /**
+     * Depth
+     */
+    depth?: number;
+    /**
+     * Radius Km
+     */
+    radius_km?: number;
+    /**
+     * Email
+     */
+    email?: boolean;
+    /**
+     * Max Time Seconds
+     */
+    max_time_seconds?: number;
+    /**
+     * Zoom
+     */
+    zoom?: number;
+    /**
+     * Website Filter
+     */
+    website_filter?: 'any' | 'has_website' | 'no_website';
+    /**
+     * Target Results
+     */
+    target_results?: number;
+    /**
+     * Auto Call
+     */
+    auto_call?: boolean;
+    /**
+     * Workflow Id
+     */
+    workflow_id?: number | null;
+    /**
+     * Telephony Configuration Id
+     */
+    telephony_configuration_id?: number | null;
+};
+
+/**
+ * LeadSearchExtendRequest
+ *
+ * Collect more leads with the same query and filters.
+ */
+export type LeadSearchExtendRequest = {
+    /**
+     * Additional Results
+     */
+    additional_results: number;
+};
+
+/**
+ * LeadSearchLinkResponse
+ */
+export type LeadSearchLinkResponse = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Status
+     */
+    status: string;
+};
+
+/**
+ * LeadSearchListResponse
+ */
+export type LeadSearchListResponse = {
+    /**
+     * Searches
+     */
+    searches: Array<LeadSearchResponse>;
+    /**
+     * Total Count
+     */
+    total_count: number;
+    /**
+     * Page
+     */
+    page: number;
+    /**
+     * Limit
+     */
+    limit: number;
+    /**
+     * Total Pages
+     */
+    total_pages: number;
+};
+
+/**
+ * LeadSearchResponse
+ */
+export type LeadSearchResponse = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Category
+     */
+    category?: string | null;
+    /**
+     * Location
+     */
+    location?: string | null;
+    /**
+     * Country Code
+     */
+    country_code?: string | null;
+    /**
+     * Language
+     */
+    language: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Target Results
+     */
+    target_results?: number | null;
+    /**
+     * External Job Id
+     */
+    external_job_id?: string | null;
+    /**
+     * Results Count
+     */
+    results_count: number;
+    /**
+     * New Leads Count
+     */
+    new_leads_count: number;
+    /**
+     * Auto Call Campaign Id
+     */
+    auto_call_campaign_id?: number | null;
+    /**
+     * Auto Call Error
+     */
+    auto_call_error?: string | null;
+    /**
+     * Error Message
+     */
+    error_message?: string | null;
+    /**
+     * Params
+     */
+    params?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Created By
+     */
+    created_by?: number | null;
+    /**
+     * Started At
+     */
+    started_at?: string | null;
+    /**
+     * Completed At
+     */
+    completed_at?: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+};
+
+/**
+ * LeadSearchUpdateRequest
+ *
+ * Edit a finished search and run it again.
+ *
+ * Changing the category or location means the previously collected rows no
+ * longer match the query, so callers may ask for a clean slate. By default
+ * the existing leads are kept and the new run simply adds to them.
+ */
+export type LeadSearchUpdateRequest = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Location
+     */
+    location: string;
+    /**
+     * Country Code
+     */
+    country_code?: string;
+    /**
+     * Language
+     */
+    language?: string;
+    /**
+     * Provider
+     */
+    provider?: string | null;
+    /**
+     * Depth
+     */
+    depth?: number;
+    /**
+     * Radius Km
+     */
+    radius_km?: number;
+    /**
+     * Email
+     */
+    email?: boolean;
+    /**
+     * Max Time Seconds
+     */
+    max_time_seconds?: number;
+    /**
+     * Zoom
+     */
+    zoom?: number;
+    /**
+     * Website Filter
+     */
+    website_filter?: 'any' | 'has_website' | 'no_website';
+    /**
+     * Target Results
+     */
+    target_results?: number;
+    /**
+     * Auto Call
+     */
+    auto_call?: boolean;
+    /**
+     * Workflow Id
+     */
+    workflow_id?: number | null;
+    /**
+     * Telephony Configuration Id
+     */
+    telephony_configuration_id?: number | null;
+    /**
+     * Keep Existing Results
+     */
+    keep_existing_results?: boolean;
+    /**
+     * Add To Campaign Id
+     */
+    add_to_campaign_id?: number | null;
+};
+
+/**
+ * LeadStatsResponse
+ */
+export type LeadStatsResponse = {
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * With Phone
+     */
+    with_phone: number;
+    /**
+     * With Email
+     */
+    with_email: number;
+    /**
+     * New
+     */
+    new: number;
+    /**
+     * Contacted
+     */
+    contacted: number;
+    /**
+     * Interested
+     */
+    interested: number;
+    /**
+     * Won
+     */
+    won: number;
+    /**
+     * Do Not Call
+     */
+    do_not_call: number;
+    /**
+     * Searches
+     */
+    searches: number;
+};
+
+/**
+ * LeadUpdateRequest
+ */
+export type LeadUpdateRequest = {
+    /**
+     * Crm Status
+     */
+    crm_status?: 'new' | 'contacted' | 'interested' | 'not_interested' | 'won' | 'lost' | 'do_not_call' | null;
+    /**
+     * Tags
+     */
+    tags?: Array<string> | null;
+    /**
+     * Notes
+     */
+    notes?: string | null;
+    /**
+     * Next Follow Up At
+     */
+    next_follow_up_at?: string | null;
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Category
+     */
+    category?: string | null;
+    /**
+     * Phone
+     */
+    phone?: string | null;
+    /**
+     * Email
+     */
+    email?: string | null;
+    /**
+     * Website
+     */
+    website?: string | null;
+    /**
+     * Address
+     */
+    address?: string | null;
+    /**
+     * City
+     */
+    city?: string | null;
+    /**
+     * State
+     */
+    state?: string | null;
+    /**
+     * Country
+     */
+    country?: string | null;
+    /**
+     * Postal Code
+     */
+    postal_code?: string | null;
 };
 
 /**
@@ -11656,6 +12642,1298 @@ export type DownloadCampaignReportApiV1CampaignCampaignIdReportGetResponses = {
      */
     200: unknown;
 };
+
+export type GetLeadsMetaApiV1LeadsMetaGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/leads/meta';
+};
+
+export type GetLeadsMetaApiV1LeadsMetaGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLeadsMetaApiV1LeadsMetaGetError = GetLeadsMetaApiV1LeadsMetaGetErrors[keyof GetLeadsMetaApiV1LeadsMetaGetErrors];
+
+export type GetLeadsMetaApiV1LeadsMetaGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadMetaResponse;
+};
+
+export type GetLeadsMetaApiV1LeadsMetaGetResponse = GetLeadsMetaApiV1LeadsMetaGetResponses[keyof GetLeadsMetaApiV1LeadsMetaGetResponses];
+
+export type GetLeadStatsApiV1LeadsStatsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Search Id
+         */
+        search_id?: number | null;
+        /**
+         * Project Id
+         */
+        project_id?: number | null;
+    };
+    url: '/api/v1/leads/stats';
+};
+
+export type GetLeadStatsApiV1LeadsStatsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLeadStatsApiV1LeadsStatsGetError = GetLeadStatsApiV1LeadsStatsGetErrors[keyof GetLeadStatsApiV1LeadsStatsGetErrors];
+
+export type GetLeadStatsApiV1LeadsStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadStatsResponse;
+};
+
+export type GetLeadStatsApiV1LeadsStatsGetResponse = GetLeadStatsApiV1LeadsStatsGetResponses[keyof GetLeadStatsApiV1LeadsStatsGetResponses];
+
+export type GetLeadFacetsApiV1LeadsFacetsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Country
+         */
+        country?: string | null;
+        /**
+         * State
+         */
+        state?: string | null;
+    };
+    url: '/api/v1/leads/facets';
+};
+
+export type GetLeadFacetsApiV1LeadsFacetsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLeadFacetsApiV1LeadsFacetsGetError = GetLeadFacetsApiV1LeadsFacetsGetErrors[keyof GetLeadFacetsApiV1LeadsFacetsGetErrors];
+
+export type GetLeadFacetsApiV1LeadsFacetsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadFacetsResponse;
+};
+
+export type GetLeadFacetsApiV1LeadsFacetsGetResponse = GetLeadFacetsApiV1LeadsFacetsGetResponses[keyof GetLeadFacetsApiV1LeadsFacetsGetResponses];
+
+export type ListLeadSearchesApiV1LeadsSearchesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Page
+         */
+        page?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/leads/searches';
+};
+
+export type ListLeadSearchesApiV1LeadsSearchesGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListLeadSearchesApiV1LeadsSearchesGetError = ListLeadSearchesApiV1LeadsSearchesGetErrors[keyof ListLeadSearchesApiV1LeadsSearchesGetErrors];
+
+export type ListLeadSearchesApiV1LeadsSearchesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadSearchListResponse;
+};
+
+export type ListLeadSearchesApiV1LeadsSearchesGetResponse = ListLeadSearchesApiV1LeadsSearchesGetResponses[keyof ListLeadSearchesApiV1LeadsSearchesGetResponses];
+
+export type CreateLeadSearchApiV1LeadsSearchesPostData = {
+    body: LeadSearchCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/leads/searches';
+};
+
+export type CreateLeadSearchApiV1LeadsSearchesPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateLeadSearchApiV1LeadsSearchesPostError = CreateLeadSearchApiV1LeadsSearchesPostErrors[keyof CreateLeadSearchApiV1LeadsSearchesPostErrors];
+
+export type CreateLeadSearchApiV1LeadsSearchesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadSearchResponse;
+};
+
+export type CreateLeadSearchApiV1LeadsSearchesPostResponse = CreateLeadSearchApiV1LeadsSearchesPostResponses[keyof CreateLeadSearchApiV1LeadsSearchesPostResponses];
+
+export type GetLeadSearchApiV1LeadsSearchesSearchIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Search Id
+         */
+        search_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/searches/{search_id}';
+};
+
+export type GetLeadSearchApiV1LeadsSearchesSearchIdGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLeadSearchApiV1LeadsSearchesSearchIdGetError = GetLeadSearchApiV1LeadsSearchesSearchIdGetErrors[keyof GetLeadSearchApiV1LeadsSearchesSearchIdGetErrors];
+
+export type GetLeadSearchApiV1LeadsSearchesSearchIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadSearchResponse;
+};
+
+export type GetLeadSearchApiV1LeadsSearchesSearchIdGetResponse = GetLeadSearchApiV1LeadsSearchesSearchIdGetResponses[keyof GetLeadSearchApiV1LeadsSearchesSearchIdGetResponses];
+
+export type UpdateLeadSearchApiV1LeadsSearchesSearchIdPatchData = {
+    body: LeadSearchUpdateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Search Id
+         */
+        search_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/searches/{search_id}';
+};
+
+export type UpdateLeadSearchApiV1LeadsSearchesSearchIdPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateLeadSearchApiV1LeadsSearchesSearchIdPatchError = UpdateLeadSearchApiV1LeadsSearchesSearchIdPatchErrors[keyof UpdateLeadSearchApiV1LeadsSearchesSearchIdPatchErrors];
+
+export type UpdateLeadSearchApiV1LeadsSearchesSearchIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadSearchResponse;
+};
+
+export type UpdateLeadSearchApiV1LeadsSearchesSearchIdPatchResponse = UpdateLeadSearchApiV1LeadsSearchesSearchIdPatchResponses[keyof UpdateLeadSearchApiV1LeadsSearchesSearchIdPatchResponses];
+
+export type CancelLeadSearchApiV1LeadsSearchesSearchIdCancelPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Search Id
+         */
+        search_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/searches/{search_id}/cancel';
+};
+
+export type CancelLeadSearchApiV1LeadsSearchesSearchIdCancelPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelLeadSearchApiV1LeadsSearchesSearchIdCancelPostError = CancelLeadSearchApiV1LeadsSearchesSearchIdCancelPostErrors[keyof CancelLeadSearchApiV1LeadsSearchesSearchIdCancelPostErrors];
+
+export type CancelLeadSearchApiV1LeadsSearchesSearchIdCancelPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadSearchResponse;
+};
+
+export type CancelLeadSearchApiV1LeadsSearchesSearchIdCancelPostResponse = CancelLeadSearchApiV1LeadsSearchesSearchIdCancelPostResponses[keyof CancelLeadSearchApiV1LeadsSearchesSearchIdCancelPostResponses];
+
+export type StopLeadSearchApiV1LeadsSearchesSearchIdStopPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Search Id
+         */
+        search_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/searches/{search_id}/stop';
+};
+
+export type StopLeadSearchApiV1LeadsSearchesSearchIdStopPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StopLeadSearchApiV1LeadsSearchesSearchIdStopPostError = StopLeadSearchApiV1LeadsSearchesSearchIdStopPostErrors[keyof StopLeadSearchApiV1LeadsSearchesSearchIdStopPostErrors];
+
+export type StopLeadSearchApiV1LeadsSearchesSearchIdStopPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadSearchResponse;
+};
+
+export type StopLeadSearchApiV1LeadsSearchesSearchIdStopPostResponse = StopLeadSearchApiV1LeadsSearchesSearchIdStopPostResponses[keyof StopLeadSearchApiV1LeadsSearchesSearchIdStopPostResponses];
+
+export type RetryLeadSearchApiV1LeadsSearchesSearchIdRetryPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Search Id
+         */
+        search_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/searches/{search_id}/retry';
+};
+
+export type RetryLeadSearchApiV1LeadsSearchesSearchIdRetryPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetryLeadSearchApiV1LeadsSearchesSearchIdRetryPostError = RetryLeadSearchApiV1LeadsSearchesSearchIdRetryPostErrors[keyof RetryLeadSearchApiV1LeadsSearchesSearchIdRetryPostErrors];
+
+export type RetryLeadSearchApiV1LeadsSearchesSearchIdRetryPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadSearchResponse;
+};
+
+export type RetryLeadSearchApiV1LeadsSearchesSearchIdRetryPostResponse = RetryLeadSearchApiV1LeadsSearchesSearchIdRetryPostResponses[keyof RetryLeadSearchApiV1LeadsSearchesSearchIdRetryPostResponses];
+
+export type ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostData = {
+    body: LeadSearchExtendRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Search Id
+         */
+        search_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/searches/{search_id}/extend';
+};
+
+export type ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostError = ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostErrors[keyof ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostErrors];
+
+export type ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadSearchResponse;
+};
+
+export type ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostResponse = ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostResponses[keyof ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostResponses];
+
+export type ListLeadsApiV1LeadsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Search Id
+         */
+        search_id?: number | null;
+        /**
+         * Project Id
+         */
+        project_id?: number | null;
+        /**
+         * Status
+         */
+        status?: 'new' | 'contacted' | 'interested' | 'not_interested' | 'won' | 'lost' | 'do_not_call' | null;
+        /**
+         * Q
+         */
+        q?: string | null;
+        /**
+         * Has Phone
+         */
+        has_phone?: boolean | null;
+        /**
+         * Has Website
+         */
+        has_website?: boolean | null;
+        /**
+         * Has Email
+         */
+        has_email?: boolean | null;
+        /**
+         * Country
+         */
+        country?: string | null;
+        /**
+         * State
+         */
+        state?: string | null;
+        /**
+         * City
+         */
+        city?: string | null;
+        /**
+         * Category
+         */
+        category?: string | null;
+        /**
+         * Tag
+         */
+        tag?: string | null;
+        /**
+         * Sort
+         */
+        sort?: 'created_at' | 'rating' | 'title' | 'status';
+        /**
+         * Page
+         */
+        page?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/leads';
+};
+
+export type ListLeadsApiV1LeadsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListLeadsApiV1LeadsGetError = ListLeadsApiV1LeadsGetErrors[keyof ListLeadsApiV1LeadsGetErrors];
+
+export type ListLeadsApiV1LeadsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadListResponse;
+};
+
+export type ListLeadsApiV1LeadsGetResponse = ListLeadsApiV1LeadsGetResponses[keyof ListLeadsApiV1LeadsGetResponses];
+
+export type ExportLeadsApiV1LeadsExportGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Format
+         */
+        format?: 'csv' | 'xlsx' | 'json' | 'pdf' | 'png';
+        /**
+         * Search Id
+         */
+        search_id?: number | null;
+        /**
+         * Project Id
+         */
+        project_id?: number | null;
+        /**
+         * Status
+         */
+        status?: 'new' | 'contacted' | 'interested' | 'not_interested' | 'won' | 'lost' | 'do_not_call' | null;
+        /**
+         * Q
+         */
+        q?: string | null;
+        /**
+         * Has Phone
+         */
+        has_phone?: boolean | null;
+        /**
+         * Has Website
+         */
+        has_website?: boolean | null;
+        /**
+         * Has Email
+         */
+        has_email?: boolean | null;
+        /**
+         * Country
+         */
+        country?: string | null;
+        /**
+         * State
+         */
+        state?: string | null;
+        /**
+         * City
+         */
+        city?: string | null;
+        /**
+         * Category
+         */
+        category?: string | null;
+        /**
+         * Tag
+         */
+        tag?: string | null;
+        /**
+         * Sort
+         */
+        sort?: 'created_at' | 'rating' | 'title' | 'status';
+    };
+    url: '/api/v1/leads/export';
+};
+
+export type ExportLeadsApiV1LeadsExportGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportLeadsApiV1LeadsExportGetError = ExportLeadsApiV1LeadsExportGetErrors[keyof ExportLeadsApiV1LeadsExportGetErrors];
+
+export type ExportLeadsApiV1LeadsExportGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type BulkUpdateLeadsApiV1LeadsBulkPostData = {
+    body: BulkLeadUpdateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/leads/bulk';
+};
+
+export type BulkUpdateLeadsApiV1LeadsBulkPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BulkUpdateLeadsApiV1LeadsBulkPostError = BulkUpdateLeadsApiV1LeadsBulkPostErrors[keyof BulkUpdateLeadsApiV1LeadsBulkPostErrors];
+
+export type BulkUpdateLeadsApiV1LeadsBulkPostResponses = {
+    /**
+     * Response Bulk Update Leads Api V1 Leads Bulk Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: number;
+    };
+};
+
+export type BulkUpdateLeadsApiV1LeadsBulkPostResponse = BulkUpdateLeadsApiV1LeadsBulkPostResponses[keyof BulkUpdateLeadsApiV1LeadsBulkPostResponses];
+
+export type DispatchLeadsApiV1LeadsDispatchCampaignPostData = {
+    body: LeadDispatchRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/leads/dispatch-campaign';
+};
+
+export type DispatchLeadsApiV1LeadsDispatchCampaignPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DispatchLeadsApiV1LeadsDispatchCampaignPostError = DispatchLeadsApiV1LeadsDispatchCampaignPostErrors[keyof DispatchLeadsApiV1LeadsDispatchCampaignPostErrors];
+
+export type DispatchLeadsApiV1LeadsDispatchCampaignPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadDispatchResponse;
+};
+
+export type DispatchLeadsApiV1LeadsDispatchCampaignPostResponse = DispatchLeadsApiV1LeadsDispatchCampaignPostResponses[keyof DispatchLeadsApiV1LeadsDispatchCampaignPostResponses];
+
+export type DeleteLeadApiV1LeadsLeadIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Lead Id
+         */
+        lead_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/{lead_id}';
+};
+
+export type DeleteLeadApiV1LeadsLeadIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteLeadApiV1LeadsLeadIdDeleteError = DeleteLeadApiV1LeadsLeadIdDeleteErrors[keyof DeleteLeadApiV1LeadsLeadIdDeleteErrors];
+
+export type DeleteLeadApiV1LeadsLeadIdDeleteResponses = {
+    /**
+     * Response Delete Lead Api V1 Leads  Lead Id  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: boolean;
+    };
+};
+
+export type DeleteLeadApiV1LeadsLeadIdDeleteResponse = DeleteLeadApiV1LeadsLeadIdDeleteResponses[keyof DeleteLeadApiV1LeadsLeadIdDeleteResponses];
+
+export type GetLeadDetailApiV1LeadsLeadIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Lead Id
+         */
+        lead_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/{lead_id}';
+};
+
+export type GetLeadDetailApiV1LeadsLeadIdGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLeadDetailApiV1LeadsLeadIdGetError = GetLeadDetailApiV1LeadsLeadIdGetErrors[keyof GetLeadDetailApiV1LeadsLeadIdGetErrors];
+
+export type GetLeadDetailApiV1LeadsLeadIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadDetailResponse;
+};
+
+export type GetLeadDetailApiV1LeadsLeadIdGetResponse = GetLeadDetailApiV1LeadsLeadIdGetResponses[keyof GetLeadDetailApiV1LeadsLeadIdGetResponses];
+
+export type UpdateLeadApiV1LeadsLeadIdPatchData = {
+    body: LeadUpdateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Lead Id
+         */
+        lead_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/{lead_id}';
+};
+
+export type UpdateLeadApiV1LeadsLeadIdPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateLeadApiV1LeadsLeadIdPatchError = UpdateLeadApiV1LeadsLeadIdPatchErrors[keyof UpdateLeadApiV1LeadsLeadIdPatchErrors];
+
+export type UpdateLeadApiV1LeadsLeadIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadResponse;
+};
+
+export type UpdateLeadApiV1LeadsLeadIdPatchResponse = UpdateLeadApiV1LeadsLeadIdPatchResponses[keyof UpdateLeadApiV1LeadsLeadIdPatchResponses];
+
+export type AddLeadNoteApiV1LeadsLeadIdActivitiesPostData = {
+    body: LeadActivityCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Lead Id
+         */
+        lead_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/{lead_id}/activities';
+};
+
+export type AddLeadNoteApiV1LeadsLeadIdActivitiesPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AddLeadNoteApiV1LeadsLeadIdActivitiesPostError = AddLeadNoteApiV1LeadsLeadIdActivitiesPostErrors[keyof AddLeadNoteApiV1LeadsLeadIdActivitiesPostErrors];
+
+export type AddLeadNoteApiV1LeadsLeadIdActivitiesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadActivityResponse;
+};
+
+export type AddLeadNoteApiV1LeadsLeadIdActivitiesPostResponse = AddLeadNoteApiV1LeadsLeadIdActivitiesPostResponses[keyof AddLeadNoteApiV1LeadsLeadIdActivitiesPostResponses];
+
+export type ListLeadProjectsApiV1LeadProjectsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/lead-projects';
+};
+
+export type ListLeadProjectsApiV1LeadProjectsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListLeadProjectsApiV1LeadProjectsGetError = ListLeadProjectsApiV1LeadProjectsGetErrors[keyof ListLeadProjectsApiV1LeadProjectsGetErrors];
+
+export type ListLeadProjectsApiV1LeadProjectsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadProjectListResponse;
+};
+
+export type ListLeadProjectsApiV1LeadProjectsGetResponse = ListLeadProjectsApiV1LeadProjectsGetResponses[keyof ListLeadProjectsApiV1LeadProjectsGetResponses];
+
+export type CreateLeadProjectApiV1LeadProjectsPostData = {
+    body: LeadProjectCreateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/lead-projects';
+};
+
+export type CreateLeadProjectApiV1LeadProjectsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateLeadProjectApiV1LeadProjectsPostError = CreateLeadProjectApiV1LeadProjectsPostErrors[keyof CreateLeadProjectApiV1LeadProjectsPostErrors];
+
+export type CreateLeadProjectApiV1LeadProjectsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: LeadProjectResponse;
+};
+
+export type CreateLeadProjectApiV1LeadProjectsPostResponse = CreateLeadProjectApiV1LeadProjectsPostResponses[keyof CreateLeadProjectApiV1LeadProjectsPostResponses];
+
+export type DeleteLeadProjectApiV1LeadProjectsProjectIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: number;
+    };
+    query?: never;
+    url: '/api/v1/lead-projects/{project_id}';
+};
+
+export type DeleteLeadProjectApiV1LeadProjectsProjectIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteLeadProjectApiV1LeadProjectsProjectIdDeleteError = DeleteLeadProjectApiV1LeadProjectsProjectIdDeleteErrors[keyof DeleteLeadProjectApiV1LeadProjectsProjectIdDeleteErrors];
+
+export type DeleteLeadProjectApiV1LeadProjectsProjectIdDeleteResponses = {
+    /**
+     * Response Delete Lead Project Api V1 Lead Projects  Project Id  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: number | boolean;
+    };
+};
+
+export type DeleteLeadProjectApiV1LeadProjectsProjectIdDeleteResponse = DeleteLeadProjectApiV1LeadProjectsProjectIdDeleteResponses[keyof DeleteLeadProjectApiV1LeadProjectsProjectIdDeleteResponses];
+
+export type GetLeadProjectApiV1LeadProjectsProjectIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: number;
+    };
+    query?: never;
+    url: '/api/v1/lead-projects/{project_id}';
+};
+
+export type GetLeadProjectApiV1LeadProjectsProjectIdGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLeadProjectApiV1LeadProjectsProjectIdGetError = GetLeadProjectApiV1LeadProjectsProjectIdGetErrors[keyof GetLeadProjectApiV1LeadProjectsProjectIdGetErrors];
+
+export type GetLeadProjectApiV1LeadProjectsProjectIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadProjectResponse;
+};
+
+export type GetLeadProjectApiV1LeadProjectsProjectIdGetResponse = GetLeadProjectApiV1LeadProjectsProjectIdGetResponses[keyof GetLeadProjectApiV1LeadProjectsProjectIdGetResponses];
+
+export type UpdateLeadProjectApiV1LeadProjectsProjectIdPatchData = {
+    body: LeadProjectUpdateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: number;
+    };
+    query?: never;
+    url: '/api/v1/lead-projects/{project_id}';
+};
+
+export type UpdateLeadProjectApiV1LeadProjectsProjectIdPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateLeadProjectApiV1LeadProjectsProjectIdPatchError = UpdateLeadProjectApiV1LeadProjectsProjectIdPatchErrors[keyof UpdateLeadProjectApiV1LeadProjectsProjectIdPatchErrors];
+
+export type UpdateLeadProjectApiV1LeadProjectsProjectIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadProjectResponse;
+};
+
+export type UpdateLeadProjectApiV1LeadProjectsProjectIdPatchResponse = UpdateLeadProjectApiV1LeadProjectsProjectIdPatchResponses[keyof UpdateLeadProjectApiV1LeadProjectsProjectIdPatchResponses];
+
+export type UnassignLeadsFromProjectApiV1LeadProjectsProjectIdLeadsDeleteData = {
+    body: LeadProjectAssignRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: number;
+    };
+    query?: never;
+    url: '/api/v1/lead-projects/{project_id}/leads';
+};
+
+export type UnassignLeadsFromProjectApiV1LeadProjectsProjectIdLeadsDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UnassignLeadsFromProjectApiV1LeadProjectsProjectIdLeadsDeleteError = UnassignLeadsFromProjectApiV1LeadProjectsProjectIdLeadsDeleteErrors[keyof UnassignLeadsFromProjectApiV1LeadProjectsProjectIdLeadsDeleteErrors];
+
+export type UnassignLeadsFromProjectApiV1LeadProjectsProjectIdLeadsDeleteResponses = {
+    /**
+     * Response Unassign Leads From Project Api V1 Lead Projects  Project Id  Leads Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: number;
+    };
+};
+
+export type UnassignLeadsFromProjectApiV1LeadProjectsProjectIdLeadsDeleteResponse = UnassignLeadsFromProjectApiV1LeadProjectsProjectIdLeadsDeleteResponses[keyof UnassignLeadsFromProjectApiV1LeadProjectsProjectIdLeadsDeleteResponses];
+
+export type AssignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPostData = {
+    body: LeadProjectAssignRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: number;
+    };
+    query?: never;
+    url: '/api/v1/lead-projects/{project_id}/leads';
+};
+
+export type AssignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AssignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPostError = AssignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPostErrors[keyof AssignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPostErrors];
+
+export type AssignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadProjectAssignmentResponse;
+};
+
+export type AssignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPostResponse = AssignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPostResponses[keyof AssignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPostResponses];
+
+export type AssignFilteredLeadsToProjectApiV1LeadProjectsProjectIdAssignPostData = {
+    body: LeadProjectFilters;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Project Id
+         */
+        project_id: number;
+    };
+    query?: never;
+    url: '/api/v1/lead-projects/{project_id}/assign';
+};
+
+export type AssignFilteredLeadsToProjectApiV1LeadProjectsProjectIdAssignPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AssignFilteredLeadsToProjectApiV1LeadProjectsProjectIdAssignPostError = AssignFilteredLeadsToProjectApiV1LeadProjectsProjectIdAssignPostErrors[keyof AssignFilteredLeadsToProjectApiV1LeadProjectsProjectIdAssignPostErrors];
+
+export type AssignFilteredLeadsToProjectApiV1LeadProjectsProjectIdAssignPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadProjectAssignmentResponse;
+};
+
+export type AssignFilteredLeadsToProjectApiV1LeadProjectsProjectIdAssignPostResponse = AssignFilteredLeadsToProjectApiV1LeadProjectsProjectIdAssignPostResponses[keyof AssignFilteredLeadsToProjectApiV1LeadProjectsProjectIdAssignPostResponses];
 
 export type ListCredentialsApiV1CredentialsGetData = {
     body?: never;

@@ -5,6 +5,7 @@ import {
   ArrowUpCircle,
   AudioLines,
   Brain,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
@@ -21,6 +22,7 @@ import {
   ShieldCheck,
   TrendingUp,
   UserRound,
+  Users,
   Workflow,
   Wrench,
 } from "lucide-react";
@@ -32,6 +34,11 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { SidebarTeamSwitcher } from "@/components/layout/SidebarTeamSwitcher";
 import ThemeToggle from "@/components/ThemeSwitcher";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +57,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
   SidebarTrigger,
   useSidebar,
@@ -68,6 +78,7 @@ type SidebarNavItem = {
   url: string;
   icon: LucideIcon;
   showsTelephonyWarning?: boolean;
+  children?: { title: string; url: string }[];
 };
 
 type SidebarNavSection = {
@@ -132,6 +143,17 @@ const NAV_SECTIONS: SidebarNavSection[] = [
         icon: Megaphone,
       },
       {
+        title: "Leads",
+        url: "/leads",
+        icon: Users,
+        children: [
+          { title: "Overview", url: "/leads" },
+          { title: "CRM", url: "/leads/all" },
+          { title: "Projects", url: "/leads/projects" },
+          { title: "New search", url: "/leads/new" },
+        ],
+      },
+      {
         title: "Recordings",
         url: "/recordings",
         icon: AudioLines,
@@ -191,6 +213,8 @@ export function AppSidebar() {
   );
 
   const isActive = (path: string) => pathname.startsWith(path);
+  const isSubItemActive = (path: string) =>
+    path === "/leads" ? pathname === "/leads" || pathname === "/leads/" : pathname.startsWith(path);
 
   const handleMobileNavClick = () => {
     if (isMobile) {
@@ -272,6 +296,63 @@ export function AppSidebar() {
           )}
         </Link>
       </SidebarMenuButton>
+    );
+  };
+
+  // Nested navigation (e.g. Leads → Overview / CRM / New search).
+  // Collapsed sidebars fall back to the plain icon link so the submenu does not
+  // disappear under a rail that cannot show it.
+  const SidebarNestedLink = ({ item }: { item: SidebarNavItem }) => {
+    const Icon = item.icon;
+    const parentActive = isActive(item.url);
+    return (
+      <Collapsible defaultOpen={parentActive} className="group/collapsible">
+        <SidebarMenuItem>
+          <CollapsibleTrigger asChild>
+            <SidebarMenuButton
+              tooltip={{ children: item.title }}
+              className={cn(
+                "rounded-xl transition-colors hover:bg-accent hover:text-accent-foreground",
+                parentActive &&
+                  "bg-cta/15 font-semibold text-foreground hover:bg-cta/20 hover:text-foreground"
+              )}
+            >
+              <Icon
+                className={cn(
+                  "h-4 w-4 shrink-0",
+                  parentActive &&
+                    "text-cta drop-shadow-[0_0_6px_rgba(13,148,136,0.85)]"
+                )}
+              />
+              <span className="notranslate min-w-0 flex-1 truncate" translate="no">
+                {item.title}
+              </span>
+              <ChevronDown className="ml-auto h-4 w-4 shrink-0 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-180" />
+            </SidebarMenuButton>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <SidebarMenuSub>
+              {item.children?.map((child) => (
+                <SidebarMenuSubItem key={child.url}>
+                  <SidebarMenuSubButton
+                    asChild
+                    isActive={isSubItemActive(child.url)}
+                  >
+                    <Link
+                      href={child.url}
+                      onClick={handleMobileNavClick}
+                      translate="no"
+                      className="notranslate"
+                    >
+                      <span>{child.title}</span>
+                    </Link>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              ))}
+            </SidebarMenuSub>
+          </CollapsibleContent>
+        </SidebarMenuItem>
+      </Collapsible>
     );
   };
 
@@ -415,11 +496,15 @@ export function AppSidebar() {
               </SidebarGroupLabel>
             )}
             <SidebarMenu>
-              {section.items.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarLink item={item} />
-                </SidebarMenuItem>
-              ))}
+              {section.items.map((item) =>
+                item.children && !isCollapsed ? (
+                  <SidebarNestedLink key={item.title} item={item} />
+                ) : (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarLink item={item} />
+                  </SidebarMenuItem>
+                )
+              )}
             </SidebarMenu>
           </SidebarGroup>
         ))}
