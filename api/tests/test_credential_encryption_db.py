@@ -299,11 +299,37 @@ async def test_rotation_is_idempotent_and_encrypts_legacy_rows(db_session):
 
 
 @pytest.mark.asyncio
+async def test_rotation_encrypts_plaintext_that_resembles_envelope_fields(db_session):
+    user, org = await _org(db_session)
+    lookalikes = {
+        "v": {"token": "x", "v": 1},
+        "alg": {"token": "x", "alg": "HS256"},
+        "ciphertext": {"api_key": "k", "ciphertext": "sha256"},
+        "v-and-alg": {"v": 1, "alg": "HS256"},
+    }
+    rows = {}
+    for name, data in lookalikes.items():
+        rows[name] = await _insert_plaintext_credential(
+            db_session, user, org, name, data
+        )
+
+    await rotate_credentials(dry_run=False)
+
+    for name, data in lookalikes.items():
+        stored = await _stored_credential_data(db_session, rows[name].id)
+        assert is_envelope(stored), name
+        fetched = await db_session.get_credential_by_uuid(
+            rows[name].credential_uuid, org.id
+        )
+        assert fetched.credential_data == data, name
+
+
+@pytest.mark.asyncio
 async def test_rotation_refuses_malformed_envelopes_and_leaves_them_untouched(
     db_session,
 ):
     user, org = await _org(db_session)
-    malformed = {"v": 1, "ciphertext": "not-a-fernet-token"}
+    malformed = {"v": 1, "alg": "fernet"}
     credential = await _insert_plaintext_credential(
         db_session, user, org, "Malformed", malformed
     )

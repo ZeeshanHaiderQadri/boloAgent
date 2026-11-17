@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -24,7 +25,10 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 ENVELOPE_VERSION = 1
 ALGORITHM = "fernet"
-ENVELOPE_MARKER_KEYS = ("v", "alg", "key_id", "ciphertext")
+# Fernet tokens start with the version byte 0x80 followed by a big-endian
+# timestamp that is almost always 0x00-padded, so they encode to "gAAAA...".
+FERNET_TOKEN_PREFIX = "gAAAA"
+_KEY_ID_PATTERN = re.compile(r"[0-9a-f]{8}")
 
 
 class EnvelopeError(ValueError):
@@ -76,16 +80,40 @@ def is_envelope(value: Any) -> bool:
     )
 
 
-def has_envelope_markers(value: Any) -> bool:
-    """Return True when value claims to be an envelope but may be malformed.
+def looks_like_envelope(value: Any) -> bool:
+    """Return True when value has the distinctive shape of our envelope.
 
-    Used to fail closed: a row carrying ``v``/``alg``/``ciphertext`` that is not
-    a valid v1 fernet envelope must never be treated (or re-encrypted) as
-    plaintext, because the real secret may be in a field we cannot read.
+    Credential data is free-form user JSON, so generic field names such as
+    ``v``, ``alg`` or ``ciphertext`` cannot on their own mark a row as an
+    envelope. Only signals that are specific to this format do:
+
+    * ``alg`` is exactly ``fernet``
+    * ``ciphertext`` starts with the Fernet token prefix ``gAAAA``
+    * ``key_id`` is eight lowercase hex characters (our truncated SHA-256 id)
+
+    A row that matches one of them but is not a valid v1 envelope must fail
+    closed rather than be served or re-encrypted as plaintext. That keeps a
+    truncated real envelope (for example one missing its ``ciphertext``) from
+    being treated as a credential.
+
+    Remaining edge cases, all deliberately resolved toward failing closed:
+
+    * A plaintext credential that happens to carry an eight-hex ``key_id``, or
+      a ``ciphertext`` beginning ``gAAAA``, is indistinguishable from a
+      truncated envelope and is rejected. Rename the field to proceed.
+    * An envelope truncated so far that it lost ``alg``, ``ciphertext`` and
+      ``key_id`` (for example ``{"v": 1}``) is treated as plaintext. The
+      ciphertext is gone by then, so there is nothing left to decrypt.
     """
-    return isinstance(value, Mapping) and any(
-        marker in value for marker in ENVELOPE_MARKER_KEYS
-    )
+    if not isinstance(value, Mapping):
+        return False
+    if value.get("alg") == ALGORITHM:
+        return True
+    ciphertext = value.get("ciphertext")
+    if isinstance(ciphertext, str) and ciphertext.startswith(FERNET_TOKEN_PREFIX):
+        return True
+    key = value.get("key_id")
+    return isinstance(key, str) and _KEY_ID_PATTERN.fullmatch(key) is not None
 
 
 def build_envelope(data: Mapping[str, Any], keys: Sequence[str]) -> dict[str, Any]:

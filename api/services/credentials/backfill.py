@@ -15,9 +15,9 @@ from typing import Any
 from api.services.credentials.envelope import (
     EnvelopeError,
     decrypt_envelope,
-    has_envelope_markers,
     is_envelope,
     key_id,
+    looks_like_envelope,
 )
 
 
@@ -30,8 +30,7 @@ def as_credential_dict(value: Any) -> dict[str, Any]:
     """
     if value is None:
         raise EnvelopeError(
-            "credential_data is null; a null row is malformed, not an empty "
-            "credential"
+            "credential_data is null; a null row is malformed, not an empty credential"
         )
     if isinstance(value, str):
         try:
@@ -72,10 +71,10 @@ def plan_backfill(
                     "BOLO_CREDENTIAL_ENCRYPTION_KEYS before migrating"
                 )
             continue
-        if has_envelope_markers(data):
+        if looks_like_envelope(data):
             raise EnvelopeError(
-                f"Credential row {row_id} has encryption envelope fields but is "
-                "not a valid v1 fernet envelope"
+                f"Credential row {row_id} looks like an encryption envelope but "
+                "is not a valid v1 fernet envelope"
             )
         pending.append((row_id, data))
 
@@ -110,10 +109,10 @@ def plan_downgrade(
                     "configured keys"
                 ) from exc
             continue
-        if has_envelope_markers(data):
+        if looks_like_envelope(data):
             raise EnvelopeError(
-                f"Credential row {row_id} has encryption envelope fields but is "
-                "not a valid v1 fernet envelope"
+                f"Credential row {row_id} looks like an encryption envelope but "
+                "is not a valid v1 fernet envelope"
             )
 
     return updates

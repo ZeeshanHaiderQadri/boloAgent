@@ -16,9 +16,9 @@ from api.services.credentials.envelope import (
     EnvelopeError,
     build_envelope,
     decrypt_envelope,
-    has_envelope_markers,
     is_envelope,
     key_id,
+    looks_like_envelope,
     parse_key_material,
 )
 
@@ -95,9 +95,9 @@ class CredentialCipher:
             except EnvelopeError as exc:
                 raise CredentialEncryptionError(str(exc)) from exc
 
-        if has_envelope_markers(data):
+        if looks_like_envelope(data):
             raise CredentialEncryptionError(
-                "Credential data has encryption envelope fields but is not a "
+                "Credential data looks like an encryption envelope but is not a "
                 "valid v1 fernet envelope; refusing to treat it as plaintext"
             )
 

@@ -53,12 +53,37 @@ def test_plaintext_rows_are_pending_and_existing_envelopes_are_counted():
     assert encrypted == 1
 
 
+def test_freeform_fields_that_resemble_envelope_names_are_encrypted():
+    keys = [_key()]
+    rows = [
+        (1, {"token": "x", "v": 1}),
+        (2, {"token": "x", "alg": "HS256"}),
+        (3, {"api_key": "k", "ciphertext": "sha256"}),
+        (4, {"v": 1, "alg": "HS256"}),
+    ]
+
+    pending, encrypted = plan_backfill(rows, keys)
+
+    assert pending == rows
+    assert encrypted == 0
+    assert plan_downgrade(rows, keys) == []
+
+
 def test_malformed_envelope_rows_abort_the_plan():
     keys = [_key()]
-    rows = [(9, {"v": 1, "ciphertext": ""})]
+    rows = [(9, {"v": 1, "alg": "fernet"})]
 
     with pytest.raises(EnvelopeError, match="row 9"):
         plan_backfill(rows, keys)
+
+
+def test_truncated_envelope_aborts_the_downgrade():
+    keys = [_key()]
+    envelope = build_envelope({"token": "x"}, keys)
+    truncated = {k: v for k, v in envelope.items() if k != "ciphertext"}
+
+    with pytest.raises(EnvelopeError, match="row 5"):
+        plan_downgrade([(5, truncated)], keys)
 
 
 def test_json_null_rows_abort_instead_of_becoming_empty_credentials():
@@ -94,5 +119,3 @@ def test_downgrade_aborts_on_an_unknown_key():
 
     with pytest.raises(EnvelopeError, match="row 4"):
         plan_downgrade(rows, [_key()])
-
-

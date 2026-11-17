@@ -105,16 +105,33 @@ def test_envelope_rejects_unknown_version_and_algorithm():
         decrypt_envelope({**envelope, "alg": "rot13"}, [key])
 
 
-def test_malformed_envelope_markers_are_never_treated_as_plaintext():
+def test_freeform_fields_that_resemble_envelope_names_stay_plaintext():
     cipher = CredentialCipher([_key()])
+    plaintext = [
+        {"token": "x", "v": 1},
+        {"token": "x", "alg": "HS256"},
+        {"api_key": "k", "ciphertext": "sha256"},
+        {"v": 1, "alg": "HS256"},
+        {"token": "x", "key_id": "not-a-hex-id"},
+        {"token": "x", "ciphertext": "gAAA"},
+    ]
+
+    for data in plaintext:
+        assert cipher.decrypt_data(data, allow_plaintext=True) == data
+
+
+def test_truncated_envelopes_are_never_treated_as_plaintext():
+    key = _key()
+    envelope = build_envelope({"token": "x"}, [key])
+    cipher = CredentialCipher([key])
     malformed = [
-        {"v": 1},
-        {"ciphertext": "not-a-fernet-token"},
-        {"alg": "fernet"},
-        {"key_id": "deadbeef"},
+        {k: v for k, v in envelope.items() if k != "ciphertext"},
+        {k: v for k, v in envelope.items() if k != "alg"},
+        {"v": 1, "key_id": key_id(key)},
+        {"v": 1, "ciphertext": "gAAAA-truncated"},
+        {**envelope, "ciphertext": "not-a-fernet-token"},
     ]
 
     for data in malformed:
-        with pytest.raises(CredentialEncryptionError, match="envelope fields"):
+        with pytest.raises(CredentialEncryptionError):
             cipher.decrypt_data(data, allow_plaintext=True)
-
