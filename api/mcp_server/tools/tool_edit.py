@@ -1,4 +1,4 @@
-"""MCP tools for reading and editing reusable Dograh tools."""
+"""MCP tools for reading and editing reusable Bolo tools."""
 
 from __future__ import annotations
 

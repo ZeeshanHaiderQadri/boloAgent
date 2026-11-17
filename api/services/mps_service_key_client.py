@@ -16,8 +16,8 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 
 from api.constants import (
     DEPLOYMENT_MODE,
-    DOGRAH_DEPLOYMENT_ID,
-    DOGRAH_MPS_SECRET_KEY,
+    BOLO_DEPLOYMENT_ID,
+    BOLO_MPS_SECRET_KEY,
     MPS_API_URL,
 )
 from api.db import db_client
@@ -40,7 +40,7 @@ def _log_mps_dependency_failure(
         classify_exception(
             error,
             source=ErrorSource.PLATFORM,
-            provider="dograh",
+            provider="bolo",
             error_owner="operator",
         ),
         organization_id=organization_id,
@@ -62,7 +62,7 @@ class MPSServiceKeyClient:
     async def _stack_team_id(self, organization_id: Optional[int]) -> Optional[str]:
         """The organization's Stack team id, which is how MPS keys accounts.
 
-        The same team id names the organization in every dograh deployment,
+        The same team id names the organization in every bolo deployment,
         so MPS sees one account for it wherever it reports from. OSS requests
         do not assert a team. Hosted requests must have a valid Stack team.
         """
@@ -110,8 +110,8 @@ class MPSServiceKeyClient:
 
         # Add authentication for non-OSS mode
         if DEPLOYMENT_MODE != "oss":
-            if DOGRAH_MPS_SECRET_KEY:
-                headers["X-Secret-Key"] = DOGRAH_MPS_SECRET_KEY
+            if BOLO_MPS_SECRET_KEY:
+                headers["X-Secret-Key"] = BOLO_MPS_SECRET_KEY
             if stack_team_id:
                 headers["X-Stack-Team-Id"] = stack_team_id
             if created_by:
@@ -146,9 +146,9 @@ class MPSServiceKeyClient:
     async def claim_signup_grant(
         self, *, organization_id: int, created_by: str
     ) -> dict:
-        """Called after Dograh authenticates the Stack user and selected team."""
+        """Called after Bolo authenticates the Stack user and selected team."""
         team_id = await self._stack_team_id(organization_id)
-        if DEPLOYMENT_MODE == "oss" or not team_id or not DOGRAH_MPS_SECRET_KEY:
+        if DEPLOYMENT_MODE == "oss" or not team_id or not BOLO_MPS_SECRET_KEY:
             raise ValueError("Signup grants require a hosted Stack team")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
@@ -163,18 +163,18 @@ class MPSServiceKeyClient:
         from api.services.configuration.ai_model_configuration import (
             get_resolved_ai_model_configuration,
         )
-        from api.services.managed_model_services import get_dograh_service_api_key
+        from api.services.managed_model_services import get_bolo_service_api_key
 
         if organization_id is None:
             raise HTTPException(status_code=400, detail="No organization selected")
         resolved = await get_resolved_ai_model_configuration(
             organization_id=organization_id
         )
-        service_key = get_dograh_service_api_key(resolved.effective)
+        service_key = get_bolo_service_api_key(resolved.effective)
         if service_key:
             return service_key
 
-        # Utility calls still use Dograh when the default models use other
+        # Utility calls still use Bolo when the default models use other
         # providers. Reuse an existing active connection without minting a key.
         # The catalog is scoped to this organization and ordered oldest first,
         # so the original managed connection wins when none is selected.
@@ -182,7 +182,7 @@ class MPSServiceKeyClient:
             organization_id, active_only=True
         )
         for connection in connections:
-            if connection.provider != "dograh":
+            if connection.provider != "bolo":
                 continue
             keys = connection.credentials.get("api_key")
             if isinstance(keys, str) and keys.strip():
@@ -193,7 +193,7 @@ class MPSServiceKeyClient:
                         return key
         raise HTTPException(
             status_code=400,
-            detail="Add a Dograh provider with a service key to use this feature",
+            detail="Add a Bolo provider with a service key to use this feature",
         )
 
     async def create_service_key(
@@ -265,7 +265,7 @@ class MPSServiceKeyClient:
         """Create or return the Cloudonix domain for the deployment owner.
 
         OSS allocations are scoped by ``created_by``. Hosted allocations are
-        scoped by ``organization_id`` and authenticated with the Dograh/MPS
+        scoped by ``organization_id`` and authenticated with the Bolo/MPS
         control-plane secret. No model-service key participates in ownership.
         """
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -615,7 +615,7 @@ class MPSServiceKeyClient:
             )
 
     async def get_billing_pricing(self, organization_id: int) -> dict:
-        """Return MPS-owned effective platform and Dograh model prices for an org."""
+        """Return MPS-owned effective platform and Bolo model prices for an org."""
         if DEPLOYMENT_MODE == "oss":
             raise ValueError("OSS deployments do not fetch hosted billing prices")
 
@@ -691,7 +691,7 @@ class MPSServiceKeyClient:
         """Authorize a hosted workflow run and optionally mint its MPS correlation."""
         payload = {
             "workflow_run_id": workflow_run_id,
-            "deployment_id": DOGRAH_DEPLOYMENT_ID,
+            "deployment_id": BOLO_DEPLOYMENT_ID,
             "service_key": service_key,
             "require_correlation_id": require_correlation_id,
             "metadata": metadata or {},
@@ -734,7 +734,7 @@ class MPSServiceKeyClient:
         """Authorize an OSS run using the configured service key as identity."""
         payload = {
             "workflow_run_id": workflow_run_id,
-            "deployment_id": DOGRAH_DEPLOYMENT_ID,
+            "deployment_id": BOLO_DEPLOYMENT_ID,
             "require_correlation_id": require_correlation_id,
             "metadata": metadata or {},
         }
@@ -771,7 +771,7 @@ class MPSServiceKeyClient:
         workflow_run_id: int | None = None,
     ) -> dict:
         """Mint a server-generated correlation ID for managed model services."""
-        payload: dict[str, int | str] = {"deployment_id": DOGRAH_DEPLOYMENT_ID}
+        payload: dict[str, int | str] = {"deployment_id": BOLO_DEPLOYMENT_ID}
         if workflow_run_id is not None:
             payload["workflow_run_id"] = workflow_run_id
 
@@ -810,7 +810,7 @@ class MPSServiceKeyClient:
     ) -> dict:
         """Request one billed Agent Builder completion.
 
-        Authenticate with the caller's configured Dograh Service Key. MPS owns
+        Authenticate with the caller's configured Bolo Service Key. MPS owns
         model selection, request identity, price snapshot and credit settlement.
         Return the full response, preserving provider reasoning/tool metadata.
 
@@ -825,7 +825,7 @@ class MPSServiceKeyClient:
         # Only W3C trace context; never forward baggage or caller credentials to
         # another destination. MPS remains responsible for the generation span.
         TraceContextTextMapPropagator().inject(headers)
-        # Builder-only call. The build stage can generate a full @dograh/sdk
+        # Builder-only call. The build stage can generate a full @bolo/sdk
         # workflow, which can run longer than a chat turn; keep this under the
         # 300s builder step deadline (service.py) so that stays the outer bound.
         async with httpx.AsyncClient(timeout=httpx.Timeout(290, connect=10)) as client:
@@ -853,7 +853,7 @@ class MPSServiceKeyClient:
         workflow_run_id: int | None = None,
         metadata: Optional[dict] = None,
     ) -> dict:
-        """Report hosted Dograh platform usage for a completed workflow run."""
+        """Report hosted Bolo platform usage for a completed workflow run."""
         if DEPLOYMENT_MODE == "oss":
             raise ValueError("OSS deployments must not report platform usage to MPS")
         if not correlation_id and duration_seconds is None:
@@ -862,7 +862,7 @@ class MPSServiceKeyClient:
             )
 
         payload: dict = {
-            "deployment_id": DOGRAH_DEPLOYMENT_ID,
+            "deployment_id": BOLO_DEPLOYMENT_ID,
             "metadata": metadata or {},
         }
         if correlation_id:
@@ -967,11 +967,11 @@ class MPSServiceKeyClient:
         created_by: Optional[str] = None,
     ) -> bool:
         """
-        Synchronously validate a Dograh service key by checking usage via MPS.
+        Synchronously validate a Bolo service key by checking usage via MPS.
 
         Returns True if the key is valid and False only when MPS authoritatively
         rejects the credential. Dependency failures raise ``MPSUnavailableError``
-        so callers never misreport a Dograh outage as a customer configuration error.
+        so callers never misreport a Bolo outage as a customer configuration error.
         """
         operation = "validate_service_key"
         try:
@@ -1154,7 +1154,7 @@ class MPSServiceKeyClient:
         """
         Call the MPS workflow creation API using the configured service key.
 
-        Uses the selected Dograh provider or an active saved Dograh connection.
+        Uses the selected Bolo provider or an active saved Bolo connection.
         OSS users without an organization retain legacy owner-based access.
 
         Args:

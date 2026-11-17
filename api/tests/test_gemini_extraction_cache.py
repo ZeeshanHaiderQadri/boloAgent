@@ -34,7 +34,7 @@ def response(text='{"name":"Ada"}'):
 
 @pytest.fixture(params=["google", "google_vertex"])
 def extraction_service(monkeypatch, request):
-    monkeypatch.setenv("DOGRAH_PROMPT_CACHE_DISABLED", "0")
+    monkeypatch.setenv("BOLO_PROMPT_CACHE_DISABLED", "0")
     monkeypatch.setattr(
         "api.services.pipecat.service_factory.prepare_google_credentials", AsyncMock()
     )
@@ -155,7 +155,7 @@ async def test_cache_ineligible_requests_still_report_usage(
 ):
     llm, usage, registry = extraction_service
     if reason == "disabled":
-        monkeypatch.setenv("DOGRAH_PROMPT_CACHE_DISABLED", "1")
+        monkeypatch.setenv("BOLO_PROMPT_CACHE_DISABLED", "1")
     elif reason == "dynamic":
         llm.configure_inference(
             usage=usage,

@@ -1,17 +1,17 @@
 {
-  "name": "@dograh/sdk",
+  "name": "@bolo/sdk",
   "version": "0.1.8",
-  "description": "Typed builder for Dograh voice-AI workflows",
+  "description": "Typed builder for Bolo voice-AI workflows",
   "license": "BSD-2-Clause",
   "author": "Zansat Technologies Private Limited",
-  "homepage": "https://dograh.com",
+  "homepage": "https://boloagent.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dograh-hq/dograh.git",
+    "url": "https://github.com/ZeeshanHaiderQadri/bolo.git",
     "directory": "sdk/typescript"
   },
   "keywords": [
-    "dograh",
+    "bolo",
     "voice-ai",
     "workflow",
     "sdk",

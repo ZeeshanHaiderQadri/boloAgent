@@ -21,7 +21,7 @@ describe("superadmin deployment selection", () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.dograh.com");
+        vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.boloagent.com");
         mocks.getAccessToken.mockResolvedValue("admin-access-token");
         mocks.impersonate.mockResolvedValue({ data: { refresh_token: "user-refresh-token" } });
         tab = { opener: window, location: { href: "" }, close: vi.fn() };
@@ -35,8 +35,8 @@ describe("superadmin deployment selection", () => {
     });
 
     describe.each([
-        { deployment: "Europe (EU) — eu.dograh.com", origin: "https://eu.dograh.com" },
-        { deployment: "India (IN) — in.dograh.com", origin: "https://in.dograh.com" },
+        { deployment: "Europe (EU) — eu.boloagent.com", origin: "https://eu.boloagent.com" },
+        { deployment: "India (IN) — in.boloagent.com", origin: "https://in.boloagent.com" },
     ])("$deployment", ({ deployment, origin }) => {
         it.each([
             { label: "Provider User ID", value: "provider-user", button: "Impersonate by Provider ID", body: { provider_user_id: "provider-user" } },
@@ -64,7 +64,7 @@ describe("superadmin deployment selection", () => {
         });
     });
 
-    it.each(["https://app.dograh.com", "https://staging.dograh.com", ""])(
+    it.each(["https://app.boloagent.com", "https://staging.boloagent.com", ""])(
         "preserves the default destination with NEXT_PUBLIC_APP_URL=%s",
         async (appUrl) => {
             vi.stubEnv("NEXT_PUBLIC_APP_URL", appUrl);

@@ -1,2 +1,2 @@
-dograh-sdk
+bolo-sdk
 python-dotenv

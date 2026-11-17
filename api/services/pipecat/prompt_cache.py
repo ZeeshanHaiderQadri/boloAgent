@@ -31,7 +31,7 @@ from api.constants import is_prompt_cache_disabled as cache_disabled
 TTL_SECONDS = 3600
 EXPIRY_MARGIN_SECONDS = 30
 INFERENCE_PREPARE_TIMEOUT_SECONDS = 2
-_counter = metrics.get_meter(__name__).create_counter("dograh.prompt_cache.operations")
+_counter = metrics.get_meter(__name__).create_counter("bolo.prompt_cache.operations")
 _RELEASE = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0"
 _INVALIDATE = """
 redis.call('SET', KEYS[2], '1', 'EX', ARGV[2])
@@ -82,19 +82,19 @@ class CacheSpec:
             separators=(",", ":"),
             ensure_ascii=False,
         )
-        return "dograh:prompt-cache:" + hashlib.sha256(encoded.encode()).hexdigest()
+        return "bolo:prompt-cache:" + hashlib.sha256(encoded.encode()).hexdigest()
 
     @property
     def display_name(self) -> str:
         # Keep arbitrary editor node IDs out of the provider name/length budget.
         node = hashlib.sha256(self.node_id.encode()).hexdigest()[:8]
-        return f"dograh-{self.organization_id}-{self.workflow_id}-{node}-{self.key.rsplit(':', 1)[-1][:24]}"
+        return f"bolo-{self.organization_id}-{self.workflow_id}-{node}-{self.key.rsplit(':', 1)[-1][:24]}"
 
     @property
     def model_key(self) -> str:
         scope = json.dumps([self.organization_id, self.scope, self.model])
         return (
-            "dograh:prompt-cache:unsupported:"
+            "bolo:prompt-cache:unsupported:"
             + hashlib.sha256(scope.encode()).hexdigest()
         )
 

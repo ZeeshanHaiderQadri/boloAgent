@@ -1,4 +1,4 @@
-"""LangGraph checkpoints through Dograh's SQLAlchemy/asyncpg database layer.
+"""LangGraph checkpoints through Bolo's SQLAlchemy/asyncpg database layer.
 
 The tables and wire format match langgraph-checkpoint-postgres 3.1.2. Schema
 changes belong in Alembic. The async saver uses LangGraph's serializer and base

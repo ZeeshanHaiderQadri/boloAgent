@@ -101,7 +101,7 @@ class ServiceProviders(str, Enum):
     GOOGLE = "google"
     AZURE = "azure"
     AZURE_SPEECH = "azure_speech"
-    DOGRAH = "dograh"
+    BOLO = "bolo"
     SARVAM = "sarvam"
     SPEECHMATICS = "speechmatics"
     CAMB = "camb"
@@ -165,7 +165,7 @@ class BaseServiceConfiguration(BaseModel):
         ServiceProviders.GOOGLE,
         ServiceProviders.AZURE,
         ServiceProviders.AZURE_SPEECH,
-        ServiceProviders.DOGRAH,
+        ServiceProviders.BOLO,
         ServiceProviders.AWS_BEDROCK,
         ServiceProviders.SPEACHES,
         ServiceProviders.HUGGINGFACE,
@@ -425,7 +425,7 @@ GOOGLE_PROVIDER = Provider("google", "Google")
 GROQ_PROVIDER = Provider("groq", "Groq")
 OPENROUTER_PROVIDER = Provider("openrouter", "Open Router")
 AZURE_OPENAI_PROVIDER = Provider("azure", "Azure OpenAI")
-DOGRAH_PROVIDER = Provider("dograh", "Dograh")
+BOLO_PROVIDER = Provider("bolo", "Bolo")
 AWS_BEDROCK_PROVIDER = Provider("aws_bedrock", "AWS Bedrock")
 GOOGLE_VERTEX_PROVIDER = Provider("google_vertex", "Google Vertex")
 GROK_REALTIME_PROVIDER = Provider("grok_realtime", "Grok")
@@ -529,7 +529,7 @@ OPENROUTER_MODELS = [
     "meta-llama/llama-3.3-70b-instruct",
     "deepseek/deepseek-chat-v3-0324",
 ]
-DOGRAH_LLM_MODELS = ["default", "accurate", "fast", "lite", "zen"]
+BOLO_LLM_MODELS = ["default", "accurate", "fast", "lite", "zen"]
 AWS_BEDROCK_MODELS = [
     "us.amazon.nova-pro-v1:0",
     "us.amazon.nova-lite-v1:0",
@@ -694,16 +694,16 @@ class AzureLLMService(BaseChatLLMConfiguration):
     )
 
 
-@register_llm(provider=DOGRAH_PROVIDER)
-class DograhLLMService(BaseChatLLMConfiguration):
-    temperature: float | None = temperature_field("dograh", None)
-    provider: Literal[ServiceProviders.DOGRAH] = ServiceProviders.DOGRAH
+@register_llm(provider=BOLO_PROVIDER)
+class BoloLLMService(BaseChatLLMConfiguration):
+    temperature: float | None = temperature_field("bolo", None)
+    provider: Literal[ServiceProviders.BOLO] = ServiceProviders.BOLO
     model: str = Field(
         default="default",
         title="LLM model",
-        description="Dograh-hosted model tier.",
+        description="Bolo-hosted model tier.",
         json_schema_extra={
-            "examples": DOGRAH_LLM_MODELS,
+            "examples": BOLO_LLM_MODELS,
             "option_labels": {"default": "default (recommended)"},
             "allow_custom_input": True,
         },
@@ -1240,7 +1240,7 @@ LLMConfig = Annotated[
         OpenRouterLLMConfiguration,
         GoogleLLMService,
         AzureLLMService,
-        DograhLLMService,
+        BoloLLMService,
         AWSBedrockLLMConfiguration,
         SpeachesLLMConfiguration,
         HuggingFaceLLMConfiguration,
@@ -1401,7 +1401,7 @@ class MurfTTSConfiguration(BaseTTSConfiguration):
         ),
         json_schema_extra={
             "allow_custom_input": True,
-            "docs_url": "https://murf.ai/api/dashboard?utm_source=dograh",
+            "docs_url": "https://murf.ai/api/dashboard?utm_source=bolo",
             "docs_label": "here",
         },
     )
@@ -1410,7 +1410,7 @@ class MurfTTSConfiguration(BaseTTSConfiguration):
         description=("Must be a locale your chosen voice supports, see the "),
         json_schema_extra={
             "allow_custom_input": True,
-            "docs_url": "https://murf.ai/api/dashboard?utm_source=dograh",
+            "docs_url": "https://murf.ai/api/dashboard?utm_source=bolo",
             "docs_label": "Voice Library",
         },
     )
@@ -1489,7 +1489,7 @@ class GoogleTTSConfiguration(BaseTTSConfiguration):
     model: str = Field(
         default="chirp_3_hd",
         description=(
-            "Google Cloud low-latency TTS engine. Dograh maps this to Pipecat's "
+            "Google Cloud low-latency TTS engine. Bolo maps this to Pipecat's "
             "streaming Google TTS service for Chirp 3 HD and Journey voices."
         ),
         json_schema_extra={
@@ -1561,16 +1561,16 @@ class OpenAITTSService(BaseTTSConfiguration):
     )
 
 
-DOGRAH_TTS_MODELS = ["default"]
+BOLO_TTS_MODELS = ["default"]
 
 
-@register_tts(provider=DOGRAH_PROVIDER)
-class DograhTTSService(BaseTTSConfiguration):
-    provider: Literal[ServiceProviders.DOGRAH] = ServiceProviders.DOGRAH
+@register_tts(provider=BOLO_PROVIDER)
+class BoloTTSService(BaseTTSConfiguration):
+    provider: Literal[ServiceProviders.BOLO] = ServiceProviders.BOLO
     model: str = Field(
         default="default",
-        description="Dograh TTS tier.",
-        json_schema_extra={"examples": DOGRAH_TTS_MODELS},
+        description="Bolo TTS tier.",
+        json_schema_extra={"examples": BOLO_TTS_MODELS},
     )
     voice: str = Field(
         default="default",
@@ -1839,7 +1839,7 @@ class MiniMaxTTSConfiguration(BaseTTSConfiguration):
         description=(
             "How MiniMax rewrites numbers, dates, times and symbols as words before "
             "speaking them. 'basic' is rule-based. MiniMax treats 'quality' as "
-            "'basic' over the streaming WebSocket connection Dograh uses. Leave "
+            "'basic' over the streaming WebSocket connection Bolo uses. Leave "
             "blank to send the text as written."
         ),
         json_schema_extra={"examples": ["basic", "quality"]},
@@ -1850,7 +1850,7 @@ class MiniMaxTTSConfiguration(BaseTTSConfiguration):
             "Pronunciation replacements MiniMax applies to every reply, one per "
             "entry as 'original/replacement'. The replacement is plain text "
             "('ASAP/as soon as possible') or IPA in parentheses "
-            "('Dograh/(ˈdoʊɡrɑː)')."
+            "('Bolo/(ˈdoʊɡrɑː)')."
         ),
     )
     group_id: str = Field(
@@ -2086,7 +2086,7 @@ TTSConfig = Annotated[
         ElevenlabsTTSConfiguration,
         CartesiaTTSConfiguration,
         InworldTTSConfiguration,
-        DograhTTSService,
+        BoloTTSService,
         SarvamTTSConfiguration,
         CambTTSConfiguration,
         RimeTTSConfiguration,
@@ -2252,27 +2252,27 @@ class GoogleSTTConfiguration(BaseSTTConfiguration):
     )
 
 
-# Dograh STT Service
-DOGRAH_STT_MODELS = ["default"]
-DOGRAH_STT_LANGUAGES = DEEPGRAM_LANGUAGES
-# Languages auto-detected when the Dograh STT language is "multi". Dograh STT runs
+# Bolo STT Service
+BOLO_STT_MODELS = ["default"]
+BOLO_STT_LANGUAGES = DEEPGRAM_LANGUAGES
+# Languages auto-detected when the Bolo STT language is "multi". Bolo STT runs
 # Deepgram Flux multilingual under the hood, which only auto-detects this subset —
-# not the full DOGRAH_STT_LANGUAGES list offered for explicit single-language selection.
-DOGRAH_MULTILINGUAL_AUTODETECT_LANGUAGES = DEEPGRAM_FLUX_MULTILINGUAL_LANGUAGES
+# not the full BOLO_STT_LANGUAGES list offered for explicit single-language selection.
+BOLO_MULTILINGUAL_AUTODETECT_LANGUAGES = DEEPGRAM_FLUX_MULTILINGUAL_LANGUAGES
 
 
-@register_stt(provider=DOGRAH_PROVIDER)
-class DograhSTTService(BaseSTTConfiguration):
-    provider: Literal[ServiceProviders.DOGRAH] = ServiceProviders.DOGRAH
+@register_stt(provider=BOLO_PROVIDER)
+class BoloSTTService(BaseSTTConfiguration):
+    provider: Literal[ServiceProviders.BOLO] = ServiceProviders.BOLO
     model: str = Field(
         default="default",
-        description="Dograh STT tier.",
-        json_schema_extra={"examples": DOGRAH_STT_MODELS},
+        description="Bolo STT tier.",
+        json_schema_extra={"examples": BOLO_STT_MODELS},
     )
     language: str = Field(
         default="multi",
         description="Language code; use 'multi' for auto-detect, optionally guided by language hints.",
-        json_schema_extra={"examples": DOGRAH_STT_LANGUAGES},
+        json_schema_extra={"examples": BOLO_STT_LANGUAGES},
     )
     language_hints: list[str] = Field(
         default_factory=list,
@@ -2575,7 +2575,7 @@ STTConfig = Annotated[
         CartesiaSTTConfiguration,
         OpenAISTTConfiguration,
         GoogleSTTConfiguration,
-        DograhSTTService,
+        BoloSTTService,
         SpeechmaticsSTTConfiguration,
         SarvamSTTConfiguration,
         SpeachesSTTConfiguration,
@@ -2646,16 +2646,16 @@ class AzureOpenAIEmbeddingsConfiguration(BaseEmbeddingsConfiguration):
     )
 
 
-DOGRAH_EMBEDDING_MODELS = ["dograh_embedding_v1"]
+BOLO_EMBEDDING_MODELS = ["bolo_embedding_v1"]
 
 
-@register_embeddings(provider=DOGRAH_PROVIDER)
-class DograhEmbeddingsConfiguration(BaseEmbeddingsConfiguration):
-    provider: Literal[ServiceProviders.DOGRAH] = ServiceProviders.DOGRAH
+@register_embeddings(provider=BOLO_PROVIDER)
+class BoloEmbeddingsConfiguration(BaseEmbeddingsConfiguration):
+    provider: Literal[ServiceProviders.BOLO] = ServiceProviders.BOLO
     model: str = Field(
-        default="dograh_embedding_v1",
-        description="Dograh-managed embedding model.",
-        json_schema_extra={"examples": DOGRAH_EMBEDDING_MODELS},
+        default="bolo_embedding_v1",
+        description="Bolo-managed embedding model.",
+        json_schema_extra={"examples": BOLO_EMBEDDING_MODELS},
     )
 
 
@@ -2664,7 +2664,7 @@ EmbeddingsConfig = Annotated[
         OpenAIEmbeddingsConfiguration,
         OpenRouterEmbeddingsConfiguration,
         AzureOpenAIEmbeddingsConfiguration,
-        DograhEmbeddingsConfiguration,
+        BoloEmbeddingsConfiguration,
     ],
     Field(discriminator="provider"),
 ]

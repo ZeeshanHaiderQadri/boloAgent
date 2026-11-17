@@ -1,6 +1,6 @@
-"""Dograh subclass of pipecat's Grok Realtime LLM service.
+"""Bolo subclass of pipecat's Grok Realtime LLM service.
 
-Layers Dograh engine integration quirks onto upstream-pristine
+Layers Bolo engine integration quirks onto upstream-pristine
 :class:`GrokRealtimeLLMService`. Grok already supports runtime session updates,
 so this wrapper stays close to the OpenAI realtime shim.
 
@@ -12,12 +12,12 @@ Adds:
 - **TTSSpeakFrame as initial-response trigger** so the engine's greeting
   flow kicks off the bot's first response.
 - **One-off LLMMessagesAppendFrame handling** for ephemeral realtime prompts
-  like user-idle checks, without mutating Dograh's local ``LLMContext``.
+  like user-idle checks, without mutating Bolo's local ``LLMContext``.
 - **Workflow-control deferral** so node transitions, call termination, and
   transfers wait for any current bot audio to finish while ordinary tools run
   immediately.
 - **Final transcripts only in context**, with ``finalized=True`` for parity
-  with Dograh's other realtime providers; provisional snapshots remain interim.
+  with Bolo's other realtime providers; provisional snapshots remain interim.
 """
 
 import json
@@ -49,13 +49,13 @@ from pipecat.services.xai.realtime.llm import GrokRealtimeLLMService
 from pipecat.utils.time import time_now_iso8601
 
 
-class DograhGrokRealtimeLLMService(
+class BoloGrokRealtimeLLMService(
     BackgroundConnectionMixin,
     RealtimeConversationMixin,
     RealtimeResponseLifecycleMixin,
     GrokRealtimeLLMService,
 ):
-    """Grok Realtime with Dograh engine integration quirks."""
+    """Grok Realtime with Bolo engine integration quirks."""
 
     _workflow_tools_follow_voice_response = False
 

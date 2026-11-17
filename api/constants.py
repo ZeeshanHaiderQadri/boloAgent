@@ -64,7 +64,7 @@ REDIS_URL = os.environ["REDIS_URL"]
 
 def is_prompt_cache_disabled() -> bool:
     """Global kill switch, checked before cache creation or attachment."""
-    return os.getenv("DOGRAH_PROMPT_CACHE_DISABLED", "").lower() in {"1", "true"}
+    return os.getenv("BOLO_PROMPT_CACHE_DISABLED", "").lower() in {"1", "true"}
 
 
 DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "oss")
@@ -79,12 +79,15 @@ ENABLE_SIGNUP = os.getenv("ENABLE_SIGNUP", "true").lower() == "true"
 # needs them baked into the bundle at build time.
 STACK_AUTH_PROJECT_ID = os.getenv("STACK_AUTH_PROJECT_ID")
 STACK_PUBLISHABLE_CLIENT_KEY = os.getenv("STACK_PUBLISHABLE_CLIENT_KEY")
-DOGRAH_MPS_SECRET_KEY = os.getenv("DOGRAH_MPS_SECRET_KEY", None)
+BOLO_MPS_SECRET_KEY = os.getenv("BOLO_MPS_SECRET_KEY", None)
+# Host of the upstream Dograh Managed Platform Services (MPS). This is an
+# external service that Bolo consumes; it is not part of this repository.
+# Override it to use a self-hosted MPS deployment instead.
 MPS_API_URL = os.getenv("MPS_API_URL", "https://services.dograh.com")
-DOGRAH_DEPLOYMENT_ID = os.getenv(
-    "DOGRAH_DEPLOYMENT_ID", "oss" if DEPLOYMENT_MODE == "oss" else "us"
+BOLO_DEPLOYMENT_ID = os.getenv(
+    "BOLO_DEPLOYMENT_ID", "oss" if DEPLOYMENT_MODE == "oss" else "us"
 )
-DOGRAH_DEVOPS_SECRET = os.getenv("DOGRAH_DEVOPS_SECRET") or None
+BOLO_DEVOPS_SECRET = os.getenv("BOLO_DEVOPS_SECRET") or None
 ENABLE_PROMETHEUS_METRICS = (
     os.getenv("ENABLE_PROMETHEUS_METRICS", "false").lower() == "true"
 )

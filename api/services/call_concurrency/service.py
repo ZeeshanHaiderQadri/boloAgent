@@ -159,7 +159,7 @@ class CallConcurrencyService:
                     f"{scope_note}, waited={wait_time:.1f}s"
                 )
                 properties = {
-                    "event_source": "dograh",
+                    "event_source": "bolo",
                     "source": _without_ids(source),
                     "max_concurrent": max_concurrent,
                     "active_calls": current_count,

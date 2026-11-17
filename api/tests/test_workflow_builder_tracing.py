@@ -28,9 +28,9 @@ def _captured_traces(monkeypatch):
     provider.add_span_processor(_OrgAttributeSpanProcessor())
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     monkeypatch.setattr(
-        tracing, "_TRACER", provider.get_tracer("dograh.workflow_builder")
+        tracing, "_TRACER", provider.get_tracer("bolo.workflow_builder")
     )
-    monkeypatch.setattr(mcp_tracing, "_TRACER", provider.get_tracer("dograh.mcp"))
+    monkeypatch.setattr(mcp_tracing, "_TRACER", provider.get_tracer("bolo.mcp"))
     yield exporter
     provider.shutdown()
 
@@ -78,14 +78,14 @@ async def test_concurrent_tool_calls_join_scoped_turns_and_keep_full_previews(
         assert child.attributes["user.id"] == "5"
         assert (
             child.attributes["mcp.org_id"]
-            == root.attributes["langfuse.observation.metadata.dograh_organization_id"]
+            == root.attributes["langfuse.observation.metadata.bolo_organization_id"]
         )
         assert (
             json.loads(child.attributes["langfuse.observation.output"])["code"]
             == payload["code"]
         )
         assert "langfuse.trace.name" not in child.attributes
-        assert child.attributes["dograh.org_id"] == root.attributes["dograh.org_id"]
+        assert child.attributes["bolo.org_id"] == root.attributes["bolo.org_id"]
     assert len({root.attributes["session.id"] for root in roots.values()}) == 2
 
 
@@ -191,8 +191,8 @@ def test_exporter_filters_sdk_noise_but_keeps_authoring_spans():
         for name in (
             "fastmcp",
             "mcp-python-sdk",
-            "dograh.mcp",
-            "dograh.workflow_builder",
+            "bolo.mcp",
+            "bolo.workflow_builder",
         )
     ]
     assert _OrgRoutingExporter(destination).export(spans) == SpanExportResult.SUCCESS

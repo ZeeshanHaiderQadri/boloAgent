@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from api.constants import DOGRAH_DEPLOYMENT_ID
+from api.constants import BOLO_DEPLOYMENT_ID
 from api.db import db_client
 from api.services.posthog_client import (
     POSTHOG_ACCOUNT_GROUP_TYPE,
@@ -53,7 +53,7 @@ async def tenant_properties(organization_id: Optional[int]) -> dict[str, Any]:
     Never raises: callers send events after their own writes commit, so a
     failed lookup only leaves the provider id off the event.
     """
-    properties: dict[str, Any] = {"deployment_id": DOGRAH_DEPLOYMENT_ID}
+    properties: dict[str, Any] = {"deployment_id": BOLO_DEPLOYMENT_ID}
     if organization_id is None or get_posthog() is None:
         return properties
     try:

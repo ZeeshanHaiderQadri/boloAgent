@@ -269,7 +269,7 @@ async def test_open_existing_workflow_retains_session_in_json_and_preserves_meta
     await async_session.flush()
     old_session = uuid4()
     workflow_uuid = (
-        str(uuid5(NAMESPACE_URL, f"dograh-builder:{org.id}:{user.id}:{old_session}"))
+        str(uuid5(NAMESPACE_URL, f"bolo-builder:{org.id}:{user.id}:{old_session}"))
         if legacy_builder
         else str(uuid4())
     )

@@ -1,4 +1,4 @@
-"""MCP interface policy composed with Dograh's shared authoring instructions.
+"""MCP interface policy composed with Bolo's shared authoring instructions.
 
 FastMCP sends these instructions at initialization; the host decides how to use
 them. They are guidance, not enforcement. Shared stage guidance and syntax are
@@ -58,4 +58,4 @@ resubmit the complete source; these tools do not accept patches. Retry an
 internal or transient failure once before explaining it to the user.
 """
 
-DOGRAH_MCP_INSTRUCTIONS = render_authoring_instructions(_MCP_INTERFACE_INSTRUCTIONS)
+BOLO_MCP_INSTRUCTIONS = render_authoring_instructions(_MCP_INTERFACE_INSTRUCTIONS)

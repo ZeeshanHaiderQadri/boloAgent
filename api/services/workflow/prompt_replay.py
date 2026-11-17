@@ -32,7 +32,7 @@ from pipecat.services.settings import LLMSettings
 from api.db import db_client
 from api.services.configuration.model_connections import resolve_model_configuration
 from api.services.gen_ai.json_parser import parse_llm_json
-from api.services.pipecat.pipeline_worker import DograhPipelineWorker
+from api.services.pipecat.pipeline_worker import BoloPipelineWorker
 from api.services.pipecat.service_factory import create_llm_service
 from api.services.pipecat.usage_metrics import gross_prompt_tokens
 from api.services.pipecat.worker_runner import run_pipeline_worker
@@ -251,7 +251,7 @@ class ReplayCapture(FrameProcessor):
 
 async def run_replay_inference(llm, context):
     capture = ReplayCapture()
-    worker = DograhPipelineWorker(
+    worker = BoloPipelineWorker(
         Pipeline([llm, capture]),
         params=PipelineParams(enable_metrics=True, enable_usage_metrics=True),
         enable_rtvi=False,

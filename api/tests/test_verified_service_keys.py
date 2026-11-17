@@ -341,7 +341,7 @@ async def test_transcription_uses_configured_key_and_server_correlation(
 
 async def test_signup_grant_passes_trusted_team_and_actor(monkeypatch):
     monkeypatch.setattr(client_module, "DEPLOYMENT_MODE", "saas")
-    monkeypatch.setattr(client_module, "DOGRAH_MPS_SECRET_KEY", "secret")
+    monkeypatch.setattr(client_module, "BOLO_MPS_SECRET_KEY", "secret")
     monkeypatch.setattr(
         client_module.db_client,
         "get_organization_by_id",

@@ -29,8 +29,8 @@ from api.tests.test_workflow_builder_tracing import _captured_traces  # noqa: F4
 
 pytestmark = pytest.mark.usefixtures("builder_execution")
 
-VALID_CODE = """import { Workflow } from "@dograh/sdk";
-import { startCall, agentNode, endCall } from "@dograh/sdk/typed";
+VALID_CODE = """import { Workflow } from "@bolo/sdk";
+import { startCall, agentNode, endCall } from "@bolo/sdk/typed";
 const wf = new Workflow({ name: "Receptionist" });
 const start = wf.addTyped(startCall({ name: "Welcome", prompt: "Greet the caller." }));
 const qualify = wf.addTyped(agentNode({ name: "Qualify", prompt: "Ask for the caller's name." }));
@@ -312,7 +312,7 @@ async def test_stream_preserves_mps_error_code_status_and_trace(
     failure = classify_exception(
         ConnectError("private upstream details"),
         source=ErrorSource.LLM,
-        provider="dograh",
+        provider="bolo",
     )
     monkeypatch.setattr(
         builder, "builder_step", AsyncMock(side_effect=BuilderModelError(failure))
@@ -335,7 +335,7 @@ async def test_stream_preserves_mps_error_code_status_and_trace(
         "type": "error",
         "message": MPS_UNAVAILABLE_PUBLIC_MESSAGE,
         "status_code": 503,
-        "error_code": "dograh-connection",
+        "error_code": "bolo-connection",
         "retryable": True,
         "upstream_status_code": None,
     }
@@ -345,7 +345,7 @@ async def test_stream_preserves_mps_error_code_status_and_trace(
         for span in captured_traces.get_finished_spans()
         if span.name == "workflow_builder.turn"
     )
-    assert root.attributes["builder.error_code"] == "dograh-connection"
+    assert root.attributes["builder.error_code"] == "bolo-connection"
     assert root.attributes["builder.status_code"] == 503
     assert root.attributes["builder.retryable"] is True
 
@@ -587,7 +587,7 @@ async def test_local_builder_routes_inference_and_builds_a_real_preview(
     from api.services import mps_service_key_client as mps_client_module
     from api.services.auth.depends import get_user
     from api.services.configuration import model_connections
-    from api.services.configuration.registry import DograhLLMService
+    from api.services.configuration.registry import BoloLLMService
     from api.services.workflow.builder_runtime import service as runtime
     from api.services.workflow.builder_runtime.agent import builder_instructions
 
@@ -601,7 +601,7 @@ async def test_local_builder_routes_inference_and_builds_a_real_preview(
     config = AsyncMock(
         return_value=SimpleNamespace(
             effective=EffectiveAIModelConfiguration(
-                llm=DograhLLMService(api_key="org-service-key")
+                llm=BoloLLMService(api_key="org-service-key")
             ),
         )
     )
@@ -641,7 +641,7 @@ async def test_local_builder_routes_inference_and_builds_a_real_preview(
     def complete(request):
         assert request.headers["Authorization"] == "Bearer org-service-key"
         assert request.url.path == "/api/v1/agent-builder/chat/completions"
-        assert "X-Dograh-Usage-Context" not in request.headers
+        assert "X-Bolo-Usage-Context" not in request.headers
         body = json.loads(request.content)
         assert body["metadata"]["usage_context"] == "workflow_builder"
         assert "correlation_id" not in body["metadata"]
@@ -843,7 +843,7 @@ async def test_builder_stream_directs_unconfigured_org_to_model_configurations(
     assert response.status_code == 200
     assert {key: value for key, value in events[-1].items() if key != "seq"} == {
         "type": "error",
-        "message": "Agent builder is currently only supported with a Dograh Service Key. Set it in /model-configurations.",
+        "message": "Agent builder is currently only supported with a Bolo Service Key. Set it in /model-configurations.",
         "status_code": 400,
     }
     config.assert_awaited_once_with(

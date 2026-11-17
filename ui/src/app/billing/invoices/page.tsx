@@ -32,7 +32,7 @@ import { formatDate } from "@/lib/dateTime";
 // Payments from before automatic invoicing were invoiced by hand; customers
 // ask for those by email. Shown rather than linked: mailto links do nothing
 // for people without an email app.
-const INVOICE_REQUEST_EMAIL = "founders@dograh.com";
+const INVOICE_REQUEST_EMAIL = "founders@boloagent.com";
 
 // Amounts arrive in the currency's minor unit: cents, paise, or whole yen.
 const formatAmount = (amountMinor: number, currency: string) => {
@@ -137,12 +137,12 @@ export default function InvoicesPage() {
                 <p className="text-muted-foreground">
                     Invoices for credits bought on{" "}
                     <a
-                        href="https://app.dograh.com/billing/invoices"
+                        href="https://app.boloagent.com/billing/invoices"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="font-medium text-foreground underline underline-offset-2"
                     >
-                        app.dograh.com
+                        app.boloagent.com
                     </a>{" "}
                     are available there.
                 </p>

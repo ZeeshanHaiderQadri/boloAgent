@@ -6,8 +6,8 @@ from pipecat.frames.frames import InputAudioRawFrame
 from pipecat.processors.audio.audio_buffer_processor import AudioBufferProcessor
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
-_CAPTURE_ONLY = "dograh_opening_capture_only"
-_CAPTURED = "dograh_opening_audio_captured"
+_CAPTURE_ONLY = "bolo_opening_capture_only"
+_CAPTURED = "bolo_opening_audio_captured"
 
 
 class CallAudioBufferProcessor(AudioBufferProcessor):

@@ -48,83 +48,85 @@
 
 :root {
   --radius: 0.625rem;
+  /* Bolo "Teal Green" palette.
+     primary / accent / ring / charts all sit on the teal-green hue wheel
+     (~165-195deg) so the whole product reads as one colour system. */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.18 0.015 176);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.18 0.015 176);
+  --primary: oklch(0.52 0.088 176);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.96 0.02 176);
+  --secondary-foreground: oklch(0.32 0.05 176);
+  --muted: oklch(0.96 0.012 176);
+  --muted-foreground: oklch(0.52 0.02 176);
+  --accent: oklch(0.94 0.035 175);
+  --accent-foreground: oklch(0.3 0.055 176);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --border: oklch(0.9 0.012 176);
+  --input: oklch(0.9 0.012 176);
+  --ring: oklch(0.58 0.09 176);
+  --chart-1: oklch(0.58 0.1 176);
+  --chart-2: oklch(0.66 0.12 163);
+  --chart-3: oklch(0.52 0.08 195);
+  --chart-4: oklch(0.72 0.13 150);
+  --chart-5: oklch(0.48 0.07 200);
+  --sidebar: oklch(0.99 0.003 176);
+  --sidebar-foreground: oklch(0.22 0.02 176);
+  --sidebar-primary: oklch(0.52 0.088 176);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.95 0.03 175);
+  --sidebar-accent-foreground: oklch(0.3 0.055 176);
+  --sidebar-border: oklch(0.9 0.012 176);
+  --sidebar-ring: oklch(0.58 0.09 176);
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  /* Single restrained warm accent — used only on primary CTAs + focus rings. */
-  --cta: oklch(0.72 0.15 65);
-  --cta-foreground: oklch(0.16 0.02 60);
-  /* Giant faded "dograh" wordmark (authentic Proxima Nova letterforms traced
-     from the brand logo PNG — the font is commercial, so the lettering ships
-     as static artwork in /public; fill + 0.9% opacity are baked into the
-     files). Theme-switched here; consumed by .app-surface and .auth-imprint. */
-  --brand-imprint: url("/brand-imprint-light.svg");
+  --foreground: oklch(0.18 0.015 176);
+  /* Single restrained teal-green accent — used only on primary CTAs + focus rings. */
+  --cta: oklch(0.72 0.13 168);
+  --cta-foreground: oklch(0.17 0.03 176);
+  /* Giant faded "bolo" wordmark (the lettering ships as static artwork in
+     /public; fill + low opacity are baked into the files). Theme-switched here;
+     consumed by .app-surface and .auth-imprint. */
+  --brand-imprint: url("/brand-imprint-light.png");
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.16 0.012 176);
+  --foreground: oklch(0.97 0.005 176);
+  --card: oklch(0.21 0.014 176);
+  --card-foreground: oklch(0.97 0.005 176);
+  --popover: oklch(0.21 0.014 176);
+  --popover-foreground: oklch(0.97 0.005 176);
+  --primary: oklch(0.72 0.12 172);
+  --primary-foreground: oklch(0.16 0.03 175);
+  --secondary: oklch(0.28 0.016 176);
+  --secondary-foreground: oklch(0.97 0.005 176);
+  --muted: oklch(0.28 0.016 176);
+  --muted-foreground: oklch(0.7 0.02 176);
+  --accent: oklch(0.3 0.035 175);
+  --accent-foreground: oklch(0.95 0.02 175);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.65 0.1 172);
+  --chart-1: oklch(0.7 0.12 172);
+  --chart-2: oklch(0.74 0.13 155);
+  --chart-3: oklch(0.66 0.09 195);
+  --chart-4: oklch(0.78 0.13 145);
+  --chart-5: oklch(0.58 0.07 205);
+  --sidebar: oklch(0.21 0.014 176);
+  --sidebar-foreground: oklch(0.97 0.005 176);
+  --sidebar-primary: oklch(0.72 0.12 172);
+  --sidebar-primary-foreground: oklch(0.16 0.03 175);
+  --sidebar-accent: oklch(0.29 0.035 175);
+  --sidebar-accent-foreground: oklch(0.95 0.02 175);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-  /* Warm accent, slightly brighter against the near-black surfaces. */
-  --cta: oklch(0.78 0.16 67);
-  --cta-foreground: oklch(0.16 0.02 60);
-  --brand-imprint: url("/brand-imprint-dark.svg");
+  --sidebar-ring: oklch(0.65 0.1 172);
+  /* Teal accent, slightly brighter against the near-black surfaces. */
+  --cta: oklch(0.76 0.14 168);
+  --cta-foreground: oklch(0.16 0.03 175);
+  --brand-imprint: url("/brand-imprint-dark.png");
 }
 
 @layer base {
@@ -151,7 +153,7 @@
 }
 
 /* Attention pulse applied by OnboardingTooltip to the element its arrow points
-   at; removed automatically when the tooltip is dismissed. Blue matches the
+   at; removed automatically when the tooltip is dismissed. Teal matches the
    tooltip body so the ring and the callout read as one unit. Two shadow layers:
    a constant outline so the target stays highlighted between pulses, plus an
    expanding wave, with a slight breathing scale on top. */
@@ -162,8 +164,8 @@
 @keyframes onboarding-pulse {
   0% {
     box-shadow:
-      0 0 0 3px rgba(59, 130, 246, 0.75),
-      0 0 0 3px rgba(59, 130, 246, 0.6);
+      0 0 0 3px rgba(13, 148, 136, 0.75),
+      0 0 0 3px rgba(13, 148, 136, 0.6);
     transform: scale(1);
   }
   40% {
@@ -171,21 +173,21 @@
   }
   70% {
     box-shadow:
-      0 0 0 3px rgba(59, 130, 246, 0.75),
-      0 0 0 18px rgba(59, 130, 246, 0);
+      0 0 0 3px rgba(13, 148, 136, 0.75),
+      0 0 0 18px rgba(13, 148, 136, 0);
     transform: scale(1);
   }
   100% {
     box-shadow:
-      0 0 0 3px rgba(59, 130, 246, 0.75),
-      0 0 0 18px rgba(59, 130, 246, 0);
+      0 0 0 3px rgba(13, 148, 136, 0.75),
+      0 0 0 18px rgba(13, 148, 136, 0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .onboarding-pulse {
     animation: none;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.6);
   }
 }
 
@@ -232,13 +234,13 @@
 
   /* Matte app background — flat charcoal (dark) / soft paper (light), NO
      gradients, with one subtle graphic in BOTH themes: the giant faded
-     "dograh" wordmark (--brand-imprint, defined in :root/.dark) pinned to
-     the bottom of the viewport, echoing the dograh.com footer. */
+     "bolo" wordmark (--brand-imprint, defined in :root/.dark) pinned to
+     the bottom of the viewport, echoing the boloagent.com footer. */
   /* NOTE: background-attachment: fixed positions in VIEWPORT space but only
      paints inside .app-surface, which starts right of the ~270px sidebar —
      the +135px x-shift recentres the wordmark on the VISIBLE canvas. */
   .app-surface {
-    background-color: oklch(0.984 0.001 80);
+    background-color: oklch(0.985 0.004 175);
     background-image: var(--brand-imprint);
     background-size: min(68vw, 980px) auto;
     background-position: calc(50% + 135px) calc(100% - 24px);
@@ -252,10 +254,10 @@
     }
   }
   .dark .app-surface {
-    background-color: oklch(0.165 0.002 80);
+    background-color: oklch(0.165 0.008 176);
   }
 
-  /* Giant faded "dograh" imprint for the auth pages (applied to the AuthShell
+  /* Giant faded "bolo" imprint for the auth pages (applied to the AuthShell
      form column, shared by Stack + OSS login/signup). Same --brand-imprint as
      .app-surface; element-relative here (no fixed attachment), so it centers
      and scales to whatever element carries the class. */
@@ -314,7 +316,7 @@
    a 1px highlight line plus an inner bloom fading rightwards. */
 .dark .app-sidebar-dock [data-slot="sidebar-inner"] {
   border-color: rgb(255 255 255 / 0.1);
-  background-color: oklch(0.18 0.002 80);
+  background-color: oklch(0.18 0.008 176);
   box-shadow:
     inset 1px 0 0 rgb(255 255 255 / 0.1),
     inset 3px 0 6px -4px rgb(255 255 255 / 0.08),
@@ -342,7 +344,7 @@
    amber underline on focus. Applied by LeadModalShell; CaptchaChallenge
    reuses slab + underline. */
 .dark .lead-form-slab {
-  background-color: oklch(0.215 0 0);
+  background-color: oklch(0.215 0.01 176);
   border-color: rgb(255 255 255 / 0.1);
 }
 /* Muted, compact labels — the big white default labels read amateurish. */
@@ -392,7 +394,7 @@
   border-bottom-color: var(--cta);
 }
 
-/* Event banner (Dograh Cloud only, NEXT_PUBLIC_EVENT_BANNER=1). The bar is
+/* Event banner (Bolo Cloud only, NEXT_PUBLIC_EVENT_BANNER=1). The bar is
    sticky at top-0 in the root layout, so while it is up it permanently owns
    --event-banner-h pixels at the top of the viewport. Two things have to give
    way, and both are utility-class'd primitives we do not want to fork:

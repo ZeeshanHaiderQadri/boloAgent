@@ -1,6 +1,6 @@
 """Opt-in Redis integration checks; writes only UUID-scoped cache keys.
 
-Run with DOGRAH_TEST_PROMPT_CACHE_REDIS=1 and api/.env.test sourced.
+Run with BOLO_TEST_PROMPT_CACHE_REDIS=1 and api/.env.test sourced.
 Provider calls are simulated, so these checks incur no Google charges.
 """
 
@@ -20,7 +20,7 @@ from redis.asyncio import Redis
 from api.services.pipecat.prompt_cache import CacheSpec, PromptCacheRegistry
 
 pytestmark = pytest.mark.skipif(
-    os.getenv("DOGRAH_TEST_PROMPT_CACHE_REDIS") != "1",
+    os.getenv("BOLO_TEST_PROMPT_CACHE_REDIS") != "1",
     reason="Opt-in local Redis integration test",
 )
 

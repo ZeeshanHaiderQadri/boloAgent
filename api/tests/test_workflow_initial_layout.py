@@ -12,8 +12,8 @@ from api.mcp_server.tools.save_workflow import save_workflow
 from api.services.workflow.builder import save_builder_draft
 from api.utils.workflow_revision import workflow_revision
 
-CODE = """import { Workflow } from "@dograh/sdk";
-import { startCall, agentNode, endCall } from "@dograh/sdk/typed";
+CODE = """import { Workflow } from "@bolo/sdk";
+import { startCall, agentNode, endCall } from "@bolo/sdk/typed";
 const wf = new Workflow({ name: "Receptionist" });
 const start = wf.addTyped(startCall({ name: "Welcome", prompt: "Hello." }));
 const agent = wf.addTyped(agentNode({ name: "Intake", prompt: "Ask a question." }));

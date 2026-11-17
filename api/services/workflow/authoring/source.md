@@ -6,8 +6,8 @@ Only imports, const bindings for Workflow/nodes, and wf.edge calls are supported
 No helpers, loops, conditionals, spreads, destructuring, or template interpolation.
 
 ```typescript
-import { Workflow } from "@dograh/sdk";
-import { startCall, endCall } from "@dograh/sdk/typed";
+import { Workflow } from "@bolo/sdk";
+import { startCall, endCall } from "@bolo/sdk/typed";
 
 const wf = new Workflow({ name: "Greeting" });
 const greet = wf.addTyped(startCall({ name: "Greet", prompt: "Greet the caller." }));

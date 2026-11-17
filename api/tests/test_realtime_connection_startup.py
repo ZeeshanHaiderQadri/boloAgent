@@ -20,12 +20,12 @@ from pipecat.transports.base_transport import TransportParams
 from pipecat.utils.asyncio.task_manager import TaskManager
 
 from api.services.pipecat.call_opening import OpeningInputGate
-from api.services.pipecat.pipeline_worker import DograhPipelineWorker
-from api.services.pipecat.realtime.azure_realtime import DograhAzureRealtimeLLMService
+from api.services.pipecat.pipeline_worker import BoloPipelineWorker
+from api.services.pipecat.realtime.azure_realtime import BoloAzureRealtimeLLMService
 from api.services.pipecat.realtime.connection import BackgroundConnectionMixin
-from api.services.pipecat.realtime.grok_realtime import DograhGrokRealtimeLLMService
-from api.services.pipecat.realtime.openai_live import DograhOpenAILiveLLMService
-from api.services.pipecat.realtime.openai_realtime import DograhOpenAIRealtimeLLMService
+from api.services.pipecat.realtime.grok_realtime import BoloGrokRealtimeLLMService
+from api.services.pipecat.realtime.openai_live import BoloOpenAILiveLLMService
+from api.services.pipecat.realtime.openai_realtime import BoloOpenAIRealtimeLLMService
 from api.services.pipecat.recording_audio_cache import RecordingAudio
 from api.services.workflow.pipecat_engine import PipecatEngine
 from api.tests.test_call_start_sequence import Call
@@ -58,15 +58,15 @@ class Socket:
 def connecting(request, monkeypatch):
     provider = request.param
     cls, module, kwargs = {
-        "openai": (DograhOpenAIRealtimeLLMService, "openai.realtime", {}),
+        "openai": (BoloOpenAIRealtimeLLMService, "openai.realtime", {}),
         "azure": (
-            DograhAzureRealtimeLLMService,
+            BoloAzureRealtimeLLMService,
             "openai.realtime",
             {"base_url": "wss://example.test/openai/v1/realtime"},
         ),
-        "grok": (DograhGrokRealtimeLLMService, "xai.realtime", {}),
+        "grok": (BoloGrokRealtimeLLMService, "xai.realtime", {}),
         "live": (
-            DograhOpenAILiveLLMService,
+            BoloOpenAILiveLLMService,
             "openai.live",
             {"backend_model": "gpt-5.4-mini"},
         ),
@@ -130,7 +130,7 @@ async def test_recorded_opening_reaches_output_while_connection_is_blocked(
             audio_out_end_silence_secs=0,
         )
     )
-    worker = DograhPipelineWorker(
+    worker = BoloPipelineWorker(
         Pipeline([retained, state.service, output]), enable_rtvi=False
     )
     engine.call_worker = worker
@@ -179,7 +179,7 @@ async def test_shutdown_cancels_pending_connection_without_late_socket(
     connecting, exit_path
 ):
     state = connecting
-    worker = DograhPipelineWorker(Pipeline([state.service]), enable_rtvi=False)
+    worker = BoloPipelineWorker(Pipeline([state.service]), enable_rtvi=False)
     manager = TaskManager()
     started = asyncio.Event()
 
@@ -216,7 +216,7 @@ async def test_shutdown_cancels_pending_connection_without_late_socket(
 @pytest.mark.asyncio
 async def test_reconnect_outside_setup_still_awaits_connection(connecting):
     state = connecting
-    worker = DograhPipelineWorker(Pipeline([state.service]), enable_rtvi=False)
+    worker = BoloPipelineWorker(Pipeline([state.service]), enable_rtvi=False)
     manager = TaskManager()
     started = asyncio.Event()
 
@@ -252,7 +252,7 @@ async def test_failed_pipeline_setup_cleans_pending_or_connected_provider(
 ):
     state = connecting
 
-    class FailingSetup(DograhPipelineWorker):
+    class FailingSetup(BoloPipelineWorker):
         async def _setup(self, params):
             await super()._setup(params)
             await asyncio.wait_for(state.entered.wait(), 2)
@@ -291,7 +291,7 @@ async def test_unexpected_connection_exception_cancels_worker(connecting, monkey
     monkeypatch.setattr(upstream, "_connect", fail)
     report = AsyncMock(wraps=service.push_error)
     monkeypatch.setattr(service, "push_error", report)
-    worker = DograhPipelineWorker(
+    worker = BoloPipelineWorker(
         Pipeline([service]),
         enable_rtvi=False,
         processor_unusable_policy=ProcessorUnusablePolicy.CANCEL,

@@ -236,11 +236,11 @@ class SpeechPlaybackTracker:
             )
 
     def _mark_response_boundaries(self, source: FrameProcessor, frame: Frame) -> None:
-        response_id = frame.metadata.get("dograh_response_id")
+        response_id = frame.metadata.get("bolo_response_id")
         response_key = (source, response_id) if response_id else None
         if isinstance(frame, LLMFullResponseStartFrame):
             if response_key in self._provider_responses:
-                frame.metadata["dograh_speech_id"] = self._provider_responses[
+                frame.metadata["bolo_speech_id"] = self._provider_responses[
                     response_key
                 ]
                 return
@@ -253,7 +253,7 @@ class SpeechPlaybackTracker:
             self._response_sources[source] = speech_id
             if response_key:
                 self._provider_responses[response_key] = speech_id
-            frame.metadata["dograh_speech_id"] = speech_id
+            frame.metadata["bolo_speech_id"] = speech_id
             for observer in self._observers:
                 observer.on_response_started(source, speech_id)
             if self._expected_source is source:
@@ -265,7 +265,7 @@ class SpeechPlaybackTracker:
                 if response_key
                 else self._response_sources[source]
             )
-            frame.metadata["dograh_speech_id"] = speech_id
+            frame.metadata["bolo_speech_id"] = speech_id
             if self._response_sources[source] == speech_id:
                 self._response_sources[source] = None
 
@@ -313,18 +313,18 @@ class SpeechPlaybackTracker:
         speech = self.greeting
         if speech is not None and not speech.manage_text:
             return
-        if isinstance(frame, TextFrame) and frame.metadata.get("dograh_greeting_id"):
+        if isinstance(frame, TextFrame) and frame.metadata.get("bolo_greeting_id"):
             frame.append_to_context = False
             if isinstance(frame, TTSTextFrame):
                 frame.persist_to_logs = False
-            if speech is None or frame.metadata["dograh_greeting_id"] != speech.id:
+            if speech is None or frame.metadata["bolo_greeting_id"] != speech.id:
                 return
         if not (
             speech
             and isinstance(frame, TextFrame)
             and (
                 speech.id in self._output_scopes
-                or frame.metadata.get("dograh_greeting_id") == speech.id
+                or frame.metadata.get("bolo_greeting_id") == speech.id
             )
         ):
             return
@@ -411,19 +411,19 @@ class SpeechPlaybackTracker:
                     )
             elif isinstance(frame, TextFrame) and self._input_scopes:
                 if self.greeting and self._input_scopes[-1] == self.greeting.id:
-                    frame.metadata["dograh_greeting_id"] = self.greeting.id
+                    frame.metadata["bolo_greeting_id"] = self.greeting.id
 
     def _response_boundary(self, frame: Frame) -> SpeechBoundaryFrame | None:
         if not isinstance(frame, (LLMFullResponseStartFrame, LLMFullResponseEndFrame)):
             return None
-        if "dograh_speech_id" in frame.metadata:
-            speech_id = frame.metadata["dograh_speech_id"]
+        if "bolo_speech_id" in frame.metadata:
+            speech_id = frame.metadata["bolo_speech_id"]
             if speech_id:
                 boundary = SpeechBoundaryFrame(
                     speech_id, beginning=isinstance(frame, LLMFullResponseStartFrame)
                 )
-                if outcome := frame.metadata.get("dograh_response_outcome"):
-                    boundary.metadata["dograh_response_outcome"] = outcome
+                if outcome := frame.metadata.get("bolo_response_outcome"):
+                    boundary.metadata["bolo_response_outcome"] = outcome
                 return boundary
             return None
 
@@ -462,7 +462,7 @@ class SpeechPlaybackTracker:
                     observer.on_playback_finished(frame.speech_id)
                 speech = self.pending.get(frame.speech_id)
                 if speech:
-                    if outcome := frame.metadata.get("dograh_response_outcome"):
+                    if outcome := frame.metadata.get("bolo_response_outcome"):
                         speech.finish(PlaybackOutcome(outcome))
                     else:
                         self._complete(speech)

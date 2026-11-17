@@ -237,7 +237,7 @@ async def test_requirements_cannot_use_build_tools():
     assert len(errors) == 2
     assert all(m.status == "error" for m in errors)
     for messages, tools in zip(conversation.model.seen, conversation.model.seen_tools):
-        assert "@dograh/sdk" not in str(messages)
+        assert "@bolo/sdk" not in str(messages)
         assert {t["function"]["name"] for t in tools} == {
             "ask_questions",
             "submit_brief",

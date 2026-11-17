@@ -133,7 +133,7 @@ async def test_get_user_bootstraps_new_org(monkeypatch):
         "organization_provider_id": "team-1",
         "auth_provider": "stack",
         "created_by_provider_id": "stack-user-1",
-        "deployment_id": auth_depends.DOGRAH_DEPLOYMENT_ID,
+        "deployment_id": auth_depends.BOLO_DEPLOYMENT_ID,
     }
 
     association_args, association_kwargs = capture_calls[1]
@@ -148,7 +148,7 @@ async def test_get_user_bootstraps_new_org(monkeypatch):
         "organization_provider_id": "team-1",
         "auth_provider": "stack",
         "organization_was_created": True,
-        "deployment_id": auth_depends.DOGRAH_DEPLOYMENT_ID,
+        "deployment_id": auth_depends.BOLO_DEPLOYMENT_ID,
     }
 
 
@@ -257,7 +257,7 @@ async def test_signed_up_names_the_team_and_deployment(monkeypatch):
     assert signed_up["properties"] == {
         "auth_provider": "stack",
         "organization_provider_id": "team-1",
-        "deployment_id": auth_depends.DOGRAH_DEPLOYMENT_ID,
+        "deployment_id": auth_depends.BOLO_DEPLOYMENT_ID,
     }
     # Starts the welcome-email workflow, so it carries no $groups.
     assert "groups" not in signed_up
@@ -427,7 +427,7 @@ def test_associate_user_with_posthog_org_uses_selected_provider_id(monkeypatch):
         "organization_provider_id": "team-1",
         "auth_provider": "stack",
         "organization_was_created": False,
-        "deployment_id": auth_depends.DOGRAH_DEPLOYMENT_ID,
+        "deployment_id": auth_depends.BOLO_DEPLOYMENT_ID,
     }
     assert "backfilled" not in capture_kwargs["properties"]
 
@@ -454,7 +454,7 @@ def test_sync_created_organization_to_posthog_with_provider_id(monkeypatch):
         "organization_provider_id": "team-1",
         "auth_provider": "stack",
         "created_by_provider_id": "stack-user-1",
-        "deployment_id": auth_depends.DOGRAH_DEPLOYMENT_ID,
+        "deployment_id": auth_depends.BOLO_DEPLOYMENT_ID,
     }
 
 

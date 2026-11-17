@@ -18,7 +18,7 @@ builder_mcp_operation: ContextVar[str | None] = ContextVar(
 
 
 async def authenticate_mcp_request() -> UserModel:
-    """Resolve the authenticated Dograh user for an MCP tool invocation.
+    """Resolve the authenticated Bolo user for an MCP tool invocation.
 
     Accepts either `X-API-Key: <key>` or `Authorization: Bearer <key>`,
     reusing the API-key flow from `api.services.auth.depends`.
@@ -53,7 +53,7 @@ def _stamp_identity(user: UserModel) -> None:
     span = trace.get_current_span()
     if span.is_recording():
         org_id = user.selected_organization_id
-        # Intentionally NOT `dograh.org_id` — that attribute triggers the
+        # Intentionally NOT `bolo.org_id` — that attribute triggers the
         # per-org Langfuse routing for pipeline spans, and MCP traffic
         # from external clients should land in the default project. In-app
         # builder spans inherit their org routing from the builder context.

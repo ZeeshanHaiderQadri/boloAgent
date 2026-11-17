@@ -1,4 +1,4 @@
-"""Dograh-owned builder orchestration and authenticated in-process MCP tools."""
+"""Bolo-owned builder orchestration and authenticated in-process MCP tools."""
 
 import asyncio
 import json
@@ -70,7 +70,7 @@ async def local_step(
         logger.exception("Workflow builder step failed")
         raise HTTPException(
             503,
-            "Builder is unavailable. Check Dograh's model and checkpoint configuration.",
+            "Builder is unavailable. Check Bolo's model and checkpoint configuration.",
         )
 
 
@@ -174,7 +174,7 @@ async def call_builder_tool(
         result = await client.call_tool(name, arguments)
         if result.is_error:
             return {
-                "error": "Dograh could not complete this tool request. Check its arguments."
+                "error": "Bolo could not complete this tool request. Check its arguments."
             }
         if result.data is not None:
             return result.data
@@ -183,7 +183,7 @@ async def call_builder_tool(
         }
     except Exception:
         logger.exception("Builder MCP tool failed: {}", name)
-        return {"error": "Dograh tool failed. Check the arguments or try again."}
+        return {"error": "Bolo tool failed. Check the arguments or try again."}
     finally:
         builder_mcp_operation.reset(token)
 
@@ -437,7 +437,7 @@ async def _save_builder_draft(
             workflow_uuid=str(
                 uuid5(
                     NAMESPACE_URL,
-                    f"dograh-builder:{user.selected_organization_id}:{user.id}:{session_id}",
+                    f"bolo-builder:{user.selected_organization_id}:{user.id}:{session_id}",
                 )
             ),
             name=result["name"],

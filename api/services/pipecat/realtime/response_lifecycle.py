@@ -100,7 +100,7 @@ class RealtimeResponseLifecycleMixin:
             self._pending_response_request = request
             self._response_requests.append(request)
             frame = LLMFullResponseStartFrame()
-            frame.metadata["dograh_response_id"] = request.scope_id
+            frame.metadata["bolo_response_id"] = request.scope_id
             await super().push_frame(frame)
             await self._send_next_response_request()
             return
@@ -167,7 +167,7 @@ class RealtimeResponseLifecycleMixin:
         self._workflow_tool_deferral.select_response(response_id, collecting=True)
         if requested_scope is None:
             frame = LLMFullResponseStartFrame()
-            frame.metadata["dograh_response_id"] = response_id
+            frame.metadata["bolo_response_id"] = response_id
             await super().push_frame(frame)
 
     async def _finish_playback_response(self, response_id, *, outcome=None):
@@ -177,11 +177,11 @@ class RealtimeResponseLifecycleMixin:
         if self._playback_response_id == response_id:
             self._playback_response_id = None
         frame = LLMFullResponseEndFrame()
-        frame.metadata["dograh_response_id"] = self._response_scopes.get(
+        frame.metadata["bolo_response_id"] = self._response_scopes.get(
             response_id, response_id
         )
         if outcome is not None:
-            frame.metadata["dograh_response_outcome"] = outcome
+            frame.metadata["bolo_response_outcome"] = outcome
         await super().push_frame(frame)
 
     async def _handle_evt_response_done(self, evt):
@@ -226,8 +226,8 @@ class RealtimeResponseLifecycleMixin:
         if not request.sent:
             self._response_requests.remove(request)
         frame = LLMFullResponseEndFrame()
-        frame.metadata["dograh_response_id"] = request.scope_id
-        frame.metadata["dograh_response_outcome"] = outcome
+        frame.metadata["bolo_response_id"] = request.scope_id
+        frame.metadata["bolo_response_outcome"] = outcome
         await super().push_frame(frame)
 
     @response_event

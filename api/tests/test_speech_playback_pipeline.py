@@ -511,14 +511,14 @@ async def test_duplicate_provider_boundaries_do_not_leave_playback_scopes(playba
     speech = tracker.expect_response(source=playback.tts, mute_user=True)
     for _ in range(3):
         frame = LLMFullResponseStartFrame()
-        frame.metadata["dograh_response_id"] = "response-1"
+        frame.metadata["bolo_response_id"] = "response-1"
         await playback.tts.push_frame(frame)
     await playback.tts.push_frame(TTSStartedFrame())
     await playback.tts.push_frame(TTSAudioRawFrame(b"\x01\x00" * 640, 16000, 1))
     await playback.tts.push_frame(TTSStoppedFrame())
     for _ in range(2):
         frame = LLMFullResponseEndFrame()
-        frame.metadata["dograh_response_id"] = "response-1"
+        frame.metadata["bolo_response_id"] = "response-1"
         await playback.tts.push_frame(frame)
     assert await asyncio.wait_for(speech.wait(), 1)
     assert await playback.worker.flush_pipeline(timeout=1)
@@ -534,7 +534,7 @@ async def test_late_provider_end_keeps_its_original_speech_identity(playback):
 
     async def boundary(frame_type, response_id):
         frame = frame_type()
-        frame.metadata["dograh_response_id"] = response_id
+        frame.metadata["bolo_response_id"] = response_id
         await playback.tts.push_frame(frame)
         return frame
 
@@ -545,7 +545,7 @@ async def test_late_provider_end_keeps_its_original_speech_identity(playback):
     await boundary(LLMFullResponseStartFrame, "current")
     old_end = await boundary(LLMFullResponseEndFrame, "old")
     assert await playback.worker.flush_pipeline(timeout=1)
-    assert old_end.metadata["dograh_speech_id"] == old.id
+    assert old_end.metadata["bolo_speech_id"] == old.id
     assert not current.done
     await playback.tts.push_frame(TTSAudioRawFrame(b"\x01\x00" * 640, 16000, 1))
     await boundary(LLMFullResponseEndFrame, "current")

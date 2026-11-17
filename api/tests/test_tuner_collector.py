@@ -1,7 +1,7 @@
 """Tests for the agent lines DeferredTunerObserver keeps in its Tuner snapshot.
 
 Frames are pushed in the order a live call produces them, on a fake clock, and the
-snapshot Dograh stores for delivery is checked.
+snapshot Bolo stores for delivery is checked.
 
 Covers:
 - Static TTS (``append_to_context=False``), such as a greeting or a disclosure. It is

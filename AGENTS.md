@@ -1,11 +1,11 @@
-# Dograh - Project Overview
+# Bolo - Project Overview
 
-Dograh is a voice AI platform for building and deploying conversational AI agents with telephony and WebRTC support.
+Bolo is a voice AI platform for building and deploying conversational AI agents with telephony and WebRTC support.
 
 ## Project Structure
 
 ```
-dograh/
+bolo/
 ├── api/              # Backend - FastAPI application
 ├── ui/               # Frontend - Next.js application
 ├── scripts/          # Helper scripts for local development
@@ -42,3 +42,40 @@ source venv/bin/activate && set -a && source api/.env.test && set +a && python -
 # Backend scripts
 source venv/bin/activate && set -a && source api/.env && set +a && python -m scripts.dump_docs_openapi
 ```
+
+## Upstream & White-Label Conventions
+
+Bolo is a white-label fork of **Dograh** (BSD 2-Clause, © 2025 Zansat Technologies
+Private Limited). The upstream copyright notice is retained verbatim in `LICENSE`,
+and attribution lives in `NOTICE`. Keep both intact when redistributing.
+
+A handful of upstream identifiers are **deliberately preserved** because they are
+contracts with code we do not own. Do not rename them:
+
+| Identifier | Why it stays |
+|---|---|
+| `pipecat.services.dograh.*` and the classes it exports (`DograhLLMService`, `DograhTTSService`, `DograhSTTService`, `DograhSTTSettings`, `DograhTTSSettings`, `DograhFluxSTTService`) | Published by the `pipecat` submodule, a separate repository. Rename requires forking pipecat too. |
+| `services.dograh.com` (default `MPS_API_URL`) | External Managed Platform Service host. Override the env var to self-host. |
+| `dograhai/minio`, `github.com/dograh-hq/minio` | Community MinIO build; upstream MinIO stopped publishing images. |
+| `DOGRAH_TTFS_P` | Environment variable read by the pipecat submodule. |
+
+Everything else uses the **Bolo** name: `BOLO_*` env vars, `bolo-*` packages and
+images, the `bolo` Helm chart, `@bolo/sdk`, `bolo-sdk`, and `boloagent.com` URLs.
+
+`scripts/migrate/rename_to_bolo.py` documents the full rename mapping and the
+protected set — read it before running bulk find-and-replace across the tree.
+
+## Brand & Theme
+
+The UI design system is **Teal Green** and lives in `ui/src/app/globals.css`
+(CSS custom properties in `:root` / `.dark`). Brand artwork is generated, not
+hand-edited:
+
+```bash
+python3 scripts/brand/generate_brand_assets.py   # logo, mark, inverse, imprint, favicon
+```
+
+It needs Pillow and a locally installed geometric sans (Avenir Next / Futura).
+Change the palette constants at the top of that script, then re-run it and
+update the `--cta` / `--primary` values in `globals.css` to match. The docs
+palette lives in `docs/docs.json` (`colors.primary` / `light` / `dark`).

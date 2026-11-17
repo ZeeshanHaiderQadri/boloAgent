@@ -110,7 +110,7 @@ def _serialize_text_chat_checkpoint_messages(messages: list[Any]) -> list[Any]:
         raise TypeError("Pipecat LLMContext serializer returned an unexpected shape")
     for index, original in enumerate(messages):
         if isinstance(original, CallContextMessage):
-            encoded_messages[index] = {"dograh_call_context_values": original.values}
+            encoded_messages[index] = {"bolo_call_context_values": original.values}
     return encoded_messages
 
 
@@ -125,8 +125,8 @@ def _deserialize_text_chat_checkpoint_messages(messages: list[Any]) -> list[Any]
     if not isinstance(restored_context, LLMContext):
         raise TypeError("Pipecat LLMContext deserializer returned an unexpected type")
     return [
-        CallContextMessage(message["dograh_call_context_values"])
-        if isinstance(message, dict) and "dograh_call_context_values" in message
+        CallContextMessage(message["bolo_call_context_values"])
+        if isinstance(message, dict) and "bolo_call_context_values" in message
         else message
         for message in restored_context.get_messages()
     ]
@@ -141,7 +141,7 @@ def text_chat_trace_id(workflow_run_id: int) -> str:
     per-turn spans land in one shared trace — without persisting extra state
     across the otherwise stateless turn requests.
     """
-    digest = hashlib.sha256(f"dograh-text-chat:{workflow_run_id}".encode()).hexdigest()
+    digest = hashlib.sha256(f"bolo-text-chat:{workflow_run_id}".encode()).hexdigest()
     return digest[:32]
 
 
@@ -637,7 +637,7 @@ async def execute_text_chat_pending_turn(
             usage_context="variable_extraction",
         )
         if needs_extraction_llm
-        and user_config.llm.provider == ServiceProviders.DOGRAH.value
+        and user_config.llm.provider == ServiceProviders.BOLO.value
         else llm
     )
 

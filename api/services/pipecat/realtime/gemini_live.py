@@ -1,6 +1,6 @@
-"""Dograh subclass of pipecat's Gemini Live LLM service.
+"""Bolo subclass of pipecat's Gemini Live LLM service.
 
-Layers Dograh engine integration quirks onto upstream-pristine
+Layers Bolo engine integration quirks onto upstream-pristine
 :class:`GeminiLiveLLMService`:
 
 - **Deferred connect.** Connection is held back until ``system_instruction``
@@ -29,7 +29,7 @@ from google.genai.types import Content, ContentDict, Part
 from loguru import logger
 
 from api.services.pipecat.gemini_json_schema_adapter import (
-    DograhGeminiLiveJSONSchemaAdapter,
+    BoloGeminiLiveJSONSchemaAdapter,
 )
 from api.services.pipecat.realtime.conversation import (
     RealtimeConversationMixin,
@@ -45,8 +45,8 @@ from pipecat.services.google.gemini_live.llm import GeminiLiveLLMService
 from pipecat.utils.tracing.service_decorators import traced_gemini_live
 
 
-class DograhGeminiLiveLLMService(RealtimeConversationMixin, GeminiLiveLLMService):
-    """Gemini Live with Dograh engine integration quirks. See module docstring."""
+class BoloGeminiLiveLLMService(RealtimeConversationMixin, GeminiLiveLLMService):
+    """Gemini Live with Bolo engine integration quirks. See module docstring."""
 
     # Gemini input transcription is delivered independently from tool calls.
     # Give late transcription messages a small window to arrive before running
@@ -57,9 +57,9 @@ class DograhGeminiLiveLLMService(RealtimeConversationMixin, GeminiLiveLLMService
     # MCP/imported tools that use JSON Schema keywords (``const``, ``not``,
     # nested ``anyOf``) rejected by the strict ``Schema`` model are accepted,
     # while keeping upstream's Live-specific tool-call-to-text conversion for
-    # seeded contexts. Mirrors the non-realtime ``DograhGoogleLLMService`` fix;
-    # ``DograhGeminiLiveVertexLLMService`` inherits this via MRO.
-    adapter_class = DograhGeminiLiveJSONSchemaAdapter
+    # seeded contexts. Mirrors the non-realtime ``BoloGoogleLLMService`` fix;
+    # ``BoloGeminiLiveVertexLLMService`` inherits this via MRO.
+    adapter_class = BoloGeminiLiveJSONSchemaAdapter
 
     @property
     def opening_input_ready(self) -> bool:
@@ -83,7 +83,7 @@ class DograhGeminiLiveLLMService(RealtimeConversationMixin, GeminiLiveLLMService
         # Kept separate from the text-greeting slot because the transcript may
         # legitimately be None while the open itself is still pending.
         self._pending_prerecorded_greeting: tuple[str | None] | None = None
-        # Set only by the base class's transient-error reconnect path. Dograh
+        # Set only by the base class's transient-error reconnect path. Bolo
         # pre-populates ``_context`` before its first Live session, so context
         # presence alone cannot distinguish an initial connection from a
         # reconnect that needs history re-seeding.
@@ -274,10 +274,10 @@ class DograhGeminiLiveLLMService(RealtimeConversationMixin, GeminiLiveLLMService
         return self._turn_complete_pending_idle is None
 
     # ------------------------------------------------------------------
-    # Context lifecycle: Dograh pre-populates self._context via the engine,
+    # Context lifecycle: Bolo pre-populates self._context via the engine,
     # so upstream's "first arrival === self._context is None" check doesn't
     # work. We gate on _handled_initial_context instead and skip the
-    # init-instruction reconciliation (Dograh updates system_instruction at
+    # init-instruction reconciliation (Bolo updates system_instruction at
     # runtime via _update_settings, not via init).
     # ------------------------------------------------------------------
 
@@ -431,7 +431,7 @@ class DograhGeminiLiveLLMService(RealtimeConversationMixin, GeminiLiveLLMService
 
     # ------------------------------------------------------------------
     # Session lifecycle: suppress upstream's automatic initial-context seed,
-    # because Dograh's TTSSpeakFrame is the explicit first-turn trigger. Keep
+    # because Bolo's TTSSpeakFrame is the explicit first-turn trigger. Keep
     # upstream's no-handle reconnect seed so transient failures retain history;
     # intentional node transitions still wait for their updated context frame.
     # ------------------------------------------------------------------
@@ -481,7 +481,7 @@ class DograhGeminiLiveLLMService(RealtimeConversationMixin, GeminiLiveLLMService
             # IDs again through the live tool-response channel.
             await self._prepare_context_for_fresh_session()
             await self._create_initial_response(for_reconnect=True)
-        # Otherwise this is Dograh's initial, pre-populated connection. Wait
+        # Otherwise this is Bolo's initial, pre-populated connection. Wait
         # for its TTSSpeakFrame/context trigger instead of auto-generating.
 
     async def _maybe_seed_node_transition_context(self) -> None:

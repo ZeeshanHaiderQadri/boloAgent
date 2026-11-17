@@ -189,7 +189,7 @@ async def run_step(graph, config: dict, session_id: UUID, request: BuilderStep |
         else:
             return current
     # The build stage can spend a while generating and validating a full
-    # @dograh/sdk workflow — especially routed through OpenRouter to a capable
+    # @bolo/sdk workflow — especially routed through OpenRouter to a capable
     # model. The SSE route heartbeats every 15s, so a longer deadline is safe.
     async with asyncio.timeout(300):
         await graph.ainvoke(value, config={**config, "recursion_limit": 40})

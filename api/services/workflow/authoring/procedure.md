@@ -1,4 +1,4 @@
-# Dograh workflow authoring
+# Bolo workflow authoring
 
 For a new agent, start with the customer's use case. Retrieve `get_workflow_authoring_guide` with
 `stage="build_requirements"` and gather the missing business requirements into a CallBrief.

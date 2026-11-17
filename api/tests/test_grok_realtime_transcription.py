@@ -10,10 +10,10 @@ from pipecat.processors.aggregators.llm_response_universal import LLMUserAggrega
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.xai.realtime.llm import GrokRealtimeLLMService
 
-from api.services.pipecat.realtime.grok_realtime import DograhGrokRealtimeLLMService
+from api.services.pipecat.realtime.grok_realtime import BoloGrokRealtimeLLMService
 
 
-@pytest.fixture(params=[GrokRealtimeLLMService, DograhGrokRealtimeLLMService])
+@pytest.fixture(params=[GrokRealtimeLLMService, BoloGrokRealtimeLLMService])
 def service(request):
     service = request.param(api_key="test-key")
     service.push_frame = AsyncMock()

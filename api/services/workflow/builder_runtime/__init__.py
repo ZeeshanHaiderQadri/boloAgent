@@ -1,1 +1,1 @@
-"""Conversational Dograh workflow builder."""
+"""Conversational Bolo workflow builder."""

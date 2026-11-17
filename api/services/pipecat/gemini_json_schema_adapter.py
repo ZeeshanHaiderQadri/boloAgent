@@ -1,4 +1,4 @@
-"""Dograh-specific Gemini adapter customizations."""
+"""Bolo-specific Gemini adapter customizations."""
 
 from typing import Any
 
@@ -8,7 +8,7 @@ from pipecat.adapters.llm.services.gemini_live_adapter import GeminiLiveLLMAdapt
 from pipecat.services.settings import LLMSettings
 
 
-class DograhGeminiJSONSchemaAdapter(GeminiLLMAdapter):
+class BoloGeminiJSONSchemaAdapter(GeminiLLMAdapter):
     """Use Gemini's full JSON Schema tool parameter field.
 
     Pipecat's default Gemini adapter maps ``FunctionSchema.parameters`` into
@@ -54,8 +54,8 @@ class DograhGeminiJSONSchemaAdapter(GeminiLLMAdapter):
         return formatted_standard_tools + custom_gemini_tools
 
 
-class DograhGeminiLiveJSONSchemaAdapter(
-    GeminiLiveLLMAdapter, DograhGeminiJSONSchemaAdapter
+class BoloGeminiLiveJSONSchemaAdapter(
+    GeminiLiveLLMAdapter, BoloGeminiJSONSchemaAdapter
 ):
     """Gemini Live adapter with the JSON Schema tool-parameter fix.
 

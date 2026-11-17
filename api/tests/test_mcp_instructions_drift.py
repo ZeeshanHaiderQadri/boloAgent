@@ -146,7 +146,7 @@ def _service_error_codes(tool_name: str) -> set[str]:
 @pytest.mark.asyncio
 async def test_guide_only_references_registered_tools():
     registered = {tool.name for tool in await mcp.list_tools()}
-    referenced = _referenced_tool_names(instructions_module.DOGRAH_MCP_INSTRUCTIONS)
+    referenced = _referenced_tool_names(instructions_module.BOLO_MCP_INSTRUCTIONS)
     for stage in AuthoringStage:
         referenced |= _referenced_tool_names(authoring_stage(stage)["instructions"])
         referenced |= _referenced_tool_names(

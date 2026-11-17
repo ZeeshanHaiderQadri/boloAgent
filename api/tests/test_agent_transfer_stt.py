@@ -46,7 +46,7 @@ def stt(request):
     config_type = (
         registry.DeepgramSTTConfiguration
         if request.param is DeepgramFluxSTTService
-        else registry.DograhSTTService
+        else registry.BoloSTTService
     )
     service.test_config = config_type(
         model="flux-general-multi"

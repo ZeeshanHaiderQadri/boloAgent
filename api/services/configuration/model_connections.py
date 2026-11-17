@@ -249,8 +249,8 @@ async def _named(organization_id, uuid):
     return row
 
 
-def dograh_model_configuration_spec(connection_uuid) -> dict:
-    """A pipeline specification running every role on one Dograh connection.
+def bolo_model_configuration_spec(connection_uuid) -> dict:
+    """A pipeline specification running every role on one Bolo connection.
 
     Settings are left empty so each role takes the registry defaults.
     """
@@ -275,7 +275,7 @@ async def resolve_model_configuration(
     api_override=None,
     pre_call_override=None,
     *,
-    preferred_dograh_key=None,
+    preferred_bolo_key=None,
     default_row=None,
 ):
     default = default_row or await get_default_model_configuration(organization_id)
@@ -334,7 +334,7 @@ async def resolve_model_configuration(
         config,
         provenance,
         connections,
-        preferred_dograh_key=preferred_dograh_key,
+        preferred_bolo_key=preferred_bolo_key,
     )
 
 
@@ -396,7 +396,7 @@ async def resolve_pre_call_model_configuration(
     during ringing cannot change an already running recognition/realtime service
     or make a settings-only hook resample the run's credential pools.
     """
-    from api.services.managed_model_services import get_dograh_service_api_key
+    from api.services.managed_model_services import get_bolo_service_api_key
 
     config = {"version": 3, "mode": snapshot["mode"]}
     connections = {}
@@ -449,20 +449,20 @@ async def resolve_pre_call_model_configuration(
     await _apply_model_patch(
         config, override.model_dump(mode="json", exclude_unset=True), get_connection
     )
-    authorized_key = get_dograh_service_api_key(effective)
+    authorized_key = get_bolo_service_api_key(effective)
     resolved = await _resolve_spec(
         organization_id,
         config,
         [*deepcopy(snapshot.get("provenance", [])), {"source": "pre_call"}],
         connections,
-        preferred_dograh_key=authorized_key,
+        preferred_bolo_key=authorized_key,
     )
     if (
         authorized_key is None
-        and get_dograh_service_api_key(resolved.effective) is not None
+        and get_bolo_service_api_key(resolved.effective) is not None
     ):
         raise _invalid(
-            "Pre-call overrides cannot introduce an unauthorized Dograh service key"
+            "Pre-call overrides cannot introduce an unauthorized Bolo service key"
         )
     selections = list(resolved.snapshot["services"].values())
     selections.extend(
@@ -482,7 +482,7 @@ async def _resolve_spec(
     provenance,
     connections,
     *,
-    preferred_dograh_key=None,
+    preferred_bolo_key=None,
 ):
     try:
         spec = (
@@ -511,12 +511,12 @@ async def _resolve_spec(
             key == "llm"
             and spec.llm_fallback
             and spec.llm_fallback.rules
-            and row.provider == "dograh"
+            and row.provider == "bolo"
         ):
-            raise _invalid("LLM fallbacks are unavailable in Dograh mode")
-        if key.startswith("fallback_") and row.provider == "dograh":
+            raise _invalid("LLM fallbacks are unavailable in Bolo mode")
+        if key.startswith("fallback_") and row.provider == "bolo":
             raise _invalid(
-                "Dograh manages its own fallbacks and cannot be a fallback target"
+                "Bolo manages its own fallbacks and cannot be a fallback target"
             )
         schema = _schema(role, row.provider)
         allowed = (
@@ -544,22 +544,22 @@ async def _resolve_spec(
         primary_row, primary = services["llm"]
         if row.uuid == primary_row.uuid and target.model_dump() == primary.model_dump():
             raise _invalid("Fallback target must differ from the primary LLM")
-    dograh_keys = []
+    bolo_keys = []
     for row, service in services.values():
-        if row.provider == "dograh":
-            dograh_keys.append(set(service.get_all_api_keys()))
-    common = set.intersection(*dograh_keys) if dograh_keys else set()
-    if dograh_keys and not common:
-        raise _invalid("All Dograh services in one run must share a service key")
+        if row.provider == "bolo":
+            bolo_keys.append(set(service.get_all_api_keys()))
+    common = set.intersection(*bolo_keys) if bolo_keys else set()
+    if bolo_keys and not common:
+        raise _invalid("All Bolo services in one run must share a service key")
     if (
-        dograh_keys
-        and preferred_dograh_key is not None
-        and preferred_dograh_key not in common
+        bolo_keys
+        and preferred_bolo_key is not None
+        and preferred_bolo_key not in common
     ):
         raise _invalid(
-            "Selected Dograh connections must support the run's authorized service key"
+            "Selected Bolo connections must support the run's authorized service key"
         )
-    dograh_key = (preferred_dograh_key or choice(sorted(common))) if common else None
+    bolo_key = (preferred_bolo_key or choice(sorted(common))) if common else None
     selected = {}
     snapshot_services = {}
     effective_services = {}
@@ -571,8 +571,8 @@ async def _resolve_spec(
         if keys:
             if row.uuid not in selected:
                 selected[row.uuid] = (
-                    keys.index(dograh_key)
-                    if row.provider == "dograh"
+                    keys.index(bolo_key)
+                    if row.provider == "bolo"
                     else choice(range(len(keys)))
                 )
             index = selected[row.uuid]
@@ -609,7 +609,7 @@ async def _resolve_spec(
         **effective_services,
         llm_fallback=effective_fallback,
         is_realtime=spec.mode == "realtime",
-        managed_service_version=2 if dograh_keys else None,
+        managed_service_version=2 if bolo_keys else None,
     )
     snapshot = {
         "version": 3,

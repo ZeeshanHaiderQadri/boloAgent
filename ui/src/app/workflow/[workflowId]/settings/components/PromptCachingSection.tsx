@@ -43,7 +43,7 @@ export function PromptCachingSection({ workflowConfigurations, onSave }: {
     return <Card id="prompt-caching">
         <CardHeader>
             <CardTitle className="text-base">Prompt caching</CardTitle>
-            <CardDescription>Keep shared instructions stable across calls. Dograh manages caching automatically for your provider and model.</CardDescription>
+            <CardDescription>Keep shared instructions stable across calls. Bolo manages caching automatically for your provider and model.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
             <div className="flex items-center justify-between gap-4">

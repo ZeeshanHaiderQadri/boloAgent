@@ -12,19 +12,19 @@ from api.services.configuration.ai_model_configuration import (
 )
 from api.services.configuration.check_validity import UserConfigurationValidator
 from api.services.configuration.registry import (
-    DograhEmbeddingsConfiguration,
-    DograhLLMService,
-    DograhSTTService,
-    DograhTTSService,
+    BoloEmbeddingsConfiguration,
+    BoloLLMService,
+    BoloSTTService,
+    BoloTTSService,
 )
 
 
 def _managed_configuration(api_key="mps-shared-key"):
     return EffectiveAIModelConfiguration(
-        llm=DograhLLMService(api_key=api_key),
-        stt=DograhSTTService(api_key=api_key),
-        tts=DograhTTSService(api_key=api_key),
-        embeddings=DograhEmbeddingsConfiguration(api_key=api_key),
+        llm=BoloLLMService(api_key=api_key),
+        stt=BoloSTTService(api_key=api_key),
+        tts=BoloTTSService(api_key=api_key),
+        embeddings=BoloEmbeddingsConfiguration(api_key=api_key),
     )
 
 

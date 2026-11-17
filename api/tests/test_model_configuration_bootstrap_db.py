@@ -16,7 +16,7 @@ from api.db import db_client
 from api.db.model_connection_client import DEFAULT_KEY
 from api.db.models import OrganizationModel
 from api.services.configuration.model_connections import (
-    dograh_model_configuration_spec,
+    bolo_model_configuration_spec,
 )
 
 
@@ -42,11 +42,11 @@ async def test_bootstrap_returns_the_default_it_wrote(app_sessions):
 
     configuration_uuid = await db_client.bootstrap_default_model_configuration(
         organization_id,
-        connection_name="Dograh",
-        provider="dograh",
+        connection_name="Bolo",
+        provider="bolo",
         credentials={"api_key": "mps_sk_test"},
         configuration_name="Organization default",
-        configuration_for=dograh_model_configuration_spec,
+        configuration_for=bolo_model_configuration_spec,
     )
 
     state = await db_client.get_configuration_values(organization_id, [DEFAULT_KEY])

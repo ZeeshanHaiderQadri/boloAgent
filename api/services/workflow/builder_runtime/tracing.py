@@ -1,4 +1,4 @@
-"""Builder tracing through Dograh's existing OpenTelemetry exporter.
+"""Builder tracing through Bolo's existing OpenTelemetry exporter.
 
 One trace per turn/save, one scoped Langfuse session across turns. The context is
 server-owned and never reconstructed from browser headers or model arguments.
@@ -17,7 +17,7 @@ from pipecat.utils.run_context import org_id_var
 
 from api.services.observability.trace_payloads import trace_json
 
-_TRACER = trace.get_tracer("dograh.workflow_builder")
+_TRACER = trace.get_tracer("bolo.workflow_builder")
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class BuilderTrace:
     def attributes(self) -> dict:
         return {
             "session.id": self.metadata["builder_session_id"],
-            "user.id": self.metadata["dograh_user_id"],
+            "user.id": self.metadata["bolo_user_id"],
             "langfuse.trace.tags": ["workflow_builder"],
             "langfuse.trace.public": False,
             **{
@@ -66,8 +66,8 @@ def trace_error(span, message: str, *, rejected: bool = False) -> None:
 def builder_trace(*, user, session_id, operation: str, input: dict, request_id=None):
     metadata = {
         "usage_context": "workflow_builder",
-        "dograh_organization_id": str(user.selected_organization_id),
-        "dograh_user_id": str(user.id),
+        "bolo_organization_id": str(user.selected_organization_id),
+        "bolo_user_id": str(user.id),
         "builder_session_id": (
             f"workflow-builder:{user.selected_organization_id}:{user.id}:{session_id}"
         ),

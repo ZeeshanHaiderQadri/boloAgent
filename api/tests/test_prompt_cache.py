@@ -21,7 +21,7 @@ from api.services.pipecat.prompt_cache import (
     PromptCacheRegistry,
     rejected_cached_content,
 )
-from api.services.pipecat.service_factory import DograhGoogleLLMService
+from api.services.pipecat.service_factory import BoloGoogleLLMService
 
 
 def spec():
@@ -70,7 +70,7 @@ def test_only_cache_resource_errors_are_retried(code, message, expected):
 
 
 def service(monkeypatch, *, cached=True):
-    llm = DograhGoogleLLMService(
+    llm = BoloGoogleLLMService(
         api_key="test",
         settings=GoogleLLMSettings(
             model="gemini-3-flash-preview", system_instruction="Static {{name}}"
@@ -226,7 +226,7 @@ async def test_does_not_retry_rate_limit_or_partial_output(monkeypatch, error, a
 @pytest.mark.asyncio
 async def test_kill_switch_bypasses_registry_and_preserves_inline_request(monkeypatch):
     llm, registry = service(monkeypatch)
-    monkeypatch.setenv("DOGRAH_PROMPT_CACHE_DISABLED", "1")
+    monkeypatch.setenv("BOLO_PROMPT_CACHE_DISABLED", "1")
     llm._client.aio.models.generate_content_stream.return_value = chunks()
     [
         chunk

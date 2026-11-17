@@ -2,7 +2,7 @@
 
 The project-wide tracing setup in
 `api/services/pipecat/tracing_config.py` already routes spans to
-per-organization Langfuse projects based on the `dograh.org_id` span
+per-organization Langfuse projects based on the `bolo.org_id` span
 attribute. This module plugs MCP tool calls into that pipeline:
 
     @mcp.tool
@@ -30,7 +30,7 @@ from api.services.workflow.builder_runtime.tracing import current_builder_trace
 
 R = TypeVar("R")
 
-_TRACER = trace.get_tracer("dograh.mcp")
+_TRACER = trace.get_tracer("bolo.mcp")
 
 
 def traced_tool(fn: Callable[..., Awaitable[R]]) -> Callable[..., Awaitable[R]]:

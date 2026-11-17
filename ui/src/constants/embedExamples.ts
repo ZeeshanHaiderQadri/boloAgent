@@ -1,23 +1,23 @@
 export const HEADLESS_CHAT_EXAMPLE = `let chatState = 'idle';
 
-function withDograhWidget(callback) {
-  if (window.DograhWidget) {
-    callback(window.DograhWidget);
+function withBoloWidget(callback) {
+  if (window.BoloWidget) {
+    callback(window.BoloWidget);
     return;
   }
 
-  const script = document.getElementById('dograh-widget');
+  const script = document.getElementById('bolo-widget');
   if (!script) {
-    console.error('Dograh embed script not found');
+    console.error('Bolo embed script not found');
     return;
   }
 
   script.addEventListener('load', () => {
-    if (window.DograhWidget) callback(window.DograhWidget);
+    if (window.BoloWidget) callback(window.BoloWidget);
   }, { once: true });
 }
 
-withDograhWidget((widget) => {
+withBoloWidget((widget) => {
   widget.onChatStateChange((state) => {
     chatState = state; // idle | starting | ready | waiting | ended | expired | error
   });

@@ -1,16 +1,16 @@
-# @dograh/sdk
+# @bolo/sdk
 
-Typed builder for Dograh voice-AI workflows. Fetches the node-spec catalog from
-the Dograh backend at session start, validates every call against it at the
+Typed builder for Bolo voice-AI workflows. Fetches the node-spec catalog from
+the Bolo backend at session start, validates every call against it at the
 call site, and produces wire-format JSON that round-trips through the Python
 `ReactFlowDTO`.
 
 ## Install
 
 ```bash
-npm install @dograh/sdk
+npm install @bolo/sdk
 # or
-pnpm add @dograh/sdk
+pnpm add @bolo/sdk
 ```
 
 For local development against a checked-out monorepo, add a tsconfig paths
@@ -19,7 +19,7 @@ entry:
 ```json
 {
   "paths": {
-    "@dograh/sdk": ["../sdk/typescript/src/index.ts"]
+    "@bolo/sdk": ["../sdk/typescript/src/index.ts"]
   }
 }
 ```
@@ -27,11 +27,11 @@ entry:
 ## Usage
 
 ```ts
-import { DograhClient, Workflow } from "@dograh/sdk";
+import { BoloClient, Workflow } from "@bolo/sdk";
 
-const client = new DograhClient({
+const client = new BoloClient({
   baseUrl: "http://localhost:8000",
-  apiKey: process.env.DOGRAH_API_KEY,
+  apiKey: process.env.BOLO_API_KEY,
 });
 
 const wf = new Workflow({ client, name: "loan_qualification" });
@@ -82,8 +82,8 @@ lets through.
 ## Environment
 
 ```bash
-DOGRAH_API_URL=http://localhost:8000   # default
-DOGRAH_API_KEY=sk-...                  # sent as X-API-Key
+BOLO_API_URL=http://localhost:8000   # default
+BOLO_API_KEY=sk-...                  # sent as X-API-Key
 ```
 
 ## License

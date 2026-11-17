@@ -1,6 +1,6 @@
-"""Dograh subclass of pipecat's OpenAI Realtime LLM service.
+"""Bolo subclass of pipecat's OpenAI Realtime LLM service.
 
-Layers Dograh engine integration quirks onto upstream-pristine
+Layers Bolo engine integration quirks onto upstream-pristine
 :class:`OpenAIRealtimeLLMService`. Substantially smaller than the Gemini
 subclass because OpenAI Realtime supports runtime ``session.update`` for
 both ``system_instruction`` and tools, so node changes do not require a
@@ -16,7 +16,7 @@ Adds:
 - **Silent session setup after a recorded greeting**, which the engine plays
   straight to the transport instead of routing through the model.
 - **One-off LLMMessagesAppendFrame handling** for ephemeral realtime prompts
-  like user-idle checks, without mutating Dograh's local ``LLMContext``.
+  like user-idle checks, without mutating Bolo's local ``LLMContext``.
 - **Workflow-control deferral** so a lone transition waits for playback while
   ordinary tools and mixed batches run immediately.
 - **finalized=True on TranscriptionFrame** because every OpenAI
@@ -56,13 +56,13 @@ from pipecat.transcriptions.language import Language
 from pipecat.utils.time import time_now_iso8601
 
 
-class DograhOpenAIRealtimeLLMService(
+class BoloOpenAIRealtimeLLMService(
     BackgroundConnectionMixin,
     RealtimeConversationMixin,
     RealtimeResponseLifecycleMixin,
     OpenAIRealtimeLLMService,
 ):
-    """OpenAI Realtime with Dograh engine integration quirks. See module docstring."""
+    """OpenAI Realtime with Bolo engine integration quirks. See module docstring."""
 
     # Tool responses can span several assistant items and playback gaps.
     _workflow_tools_follow_voice_response = False

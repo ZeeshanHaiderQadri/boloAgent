@@ -26,7 +26,7 @@ from api.tests.conftest import DEFAULT_WORKFLOW_DEFINITION
 async def test_node_setup_automatically_selects_cache_policy(
     monkeypatch, three_node_workflow, provider, mode, disabled
 ):
-    monkeypatch.setenv("DOGRAH_PROMPT_CACHE_DISABLED", "1" if disabled else "0")
+    monkeypatch.setenv("BOLO_PROMPT_CACHE_DISABLED", "1" if disabled else "0")
     registry = SimpleNamespace(prewarm=Mock())
     monkeypatch.setattr(
         "api.services.pipecat.gemini_prompt_cache.get_prompt_cache_registry",
@@ -78,7 +78,7 @@ async def test_publish_uses_layout_without_a_separate_cache_flag(
 ):
     from api.services.workflow import prompt_preview
 
-    monkeypatch.delenv("DOGRAH_PROMPT_CACHE_DISABLED", raising=False)
+    monkeypatch.delenv("BOLO_PROMPT_CACHE_DISABLED", raising=False)
     llm = SimpleNamespace(
         configure_prompt_cache=Mock(),
         prewarm_prompt_cache=Mock(return_value=[]),

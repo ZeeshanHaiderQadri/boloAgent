@@ -1,7 +1,7 @@
 """Murf AI WebSocket TTS service.
 
 Vendored from https://github.com/murf-ai/pipecat-murf-tts (v0.2.6, MIT)
-and adapted to Dograh's pipecat submodule. Do not add pipecat-murf-tts as a
+and adapted to Bolo's pipecat submodule. Do not add pipecat-murf-tts as a
 pip dependency — keep protocol fixes in this file.
 """
 
@@ -112,7 +112,7 @@ class MurfTTSService(WebsocketTTSService):
         @field_validator("min_buffer_size")
         @classmethod
         def validate_min_buffer_size(cls, v: Optional[int]) -> Optional[int]:
-            # Official plugin documents 40–160. Dograh already aggregates
+            # Official plugin documents 40–160. Bolo already aggregates
             # sentences before TTS, so we allow a lower floor (2) to flush
             # immediately instead of waiting for more characters.
             if v is not None and not (2 <= v <= 160):

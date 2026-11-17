@@ -154,7 +154,7 @@ class AutoscaleMetricResponse(BaseModel):
     value: int
 
 
-DOGRAH_DEVOPS_SECRET_HEADER = "X-Dograh-Devops-Secret"
+BOLO_DEVOPS_SECRET_HEADER = "X-Bolo-Devops-Secret"
 
 
 def _verify_devops_secret(
@@ -178,9 +178,9 @@ def _verify_devops_secret(
 
 @router.get("/health/active-calls", response_model=ActiveCallsResponse)
 async def active_calls(
-    x_dograh_devops_secret: Annotated[
+    x_bolo_devops_secret: Annotated[
         str | None,
-        Header(alias=DOGRAH_DEVOPS_SECRET_HEADER),
+        Header(alias=BOLO_DEVOPS_SECRET_HEADER),
     ] = None,
 ) -> ActiveCallsResponse:
     """In-flight call count for THIS worker — the drain signal for deploys.
@@ -191,11 +191,11 @@ async def active_calls(
     count is per-process: one uvicorn per VM port (scripts/rolling_update.sh)
     or per Kubernetes pod (preStop hook). See api/services/observability/active_calls.py.
     """
-    from api.constants import DOGRAH_DEVOPS_SECRET
+    from api.constants import BOLO_DEVOPS_SECRET
     from api.services.observability import loop_lag
     from api.services.observability.active_calls import active_call_count
 
-    _verify_devops_secret(DOGRAH_DEVOPS_SECRET, x_dograh_devops_secret)
+    _verify_devops_secret(BOLO_DEVOPS_SECRET, x_bolo_devops_secret)
     lag = loop_lag.stats()
     return ActiveCallsResponse(
         active_calls=active_call_count(),
@@ -207,9 +207,9 @@ async def active_calls(
 @router.get("/health/autoscale-metric", response_model=AutoscaleMetricResponse)
 async def autoscale_metric(
     buffer: int = 0,
-    x_dograh_devops_secret: Annotated[
+    x_bolo_devops_secret: Annotated[
         str | None,
-        Header(alias=DOGRAH_DEVOPS_SECRET_HEADER),
+        Header(alias=BOLO_DEVOPS_SECRET_HEADER),
     ] = None,
 ) -> AutoscaleMetricResponse:
     """Fleet-wide autoscaling signal for KEDA: total active calls + warm buffer.
@@ -225,10 +225,10 @@ async def autoscale_metric(
     a failed scrape makes KEDA's HPA hold the current replica count, while a
     successful scrape of 0 would instruct it to scale toward minReplicas.
     """
-    from api.constants import DOGRAH_DEVOPS_SECRET
+    from api.constants import BOLO_DEVOPS_SECRET
     from api.services.call_concurrency import call_concurrency
 
-    _verify_devops_secret(DOGRAH_DEVOPS_SECRET, x_dograh_devops_secret)
+    _verify_devops_secret(BOLO_DEVOPS_SECRET, x_bolo_devops_secret)
     try:
         calls = await call_concurrency.get_fleet_active_calls()
     except Exception as e:
@@ -242,19 +242,19 @@ async def autoscale_metric(
 
 @router.get("/metrics", include_in_schema=False)
 def prometheus_metrics(
-    x_dograh_devops_secret: Annotated[
+    x_bolo_devops_secret: Annotated[
         str | None,
-        Header(alias=DOGRAH_DEVOPS_SECRET_HEADER),
+        Header(alias=BOLO_DEVOPS_SECRET_HEADER),
     ] = None,
 ) -> Response:
     """Prometheus exposition for this worker; scrape each worker directly."""
-    from api.constants import DOGRAH_DEVOPS_SECRET
+    from api.constants import BOLO_DEVOPS_SECRET
     from api.services.observability.metrics import get_runtime
 
     runtime = get_runtime()
     if runtime is None:
         raise HTTPException(status_code=404, detail="Metrics are disabled")
-    _verify_devops_secret(DOGRAH_DEVOPS_SECRET, x_dograh_devops_secret)
+    _verify_devops_secret(BOLO_DEVOPS_SECRET, x_bolo_devops_secret)
     from prometheus_client import CONTENT_TYPE_LATEST
 
     # A synchronous handler runs collection/serialization in FastAPI's thread

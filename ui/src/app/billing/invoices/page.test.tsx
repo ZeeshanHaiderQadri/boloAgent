@@ -94,13 +94,13 @@ describe("invoices page", () => {
         fireEvent.click(await screen.findByRole("button", { name: "Email us" }));
 
         const dialog = await screen.findByRole("dialog");
-        expect(dialog.textContent).toContain("founders@dograh.com");
+        expect(dialog.textContent).toContain("founders@boloagent.com");
         expect(dialog.textContent).toContain(formatDate("2026-09-02T09:30:00Z", "UTC"));
         expect(dialog.textContent).toContain(money(25));
         expect(dialog.textContent).toContain("pay_old");
         fireEvent.click(screen.getByRole("button", { name: "Copy" }));
         await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith("Email address copied"));
-        expect(mocks.copy).toHaveBeenCalledWith("founders@dograh.com");
+        expect(mocks.copy).toHaveBeenCalledWith("founders@boloagent.com");
     });
 
     it("downloads the invoice PDF under its number", async () => {
@@ -158,8 +158,8 @@ describe("invoices page", () => {
         render(<InvoicesPage />);
 
         expect(await screen.findByText(/available there/)).toBeTruthy();
-        expect(screen.getByRole("link", { name: "app.dograh.com" }).getAttribute("href"))
-            .toBe("https://app.dograh.com/billing/invoices");
+        expect(screen.getByRole("link", { name: "app.boloagent.com" }).getAttribute("href"))
+            .toBe("https://app.boloagent.com/billing/invoices");
         expect(mocks.listPayments).not.toHaveBeenCalled();
     });
 });

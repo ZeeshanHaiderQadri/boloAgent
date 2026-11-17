@@ -115,13 +115,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Dograh API",
-    description="API for the Dograh app",
+    title="Bolo API",
+    description="API for the Bolo app",
     version="1.0.0",
     openapi_url=f"{API_PREFIX}/openapi.json",
     lifespan=lifespan,
     servers=[
-        {"url": "https://app.dograh.com", "description": "Production"},
+        {"url": "https://app.boloagent.com", "description": "Production"},
         {"url": "http://localhost:8000", "description": "Local development"},
     ],
 )
@@ -132,7 +132,7 @@ async def handle_mps_unavailable_error(
     _request: Request,
     _exc: MPSUnavailableError,
 ) -> JSONResponse:
-    """Tell callers this is a Dograh outage, not invalid customer config."""
+    """Tell callers this is a Bolo outage, not invalid customer config."""
 
     return JSONResponse(
         status_code=503,

@@ -67,7 +67,7 @@ class TestMiniMaxTTSConfiguration:
                 api_key="test-key", group_id="test-group", volume=volume
             )
 
-    @pytest.mark.parametrize("entry", ["Dograh", "/(ˈdoʊɡrɑː)", "Dograh/", " / "])
+    @pytest.mark.parametrize("entry", ["Bolo", "/(ˈdoʊɡrɑː)", "Bolo/", " / "])
     def test_pronunciation_entries_need_both_sides(self, entry):
         with pytest.raises(ValidationError, match="original/replacement"):
             MiniMaxTTSConfiguration(
@@ -225,7 +225,7 @@ class TestMiniMaxTTSServiceFactory:
             api_key="test-key",
             group_id="test-group",
             text_normalization_mode="basic",
-            pronunciation_dict=[" Dograh/(ˈdoʊɡrɑː) ", "", "SRL/esse erre elle"],
+            pronunciation_dict=[" Bolo/(ˈdoʊɡrɑː) ", "", "SRL/esse erre elle"],
         )
         restored = MiniMaxTTSConfiguration.model_validate_json(config.model_dump_json())
         service = create_tts_service(
@@ -236,7 +236,7 @@ class TestMiniMaxTTSServiceFactory:
         message = service._task_start_message()
         assert message["text_normalization_mode"] == "basic"
         assert message["pronunciation_dict"] == {
-            "tone": ["Dograh/(ˈdoʊɡrɑː)", "SRL/esse erre elle"]
+            "tone": ["Bolo/(ˈdoʊɡrɑː)", "SRL/esse erre elle"]
         }
 
     def test_unset_pronunciation_and_normalization_are_not_sent(self):

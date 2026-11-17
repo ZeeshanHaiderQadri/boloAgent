@@ -33,7 +33,7 @@ from api.services.configuration.registry import (
 from api.services.configuration.temperature import resolve_temperature
 from api.services.pipecat.fallback_llm import FallbackLLMProcessor, FallbackRoute
 from api.services.pipecat.gemini_json_schema_adapter import (
-    DograhGeminiJSONSchemaAdapter,
+    BoloGeminiJSONSchemaAdapter,
 )
 from api.services.pipecat.gemini_prompt_cache import GeminiPromptCacheMixin
 from api.services.pipecat.gemini_spoken_tool_calls import GeminiSpokenToolCallMixin
@@ -178,7 +178,7 @@ def _report_service_factory_failures(
 
             provider_value = getattr(provider, "value", provider)
             error_owner = (
-                "operator" if str(provider_value).lower() == "dograh" else "user"
+                "operator" if str(provider_value).lower() == "bolo" else "user"
             )
             try:
                 service = factory(*args, **kwargs)
@@ -247,7 +247,7 @@ def _resolve_deepgram_flux_language_hints(
     )
 
 
-def dograh_stt_uses_flux_language(language: str | None) -> bool:
+def bolo_stt_uses_flux_language(language: str | None) -> bool:
     if not language or language.lower() == "multi":
         return True
     return _resolve_deepgram_flux_language_hint(language) is not None
@@ -325,8 +325,8 @@ def _elevenlabs_realtime_stt_host(base_url: str) -> str:
 def stt_uses_external_turns(user_config) -> bool:
     if user_config.stt.provider == ServiceProviders.DEEPGRAM.value:
         return user_config.stt.model in DEEPGRAM_FLUX_MODELS
-    if user_config.stt.provider == ServiceProviders.DOGRAH.value:
-        return dograh_stt_uses_flux_language(getattr(user_config.stt, "language", None))
+    if user_config.stt.provider == ServiceProviders.BOLO.value:
+        return bolo_stt_uses_flux_language(getattr(user_config.stt, "language", None))
     if user_config.stt.provider == ServiceProviders.CARTESIA.value:
         return user_config.stt.model == "ink-2"
     return False
@@ -336,8 +336,8 @@ class AzureLLMService(OpenAISpokenToolCallMixin, BaseAzureLLMService):
     """Azure streaming service with spoken-tool recovery."""
 
 
-class DograhLLMService(OpenAISpokenToolCallMixin, BaseDograhLLMService):
-    """Dograh streaming service with spoken-tool recovery."""
+class BoloLLMService(OpenAISpokenToolCallMixin, BaseDograhLLMService):
+    """Bolo streaming service with spoken-tool recovery."""
 
 
 class GroqLLMService(OpenAISpokenToolCallMixin, BaseGroqLLMService):
@@ -368,18 +368,18 @@ class SpeachesLLMService(OpenAISpokenToolCallMixin, BaseSpeachesLLMService):
     """Speaches streaming service with spoken-tool recovery."""
 
 
-class DograhGoogleLLMService(
+class BoloGoogleLLMService(
     GeminiPromptCacheMixin, GeminiSpokenToolCallMixin, GoogleLLMService
 ):
-    adapter_class = DograhGeminiJSONSchemaAdapter
+    adapter_class = BoloGeminiJSONSchemaAdapter
 
 
-class DograhGoogleVertexLLMService(
+class BoloGoogleVertexLLMService(
     GeminiPromptCacheMixin, GeminiSpokenToolCallMixin, GoogleVertexLLMService
 ):
-    """Vertex text service with Dograh schemas and nonblocking authentication."""
+    """Vertex text service with Bolo schemas and nonblocking authentication."""
 
-    adapter_class = DograhGeminiJSONSchemaAdapter
+    adapter_class = BoloGeminiJSONSchemaAdapter
 
     # The upstream constructor dispatches through this hook. Return a lazy
     # credential object so it never discovers credentials or refreshes tokens.
@@ -492,11 +492,11 @@ def _stt_configurable_settings(config, *, for_update: bool = False) -> dict[str,
     """
     provider = config.provider
     language = getattr(config, "language", None)
-    if provider in {ServiceProviders.DEEPGRAM, ServiceProviders.DOGRAH}:
+    if provider in {ServiceProviders.DEEPGRAM, ServiceProviders.BOLO}:
         is_flux = (
             config.model in DEEPGRAM_FLUX_MODELS
             if provider == ServiceProviders.DEEPGRAM
-            else dograh_stt_uses_flux_language(language)
+            else bolo_stt_uses_flux_language(language)
         )
         if is_flux:
             if (
@@ -576,7 +576,7 @@ def get_stt_settings_update(
     """Build a settings delta only for a compatible, live-updatable service.
 
     Having an inherited _update_settings method is not proof of support:
-    Gladia and legacy Dograh only change local state, while ink-2 cannot
+    Gladia and legacy Bolo only change local state, while ink-2 cannot
     switch languages. Supported services own applying/reconnecting their
     streams; the handoff must never call socket lifecycle methods itself.
     """
@@ -606,14 +606,14 @@ def get_stt_settings_update(
         )
         return None
     provider = destination_config.provider
-    if provider == ServiceProviders.DOGRAH and (
-        not dograh_stt_uses_flux_language(getattr(call_config, "language", None))
-        or not dograh_stt_uses_flux_language(
+    if provider == ServiceProviders.BOLO and (
+        not bolo_stt_uses_flux_language(getattr(call_config, "language", None))
+        or not bolo_stt_uses_flux_language(
             getattr(destination_config, "language", None)
         )
     ):
         logger.info(
-            "[transfer] STT settings update unavailable for legacy Dograh STT or a change of backend"
+            "[transfer] STT settings update unavailable for legacy Bolo STT or a change of backend"
         )
         return None
     if provider == ServiceProviders.GLADIA:
@@ -727,12 +727,12 @@ def create_stt_service(
             ),
             sample_rate=audio_config.transport_in_sample_rate,
         )
-    elif user_config.stt.provider == ServiceProviders.DOGRAH.value:
+    elif user_config.stt.provider == ServiceProviders.BOLO.value:
         base_url = MPS_API_URL.replace("http://", "ws://").replace("https://", "wss://")
         language = getattr(user_config.stt, "language", None) or "multi"
 
-        if dograh_stt_uses_flux_language(language):
-            # Dograh's Flux proxy only supports multilingual auto-detect and the
+        if bolo_stt_uses_flux_language(language):
+            # Bolo's Flux proxy only supports multilingual auto-detect and the
             # same language hint subset as Deepgram Flux multilingual.
             settings_kwargs = {
                 "model": "flux-general-multi",
@@ -1064,7 +1064,7 @@ def create_tts_service(
             skip_text_types=["recording_router", "recording"],
             silence_time_s=1.0,
         )
-    elif user_config.tts.provider == ServiceProviders.DOGRAH.value:
+    elif user_config.tts.provider == ServiceProviders.BOLO.value:
         # Convert HTTP URL to WebSocket URL for TTS
         base_url = MPS_API_URL.replace("http://", "ws://").replace("https://", "wss://")
         return DograhTTSService(
@@ -1415,7 +1415,7 @@ def create_llm_service_from_provider(
 
     Args:
         usage_context: Optional tag describing what the LLM instance is used for
-            (e.g. "voicemail_detection"). Sent as request metadata by the Dograh
+            (e.g. "voicemail_detection"). Sent as request metadata by the Bolo
             provider; ignored by other providers.
     """
     # Vertex builds its endpoint from the location, so it is part of what this
@@ -1516,7 +1516,7 @@ def create_llm_service_from_provider(
         if not is_vertex:
             model = _migrate_deprecated_google_model(model)
         service_class = (
-            DograhGoogleVertexLLMService if is_vertex else DograhGoogleLLMService
+            BoloGoogleVertexLLMService if is_vertex else BoloGoogleLLMService
         )
         settings_class = GoogleVertexLLMSettings if is_vertex else GoogleLLMSettings
 
@@ -1544,7 +1544,7 @@ def create_llm_service_from_provider(
         # Gemini's opaque signatures may not transfer between platforms,
         # projects or models. Scope provider-specific context to this target;
         # standard text and tool history remains available to every adapter.
-        adapter = cast(DograhGeminiJSONSchemaAdapter, service.get_llm_adapter())
+        adapter = cast(BoloGeminiJSONSchemaAdapter, service.get_llm_adapter())
         adapter.signature_scope = hashlib.sha256(
             json.dumps([provider, connection], sort_keys=True).encode()
         ).hexdigest()
@@ -1560,8 +1560,8 @@ def create_llm_service_from_provider(
             endpoint=endpoint,
             settings=AzureLLMSettings(model=model, **sampling_settings),
         )
-    elif provider == ServiceProviders.DOGRAH.value:
-        return DograhLLMService(
+    elif provider == ServiceProviders.BOLO.value:
+        return BoloLLMService(
             base_url=f"{MPS_API_URL}/api/v1/llm",
             enable_direct_mode=enable_direct_mode,
             api_key=api_key,
@@ -1651,19 +1651,19 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
     )
 
     if provider == ServiceProviders.OPENAI_REALTIME.value and model == "gpt-live-1":
-        from api.services.pipecat.realtime.openai_live import DograhOpenAILiveLLMService
+        from api.services.pipecat.realtime.openai_live import BoloOpenAILiveLLMService
 
-        return DograhOpenAILiveLLMService(
+        return BoloOpenAILiveLLMService(
             api_key=api_key,
             backend_model=realtime_config.backend_model,
-            settings=DograhOpenAILiveLLMService.Settings(
+            settings=BoloOpenAILiveLLMService.Settings(
                 model=model,
                 voice=voice or "marin",
             ),
         )
     elif provider == ServiceProviders.OPENAI_REALTIME.value:
         from api.services.pipecat.realtime.openai_realtime import (
-            DograhOpenAIRealtimeLLMService,
+            BoloOpenAIRealtimeLLMService,
         )
         from pipecat.services.openai.realtime.events import (
             AudioConfiguration,
@@ -1680,9 +1680,9 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
         if language:
             transcription_kwargs["language"] = language
 
-        return DograhOpenAIRealtimeLLMService(
+        return BoloOpenAIRealtimeLLMService(
             api_key=api_key,
-            settings=DograhOpenAIRealtimeLLMService.Settings(
+            settings=BoloOpenAIRealtimeLLMService.Settings(
                 model=model,
                 session_properties=SessionProperties(
                     audio=AudioConfiguration(
@@ -1700,7 +1700,7 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
         )
     elif provider == ServiceProviders.GROK_REALTIME.value:
         from api.services.pipecat.realtime.grok_realtime import (
-            DograhGrokRealtimeLLMService,
+            BoloGrokRealtimeLLMService,
         )
         from pipecat.services.xai.realtime.events import (
             AudioConfiguration,
@@ -1713,9 +1713,9 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
         if grok_voice.lower() in {"ara", "rex", "sal", "eve", "leo"}:
             grok_voice = grok_voice.lower()
 
-        return DograhGrokRealtimeLLMService(
+        return BoloGrokRealtimeLLMService(
             api_key=api_key,
-            settings=DograhGrokRealtimeLLMService.Settings(
+            settings=BoloGrokRealtimeLLMService.Settings(
                 model=model,
                 session_properties=SessionProperties(
                     voice=grok_voice,
@@ -1729,30 +1729,30 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
         )
     elif provider == ServiceProviders.ULTRAVOX_REALTIME.value:
         from api.services.pipecat.realtime.ultravox_realtime import (
-            DograhUltravoxOneShotInputParams,
-            DograhUltravoxRealtimeLLMService,
+            BoloUltravoxOneShotInputParams,
+            BoloUltravoxRealtimeLLMService,
         )
 
-        return DograhUltravoxRealtimeLLMService(
-            params=DograhUltravoxOneShotInputParams(
+        return BoloUltravoxRealtimeLLMService(
+            params=BoloUltravoxOneShotInputParams(
                 api_key=api_key,
                 model=model,
                 voice=voice,
                 output_medium="voice",
                 temperature=realtime_config.temperature,
             ),
-            settings=DograhUltravoxRealtimeLLMService.Settings(
+            settings=BoloUltravoxRealtimeLLMService.Settings(
                 model=model,
                 output_medium="voice",
             ),
         )
     elif provider == ServiceProviders.AWS_NOVA_SONIC.value:
         from api.services.pipecat.realtime.aws_nova_sonic import (
-            DograhAWSNovaSonicLLMService,
+            BoloAWSNovaSonicLLMService,
         )
         from pipecat.services.aws.nova_sonic.llm import AudioConfig as NovaAudioConfig
 
-        return DograhAWSNovaSonicLLMService(
+        return BoloAWSNovaSonicLLMService(
             secret_access_key=realtime_config.aws_secret_key,
             access_key_id=realtime_config.aws_access_key,
             session_token=realtime_config.aws_session_token or None,
@@ -1761,7 +1761,7 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
                 input_sample_rate=audio_config.transport_in_sample_rate,
                 output_sample_rate=audio_config.transport_out_sample_rate,
             ),
-            settings=DograhAWSNovaSonicLLMService.Settings(
+            settings=BoloAWSNovaSonicLLMService.Settings(
                 model=model,
                 voice=voice or "matthew",
                 endpointing_sensitivity=realtime_config.endpointing_sensitivity,
@@ -1772,7 +1772,7 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
         )
     elif provider == ServiceProviders.GOOGLE_REALTIME.value:
         from api.services.pipecat.realtime.gemini_live import (
-            DograhGeminiLiveLLMService,
+            BoloGeminiLiveLLMService,
         )
 
         # Gemini Live enables input/output audio transcription by default
@@ -1783,13 +1783,13 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
         }
         if language:
             settings_kwargs["language"] = language
-        return DograhGeminiLiveLLMService(
+        return BoloGeminiLiveLLMService(
             api_key=api_key,
-            settings=DograhGeminiLiveLLMService.Settings(**settings_kwargs),
+            settings=BoloGeminiLiveLLMService.Settings(**settings_kwargs),
         )
     elif provider == ServiceProviders.GOOGLE_VERTEX_REALTIME.value:
         from api.services.pipecat.realtime.gemini_live_vertex import (
-            DograhGeminiLiveVertexLLMService,
+            BoloGeminiLiveVertexLLMService,
         )
 
         project_id = getattr(realtime_config, "project_id", None)
@@ -1801,15 +1801,15 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
         }
         if language:
             settings_kwargs["language"] = language
-        return DograhGeminiLiveVertexLLMService(
+        return BoloGeminiLiveVertexLLMService(
             credentials=credentials,
             project_id=project_id,
             location=vertex_location,
-            settings=DograhGeminiLiveVertexLLMService.Settings(**settings_kwargs),
+            settings=BoloGeminiLiveVertexLLMService.Settings(**settings_kwargs),
         )
     elif provider == ServiceProviders.AZURE_REALTIME.value:
         from api.services.pipecat.realtime.azure_realtime import (
-            DograhAzureRealtimeLLMService,
+            BoloAzureRealtimeLLMService,
         )
         from pipecat.services.openai.realtime.events import (
             AudioConfiguration,
@@ -1848,10 +1848,10 @@ def create_realtime_llm_service(user_config, audio_config: "AudioConfig"):
                 "",
             )
         )
-        return DograhAzureRealtimeLLMService(
+        return BoloAzureRealtimeLLMService(
             api_key=api_key,
             base_url=wss_url,
-            settings=DograhAzureRealtimeLLMService.Settings(
+            settings=BoloAzureRealtimeLLMService.Settings(
                 model=model,
                 session_properties=SessionProperties(
                     audio=AudioConfiguration(

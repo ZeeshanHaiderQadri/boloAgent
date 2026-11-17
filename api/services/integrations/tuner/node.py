@@ -50,7 +50,7 @@ def _strip_braces(name: str) -> str:
         "Tuner is a post-call observability export. It does not participate in the "
         "conversation graph and should not be connected to other nodes."
     ),
-    docs_url="https://docs.dograh.com/integrations/tuner",
+    docs_url="https://docs.boloagent.com/integrations/tuner",
     category=NodeCategory.integration,
     icon="Activity",
     examples=[
@@ -91,7 +91,7 @@ def _strip_braces(name: str) -> str:
         },
         "tuner_enabled": {
             "display_name": "Enabled",
-            "description": "When false, Dograh skips exporting this call to Tuner.",
+            "description": "When false, Bolo skips exporting this call to Tuner.",
         },
         "tuner_agent_id": {
             "display_name": "Tuner Agent ID",
@@ -116,7 +116,7 @@ class TunerNodeData(BaseNodeData):
         default=True,
         ui_type=PropertyType.boolean,
         display_name="Enabled",
-        description="When false, Dograh skips exporting this call to Tuner.",
+        description="When false, Bolo skips exporting this call to Tuner.",
     )
     tuner_agent_id: str | None = spec_field(
         default=None,

@@ -75,9 +75,9 @@ export type ConfigurationSpec = Omit<ApiConfigurationSpec, ServiceRole | "llm_fa
     } & Partial<Record<Exclude<ServiceRole, "llm">, ServiceSelection | null>>;
 
 
-export type ConfigurationEditorMode = "dograh" | "cascade" | "realtime";
+export type ConfigurationEditorMode = "bolo" | "cascade" | "realtime";
 export const MODE_LABELS: Record<ConfigurationEditorMode, string> = {
-    dograh: "Dograh", cascade: "BYOK", realtime: "Realtime",
+    bolo: "Bolo", cascade: "BYOK", realtime: "Realtime",
 };
 
 export type NamedModelConfiguration = Omit<NamedModelConfigurationResponse, "configuration"> & {

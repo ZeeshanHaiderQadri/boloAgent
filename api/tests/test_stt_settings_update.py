@@ -275,9 +275,9 @@ def test_key_pool_comparison_does_not_select_new_credentials():
         ("GladiaSTTConfiguration", {"language": "en"}, {"language": "pt"}),
         ("CartesiaSTTConfiguration", {"model": "ink-2"}, {"language": "pt"}),
         ("DeepgramSTTConfiguration", {"model": "flux-general-en"}, {"language": "pt"}),
-        ("DograhSTTService", {"language": "en"}, {"language": "ta"}),
-        ("DograhSTTService", {"language": "ta"}, {"language": "en"}),
-        ("DograhSTTService", {"language": "ta"}, {"language": "te"}),
+        ("BoloSTTService", {"language": "en"}, {"language": "ta"}),
+        ("BoloSTTService", {"language": "ta"}, {"language": "en"}),
+        ("BoloSTTService", {"language": "ta"}, {"language": "te"}),
         (
             "AssemblyAISTTConfiguration",
             {"model": "universal-streaming-multilingual"},

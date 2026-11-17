@@ -1,4 +1,4 @@
-"""MPS utilities use existing organization-owned Dograh connections."""
+"""MPS utilities use existing organization-owned Bolo connections."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -33,7 +33,7 @@ def connections(monkeypatch):
     lookup = AsyncMock(
         return_value=[
             SimpleNamespace(provider="openai", credentials={"api_key": "other-key"}),
-            SimpleNamespace(provider="dograh", credentials={"api_key": "mps_sk_saved"}),
+            SimpleNamespace(provider="bolo", credentials={"api_key": "mps_sk_saved"}),
         ]
     )
     monkeypatch.setattr(client_module.db_client, "list_provider_connections", lookup)
@@ -88,8 +88,8 @@ async def test_utilities_work_with_custom_defaults(
     mint.assert_not_awaited()
 
 
-async def test_selected_dograh_key_takes_precedence(custom_models, connections):
-    custom_models.llm = SimpleNamespace(provider="dograh", api_key="mps_sk_selected")
+async def test_selected_bolo_key_takes_precedence(custom_models, connections):
+    custom_models.llm = SimpleNamespace(provider="bolo", api_key="mps_sk_selected")
     assert await MPSServiceKeyClient()._runtime_service_key(42) == "mps_sk_selected"
     connections.assert_not_awaited()
 
@@ -157,7 +157,7 @@ async def test_utility_fallback_is_scoped_to_each_organization(
         assert active_only is True
         return [
             SimpleNamespace(
-                provider="dograh",
+                provider="bolo",
                 credentials={"api_key": f"mps_sk_team_{organization_id}"},
             )
         ]
@@ -176,12 +176,12 @@ async def test_utilities_require_an_existing_usable_key(
     with pytest.raises(HTTPException) as error:
         await MPSServiceKeyClient()._runtime_service_key(42)
     assert error.value.status_code == 400
-    assert "Add a Dograh provider" in error.value.detail
+    assert "Add a Bolo provider" in error.value.detail
     assert "default" not in error.value.detail
 
 
 async def test_archived_connection_cannot_be_used(custom_models, connections):
-    # The active-only catalog read excludes the archived Dograh connection.
+    # The active-only catalog read excludes the archived Bolo connection.
     connections.return_value = []
     with pytest.raises(HTTPException) as error:
         await MPSServiceKeyClient()._runtime_service_key(42)

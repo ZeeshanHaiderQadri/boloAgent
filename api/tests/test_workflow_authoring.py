@@ -42,7 +42,7 @@ async def test_mcp_loads_the_same_stage_guidance_as_each_builder_agent():
         instructions = client.instructions
     assert instructions is not None
     assert instructions.startswith(core)
-    assert "@dograh/sdk" not in core
+    assert "@bolo/sdk" not in core
     assert "get_workflow_authoring_guide" in core
     # Interface-specific capabilities must not leak across bootstrap boundaries.
     assert "`propose_workflow`" not in instructions
@@ -70,7 +70,7 @@ async def test_mcp_loads_the_same_stage_guidance_as_each_builder_agent():
                 if stage == AuthoringStage.build_requirements:
                     assert "open_questions" not in result["output_schema"]["properties"]
                 if stage != AuthoringStage.build:
-                    assert "@dograh/sdk" not in result["instructions"]
+                    assert "@bolo/sdk" not in result["instructions"]
     finally:
         builder_mcp_user.reset(token)
 

@@ -18,7 +18,7 @@ from api.services import mps_service_key_client as mps_client_module
 from api.services.configuration.ai_model_configuration import (
     ResolvedAIModelConfiguration,
 )
-from api.services.configuration.registry import DograhLLMService, OpenAILLMService
+from api.services.configuration.registry import BoloLLMService, OpenAILLMService
 from api.services.workflow.builder_runtime.agent import (
     build_agent,
     builder_instructions,
@@ -82,7 +82,7 @@ async def test_unavailable_tools_are_rejected_even_if_the_model_calls_them():
         "write_todos": {"todos": []},
         "list_docs": {},
         "read_doc": {"path": "README.md"},
-        "search_docs": {"query": "Dograh"},
+        "search_docs": {"query": "Bolo"},
         "read_artifact": {"id": "example"},
         "create_workflow": {},
     }
@@ -373,7 +373,7 @@ def managed_builder_config(monkeypatch):
     config = AsyncMock(
         return_value=SimpleNamespace(
             effective=EffectiveAIModelConfiguration(
-                llm=DograhLLMService(api_key="org-service-key")
+                llm=BoloLLMService(api_key="org-service-key")
             ),
         )
     )
@@ -435,7 +435,7 @@ async def test_model_adapter_preserves_reasoning_and_provider_tool_metadata(
     assert payload["service_key"] == "org-service-key"
     assert "model" not in payload
     assert payload["metadata"]["usage_context"] == "workflow_builder"
-    assert payload["metadata"]["dograh_organization_id"] == "2"
+    assert payload["metadata"]["bolo_organization_id"] == "2"
     assert "correlation_id" not in payload["metadata"]
     assert "mps_billing_version" not in payload["metadata"]
     config, minted = managed_builder_config
@@ -453,13 +453,13 @@ async def test_model_adapter_preserves_reasoning_and_provider_tool_metadata(
     "llm",
     [
         None,
-        DograhLLMService(api_key=""),
-        DograhLLMService(api_key="   "),
+        BoloLLMService(api_key=""),
+        BoloLLMService(api_key="   "),
         OpenAILLMService(api_key="byok-secret"),
     ],
     ids=["missing", "empty", "blank", "byok"],
 )
-async def test_model_adapter_requires_configured_dograh_key(
+async def test_model_adapter_requires_configured_bolo_key(
     monkeypatch, managed_builder_config, llm
 ):
     from api.services.workflow.builder_runtime import model as adapter
@@ -483,7 +483,7 @@ async def test_model_adapter_requires_configured_dograh_key(
     ):
         await model.ainvoke([HumanMessage(content="Hello")])
     assert error.value.status_code == 400
-    assert "only supported with a Dograh Service Key" in error.value.detail
+    assert "only supported with a Bolo Service Key" in error.value.detail
     assert "/model-configurations" in error.value.detail
     managed_builder_config[1].assert_not_awaited()
     client.assert_not_called()
@@ -493,14 +493,14 @@ async def test_model_adapter_requires_configured_dograh_key(
 @pytest.mark.parametrize(
     "upstream_status,status,error_code,message",
     [
-        (400, 400, "dograh-400", "rejected"),
-        (401, 401, "dograh-401", "Service Key"),
-        (403, 403, "dograh-403", "Service Key"),
-        (402, 402, "dograh-insufficient-credits", "credits"),
-        (429, 429, "dograh-429", "rate limiting"),
-        (500, 503, "dograh-500", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
-        (503, 503, "dograh-503", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
-        (504, 504, "dograh-504", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
+        (400, 400, "bolo-400", "rejected"),
+        (401, 401, "bolo-401", "Service Key"),
+        (403, 403, "bolo-403", "Service Key"),
+        (402, 402, "bolo-insufficient-credits", "credits"),
+        (429, 429, "bolo-429", "rate limiting"),
+        (500, 503, "bolo-500", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
+        (503, 503, "bolo-503", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
+        (504, 504, "bolo-504", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
     ],
 )
 async def test_model_adapter_sanitizes_upstream_errors(
@@ -540,8 +540,8 @@ async def test_model_adapter_sanitizes_upstream_errors(
 @pytest.mark.parametrize(
     "exception,status,error_code,message",
     [
-        (httpx.ConnectError, 503, "dograh-connection", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
-        (httpx.ReadTimeout, 504, "dograh-timeout", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
+        (httpx.ConnectError, 503, "bolo-connection", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
+        (httpx.ReadTimeout, 504, "bolo-timeout", MPS_UNAVAILABLE_PUBLIC_MESSAGE),
     ],
 )
 async def test_model_adapter_reports_transport_errors(
@@ -578,7 +578,7 @@ async def test_model_adapter_isolates_org_keys_and_refreshes_configuration(
         assert default_row.uuid == "default-configuration"
         return SimpleNamespace(
             effective=EffectiveAIModelConfiguration(
-                llm=DograhLLMService(api_key=keys[org_id])
+                llm=BoloLLMService(api_key=keys[org_id])
             ),
         )
 
@@ -589,7 +589,7 @@ async def test_model_adapter_isolates_org_keys_and_refreshes_configuration(
         import json
 
         payload = json.loads(request.content)
-        org_id = int(payload["metadata"]["dograh_organization_id"])
+        org_id = int(payload["metadata"]["bolo_organization_id"])
         assert request.headers["Authorization"] == f"Bearer {keys[org_id]}"
         assert request.url.path == "/api/v1/agent-builder/chat/completions"
         assert "correlation_id" not in payload["metadata"]

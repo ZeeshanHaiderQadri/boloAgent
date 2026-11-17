@@ -198,7 +198,7 @@ class WorkflowClient(BaseDBClient):
                         str(
                             uuid5(
                                 NAMESPACE_URL,
-                                f"dograh-builder:{organization_id}:{user_id}:{candidate}",
+                                f"bolo-builder:{organization_id}:{user_id}:{candidate}",
                             )
                         )
                         == workflow_uuid

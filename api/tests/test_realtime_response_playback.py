@@ -21,9 +21,9 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection
 
 from api.services.pipecat.call_opening import OpeningInputGate
-from api.services.pipecat.realtime.azure_realtime import DograhAzureRealtimeLLMService
-from api.services.pipecat.realtime.grok_realtime import DograhGrokRealtimeLLMService
-from api.services.pipecat.realtime.openai_realtime import DograhOpenAIRealtimeLLMService
+from api.services.pipecat.realtime.azure_realtime import BoloAzureRealtimeLLMService
+from api.services.pipecat.realtime.grok_realtime import BoloGrokRealtimeLLMService
+from api.services.pipecat.realtime.openai_realtime import BoloOpenAIRealtimeLLMService
 from api.services.pipecat.speech_playback import PlaybackOutcome
 from api.services.pipecat.worker_runner import run_pipeline_worker
 from api.services.workflow.pipecat_engine import PipecatEngine
@@ -89,13 +89,13 @@ def audio_done(response_id):
 @pytest.fixture(params=["grok", "openai", "azure"])
 async def realtime_playback(request):
     if request.param == "grok":
-        service = DograhGrokRealtimeLLMService(api_key="test")
+        service = BoloGrokRealtimeLLMService(api_key="test")
     elif request.param == "azure":
-        service = DograhAzureRealtimeLLMService(
+        service = BoloAzureRealtimeLLMService(
             api_key="test", base_url="wss://example.test/openai/v1/realtime"
         )
     else:
-        service = DograhOpenAIRealtimeLLMService(api_key="test")
+        service = BoloOpenAIRealtimeLLMService(api_key="test")
     # Replace network I/O only. Run the actual parsers, handlers, frame hooks,
     # speech tracker and the transport's media queue.
     service._connect = AsyncMock()
@@ -314,7 +314,7 @@ async def test_new_request_before_cancelled_ack_keeps_its_own_playback_scope(
     await h.service._send_manual_response_create()
     starts = [f for f in h.frames if isinstance(f, LLMFullResponseStartFrame)]
     assert len(starts) == 2
-    assert starts[-1].metadata["dograh_speech_id"] == current.id
+    assert starts[-1].metadata["bolo_speech_id"] == current.id
     # A provider cancellation has no response ID. Reserve the new scope now,
     # but send its request only after cancelling the acknowledged old response.
     sent = [call.args[0]["type"] for call in h.service._ws_send.await_args_list]
@@ -403,7 +403,7 @@ async def test_interrupting_a_deferred_request_does_not_send_it(realtime_playbac
     await h.service._send_manual_response_create()
     starts = [f for f in h.frames if isinstance(f, LLMFullResponseStartFrame)]
     assert len(starts) == 3
-    assert starts[-1].metadata["dograh_speech_id"] == current.id
+    assert starts[-1].metadata["bolo_speech_id"] == current.id
     await h.replay(
         response("response.created", "old"),
         response("response.done", "old", status="cancelled"),

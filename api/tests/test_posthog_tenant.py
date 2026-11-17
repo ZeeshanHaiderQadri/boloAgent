@@ -22,7 +22,7 @@ def lookup(monkeypatch):
 @pytest.mark.asyncio
 async def test_tenant_properties_name_the_team_and_deployment(monkeypatch, lookup):
     monkeypatch.setattr(posthog_tenant, "get_posthog", lambda: object())
-    monkeypatch.setattr(posthog_tenant, "DOGRAH_DEPLOYMENT_ID", "eu")
+    monkeypatch.setattr(posthog_tenant, "BOLO_DEPLOYMENT_ID", "eu")
 
     assert await posthog_tenant.tenant_properties(42) == {
         "organization_provider_id": "team-1",
@@ -38,7 +38,7 @@ async def test_tenant_properties_skip_lookup_without_posthog(monkeypatch, lookup
 
     properties = await posthog_tenant.tenant_properties(42)
 
-    assert properties == {"deployment_id": posthog_tenant.DOGRAH_DEPLOYMENT_ID}
+    assert properties == {"deployment_id": posthog_tenant.BOLO_DEPLOYMENT_ID}
     lookup.assert_not_called()
 
 
@@ -48,7 +48,7 @@ async def test_failed_lookup_still_returns_the_deployment(monkeypatch, lookup):
     lookup.side_effect = RuntimeError("database unavailable")
 
     assert await posthog_tenant.tenant_properties(42) == {
-        "deployment_id": posthog_tenant.DOGRAH_DEPLOYMENT_ID
+        "deployment_id": posthog_tenant.BOLO_DEPLOYMENT_ID
     }
 
 
@@ -85,7 +85,7 @@ def identified(monkeypatch):
 @pytest.mark.asyncio
 async def test_tenant_event_joins_the_account_group(monkeypatch, lookup, identified):
     monkeypatch.setattr(posthog_tenant, "get_posthog", lambda: object())
-    monkeypatch.setattr(posthog_tenant, "DOGRAH_DEPLOYMENT_ID", "eu")
+    monkeypatch.setattr(posthog_tenant, "BOLO_DEPLOYMENT_ID", "eu")
     captured = []
     monkeypatch.setattr(
         posthog_tenant, "capture_event", lambda **kwargs: captured.append(kwargs)
@@ -137,7 +137,7 @@ async def test_tenant_event_for_an_unknown_organization_has_no_group(
     lookup.assert_awaited_once_with(7)
     assert captured[0]["groups"] == {}
     assert captured[0]["properties"] == {
-        "deployment_id": posthog_tenant.DOGRAH_DEPLOYMENT_ID,
+        "deployment_id": posthog_tenant.BOLO_DEPLOYMENT_ID,
         "organization_provider_id": None,
     }
     assert identified == []

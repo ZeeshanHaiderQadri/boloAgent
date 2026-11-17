@@ -1,4 +1,4 @@
-"""Dograh's agent model adapter; MPS owns inference and provider routing."""
+"""Bolo's agent model adapter; MPS owns inference and provider routing."""
 
 import asyncio
 import json
@@ -20,7 +20,7 @@ from api.errors.mps import MPSUnavailableError
 from api.services.configuration.ai_model_configuration import (
     get_resolved_ai_model_configuration,
 )
-from api.services.managed_model_services import get_dograh_service_api_key
+from api.services.managed_model_services import get_bolo_service_api_key
 from api.services.mps_service_key_client import mps_service_key_client
 
 from .errors import BuilderModelError
@@ -60,10 +60,10 @@ class BuilderChatModel(BaseChatModel):
 
     @property
     def _llm_type(self) -> str:
-        return "dograh_builder"
+        return "bolo_builder"
 
     def _get_ls_params(self, **kwargs):
-        return {**super()._get_ls_params(**kwargs), "ls_provider": "dograh_builder"}
+        return {**super()._get_ls_params(**kwargs), "ls_provider": "bolo_builder"}
 
     def bind_tools(self, tools, **kwargs):
         return self.bind(
@@ -79,11 +79,11 @@ class BuilderChatModel(BaseChatModel):
         resolved = await get_resolved_ai_model_configuration(
             organization_id=self.organization_id
         )
-        api_key = (get_dograh_service_api_key(resolved.effective) or "").strip()
+        api_key = (get_bolo_service_api_key(resolved.effective) or "").strip()
         if not api_key:
             raise HTTPException(
                 400,
-                "Agent builder is currently only supported with a Dograh Service Key. "
+                "Agent builder is currently only supported with a Bolo Service Key. "
                 "Set it in /model-configurations.",
             )
         wire = convert_to_openai_messages(messages)
@@ -99,7 +99,7 @@ class BuilderChatModel(BaseChatModel):
                 # reasoning tokens against this budget, so a small cap starves
                 # the actual tool-call output and truncates its JSON arguments
                 # mid-string. Give enough headroom for reasoning + the full
-                # tool call (e.g. a complete @dograh/sdk workflow in
+                # tool call (e.g. a complete @bolo/sdk workflow in
                 # propose_workflow's args).
                 max_tokens=self.max_output_tokens,
                 tools=kwargs.get("tools"),
@@ -114,12 +114,12 @@ class BuilderChatModel(BaseChatModel):
                     ),
                     # Identifiers for tracing only, never authorization.
                     "source": BUILDER_USAGE_CONTEXT,
-                    "dograh_organization_id": str(self.organization_id),
-                    "dograh_user_id": self.user_id,
+                    "bolo_organization_id": str(self.organization_id),
+                    "bolo_user_id": self.user_id,
                 },
             )
         except (httpx.HTTPError, MPSUnavailableError) as exc:
-            failure = classify_exception(exc, source=ErrorSource.LLM, provider="dograh")
+            failure = classify_exception(exc, source=ErrorSource.LLM, provider="bolo")
             log_failure(
                 failure,
                 organization_id=self.organization_id,

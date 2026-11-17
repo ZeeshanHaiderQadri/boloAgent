@@ -126,7 +126,7 @@ class PromptVariablesConfiguration(BaseModel):
     mode: Literal["inline", "call_context"] = Field(
         default="inline",
         description=(
-            "Enable prompt caching optimization with call_context. Dograh manages "
+            "Enable prompt caching optimization with call_context. Bolo manages "
             "explicit caching automatically for eligible providers and models."
         ),
     )

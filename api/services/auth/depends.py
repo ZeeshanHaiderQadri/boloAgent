@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, Query, WebSocket
 from loguru import logger
 
-from api.constants import AUTH_PROVIDER, DEPLOYMENT_MODE, DOGRAH_DEPLOYMENT_ID
+from api.constants import AUTH_PROVIDER, DEPLOYMENT_MODE, BOLO_DEPLOYMENT_ID
 from api.db import db_client
 from api.db.models import UserModel
 from api.enums import PostHogEvent
@@ -87,7 +87,7 @@ async def get_user(
                 properties={
                     "auth_provider": "stack",
                     "organization_provider_id": selected_team_id,
-                    "deployment_id": DOGRAH_DEPLOYMENT_ID,
+                    "deployment_id": BOLO_DEPLOYMENT_ID,
                 },
             )
     except Exception as e:
@@ -178,7 +178,7 @@ async def get_verified_stack_user(
     if AUTH_PROVIDER != "stack" or DEPLOYMENT_MODE == "oss":
         raise HTTPException(
             status_code=403,
-            detail="Get a service key at https://app.dograh.com/get-service-key",
+            detail="Get a service key at https://app.boloagent.com/get-service-key",
         )
     identity = await stackauth.get_user(authorization)
     if not identity or str(identity.get("id")) != str(user.provider_id):
@@ -228,7 +228,7 @@ def _sync_created_organization_to_posthog(
                 "organization_provider_id": organization_provider_id,
                 "auth_provider": "stack",
                 "created_by_provider_id": created_by,
-                "deployment_id": DOGRAH_DEPLOYMENT_ID,
+                "deployment_id": BOLO_DEPLOYMENT_ID,
             },
             groups=tenant_groups(organization_provider_id),
         )
@@ -266,7 +266,7 @@ def _associate_user_with_posthog_organization(
             "organization_provider_id": organization_provider_id,
             "auth_provider": "stack",
             "organization_was_created": org_was_created,
-            "deployment_id": DOGRAH_DEPLOYMENT_ID,
+            "deployment_id": BOLO_DEPLOYMENT_ID,
         }
 
         capture_event(

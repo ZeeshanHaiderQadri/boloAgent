@@ -1,4 +1,4 @@
-"""Tests for CAMB AI TTS integration into Dograh.
+"""Tests for CAMB AI TTS integration into Bolo.
 
 Covers:
 - CambTTSConfiguration model (defaults, custom values, JSON schema)

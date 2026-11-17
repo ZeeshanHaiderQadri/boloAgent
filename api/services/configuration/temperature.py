@@ -121,7 +121,7 @@ TEMPERATURE_POLICIES = {
         "docs_url": "https://learn.microsoft.com/azure/foundry/openai/how-to/reasoning",
         "model_constraints": [AZURE_REASONING_RULE],
     },
-    "dograh": {
+    "bolo": {
         "description": TEMPERATURE_DESCRIPTION + " Limits depend on the hosted model.",
     },
     "aws_bedrock": {

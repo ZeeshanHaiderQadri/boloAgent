@@ -33,7 +33,7 @@ tools listed in its `tool_uuids`.
 
 Pick the category for the requested action:
 - http_api — call an external system (create a ticket, look up an order).
-  LLM-supplied values go in `parameters`; values Dograh already holds go in
+  LLM-supplied values go in `parameters`; values Bolo already holds go in
   `preset_parameters` as `{{gathered_context.*}}`/`{{initial_context.*}}`.
 - transfer_call — hand the caller to a phone number: a static `destination`, or
   `context_mapping`/`dynamic` resolution when the number depends on the call.

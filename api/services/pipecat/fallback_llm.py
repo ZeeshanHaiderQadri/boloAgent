@@ -1,4 +1,4 @@
-"""Dograh's bounded race between unchanged Pipecat text LLM services.
+"""Bolo's bounded race between unchanged Pipecat text LLM services.
 
 The children run in Pipecat's direct mode, in managed per-request tasks. Their
 output boundaries never wait for downstream delivery: a synchronous decision
@@ -287,7 +287,7 @@ class FallbackLLMProcessor(LLMService):
             or attempt.race.superseded
         ):
             # BaseObject catches Exception, not CancelledError. This stops the
-            # runner before Dograh's hook can accept independently owned work.
+            # runner before Bolo's hook can accept independently owned work.
             raise asyncio.CancelledError
         await self._call_event_handler("on_function_calls_prepared", items)
 

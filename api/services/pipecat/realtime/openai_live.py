@@ -1,4 +1,4 @@
-"""OpenAI Live with Dograh workflow tools and conversation controls."""
+"""OpenAI Live with Bolo workflow tools and conversation controls."""
 
 import asyncio
 from collections.abc import Sequence
@@ -55,7 +55,7 @@ Current workflow:
 """
 
 
-class DograhOpenAILiveLLMService(
+class BoloOpenAILiveLLMService(
     BackgroundConnectionMixin, RealtimeConversationMixin, OpenAILiveLLMService
 ):
     """Keep workflow instructions on the Responses backend of a Live session."""

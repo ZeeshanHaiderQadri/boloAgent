@@ -1,7 +1,7 @@
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
-from api.mcp_server.instructions import DOGRAH_MCP_INSTRUCTIONS
+from api.mcp_server.instructions import BOLO_MCP_INSTRUCTIONS
 from api.mcp_server.tools.call_history import get_call_transcript, list_calls
 from api.mcp_server.tools.catalog import (
     list_credentials,
@@ -21,7 +21,7 @@ from api.mcp_server.tools.voice_prompting_guide import get_voice_prompting_guide
 from api.mcp_server.tools.workflow_authoring_guide import get_workflow_authoring_guide
 from api.mcp_server.tools.workflows import get_workflow, list_workflows
 
-mcp = FastMCP("dograh", instructions=DOGRAH_MCP_INSTRUCTIONS)
+mcp = FastMCP("bolo", instructions=BOLO_MCP_INSTRUCTIONS)
 
 for _tool in (
     create_workflow,
