@@ -62,7 +62,7 @@ def test_windows_setup_generates_and_writes_the_key():
     script = _read("scripts/setup_local.ps1")
 
     assert "function New-FernetKey" in script
-    assert '$credentialEncryptionKeys = New-FernetKey' in script
+    assert "$credentialEncryptionKeys = New-FernetKey" in script
     assert '"BOLO_CREDENTIAL_ENCRYPTION_KEYS=$credentialEncryptionKeys"' in script
 
 
@@ -77,8 +77,7 @@ def test_compose_requires_and_passes_the_key_to_the_api():
     compose = _read("docker-compose.yaml")
 
     assert (
-        'BOLO_CREDENTIAL_ENCRYPTION_KEYS: '
-        '"${BOLO_CREDENTIAL_ENCRYPTION_KEYS:?'
+        'BOLO_CREDENTIAL_ENCRYPTION_KEYS: "${BOLO_CREDENTIAL_ENCRYPTION_KEYS:?'
     ) in compose
 
 
@@ -88,3 +87,17 @@ def test_upgrade_docs_require_the_key_before_updating_and_a_separate_backup():
     assert "BOLO_CREDENTIAL_ENCRYPTION_KEYS" in update_docs
     assert "before you update" in update_docs
     assert "separately from the database" in update_docs
+
+
+def test_cutover_docs_require_a_drained_old_version_and_a_rotation_sweep():
+    update_docs = _read("docs/deployment/update.mdx")
+    env_docs = _read("docs/developer/environment-variables.mdx")
+
+    for docs in (update_docs, env_docs):
+        assert "BOLO_CREDENTIAL_ENCRYPTION_REQUIRE=true" in docs
+        assert "drained" in docs
+        assert "rotate_credential_keys" in docs
+        # The REQUIRE flip has to come after the sweep, never before it.
+        assert docs.index("rotate_credential_keys") < docs.index(
+            "BOLO_CREDENTIAL_ENCRYPTION_REQUIRE=true"
+        )
