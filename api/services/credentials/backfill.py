@@ -12,7 +12,12 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from api.services.credentials.envelope import EnvelopeError, is_envelope, key_id
+from api.services.credentials.envelope import (
+    EnvelopeError,
+    has_envelope_markers,
+    is_envelope,
+    key_id,
+)
 
 
 def as_credential_dict(value: Any) -> dict[str, Any]:
@@ -63,6 +68,11 @@ def plan_backfill(
                     "BOLO_CREDENTIAL_ENCRYPTION_KEYS before migrating"
                 )
             continue
+        if has_envelope_markers(data):
+            raise EnvelopeError(
+                f"Credential row {row_id} has encryption envelope fields but is "
+                "not a valid v1 fernet envelope"
+            )
         pending.append((row_id, data))
 
     return pending, len(rows) - len(pending)

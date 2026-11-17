@@ -103,3 +103,18 @@ def test_envelope_rejects_unknown_version_and_algorithm():
         decrypt_envelope({**envelope, "v": 99}, [key])
     with pytest.raises(EnvelopeError, match="algorithm"):
         decrypt_envelope({**envelope, "alg": "rot13"}, [key])
+
+
+def test_malformed_envelope_markers_are_never_treated_as_plaintext():
+    cipher = CredentialCipher([_key()])
+    malformed = [
+        {"v": 1},
+        {"ciphertext": "not-a-fernet-token"},
+        {"alg": "fernet"},
+        {"key_id": "deadbeef"},
+    ]
+
+    for data in malformed:
+        with pytest.raises(CredentialEncryptionError, match="envelope fields"):
+            cipher.decrypt_data(data, allow_plaintext=True)
+

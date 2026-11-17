@@ -200,6 +200,22 @@ async def test_rotation_is_idempotent_and_encrypts_legacy_rows(db_session):
 
 
 @pytest.mark.asyncio
+async def test_rotation_refuses_malformed_envelopes_and_leaves_them_untouched(
+    db_session,
+):
+    user, org = await _org(db_session)
+    malformed = {"v": 1, "ciphertext": "not-a-fernet-token"}
+    credential = await _insert_plaintext_credential(
+        db_session, user, org, "Malformed", malformed
+    )
+
+    with pytest.raises(CredentialEncryptionError, match="cannot be rotated"):
+        await rotate_credentials(dry_run=False)
+
+    assert await _stored_credential_data(db_session, credential.id) == malformed
+
+
+@pytest.mark.asyncio
 async def test_api_never_returns_secret_and_logs_never_contain_it(
     db_session, test_client_factory
 ):

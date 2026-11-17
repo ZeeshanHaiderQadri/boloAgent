@@ -16,6 +16,7 @@ from api.services.credentials.envelope import (
     EnvelopeError,
     build_envelope,
     decrypt_envelope,
+    has_envelope_markers,
     is_envelope,
     key_id,
     parse_key_material,
@@ -93,6 +94,12 @@ class CredentialCipher:
                 return decrypt_envelope(data, self._keys)
             except EnvelopeError as exc:
                 raise CredentialEncryptionError(str(exc)) from exc
+
+        if has_envelope_markers(data):
+            raise CredentialEncryptionError(
+                "Credential data has encryption envelope fields but is not a "
+                "valid v1 fernet envelope; refusing to treat it as plaintext"
+            )
 
         allow = (
             not self._require_encrypted if allow_plaintext is None else allow_plaintext

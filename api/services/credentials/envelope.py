@@ -24,6 +24,7 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 ENVELOPE_VERSION = 1
 ALGORITHM = "fernet"
+ENVELOPE_MARKER_KEYS = ("v", "alg", "key_id", "ciphertext")
 
 
 class EnvelopeError(ValueError):
@@ -72,6 +73,18 @@ def is_envelope(value: Any) -> bool:
         and value.get("alg") == ALGORITHM
         and isinstance(value.get("ciphertext"), str)
         and bool(value.get("ciphertext"))
+    )
+
+
+def has_envelope_markers(value: Any) -> bool:
+    """Return True when value claims to be an envelope but may be malformed.
+
+    Used to fail closed: a row carrying ``v``/``alg``/``ciphertext`` that is not
+    a valid v1 fernet envelope must never be treated (or re-encrypted) as
+    plaintext, because the real secret may be in a field we cannot read.
+    """
+    return isinstance(value, Mapping) and any(
+        marker in value for marker in ENVELOPE_MARKER_KEYS
     )
 
 

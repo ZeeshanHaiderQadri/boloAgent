@@ -51,3 +51,12 @@ def test_plaintext_rows_are_pending_and_existing_envelopes_are_counted():
         (3, {"token": "json-string"}),
     ]
     assert encrypted == 1
+
+
+def test_malformed_envelope_rows_abort_the_plan():
+    keys = [_key()]
+    rows = [(9, {"v": 1, "ciphertext": ""})]
+
+    with pytest.raises(EnvelopeError, match="row 9"):
+        plan_backfill(rows, keys)
+

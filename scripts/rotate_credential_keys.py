@@ -20,7 +20,10 @@ from sqlalchemy import select
 
 from api.db import db_client
 from api.db.models import ExternalCredentialModel
-from api.services.credentials.cipher import get_credential_cipher
+from api.services.credentials.cipher import (
+    CredentialEncryptionError,
+    get_credential_cipher,
+)
 from api.services.credentials.envelope import is_envelope
 
 
@@ -57,7 +60,14 @@ async def rotate_credentials(
                     totals["skipped"] += 1
                     continue
 
-                plaintext = cipher.decrypt_data(current, allow_plaintext=True)
+                try:
+                    plaintext = cipher.decrypt_data(current, allow_plaintext=True)
+                except CredentialEncryptionError as exc:
+                    # Fail closed: an unknown shape may hold a secret we cannot
+                    # read, so never re-encrypt it as if it were plaintext.
+                    raise CredentialEncryptionError(
+                        f"Credential row {credential.id} cannot be rotated: {exc}"
+                    ) from exc
                 if not dry_run:
                     credential.credential_data = cipher.encrypt_data(plaintext)
                 totals["rotated"] += 1
