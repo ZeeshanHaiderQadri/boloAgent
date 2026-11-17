@@ -161,6 +161,15 @@ python3 scripts/brand/generate_brand_assets.py
 
 ---
 
+## 🙏 Acknowledgments
+
+Bolo began as a fork of the [Dograh](https://github.com/dograh-hq/dograh) open-source
+voice AI platform. We are grateful to the Dograh team and contributors for the
+foundation this project was built on. The original BSD 2-Clause copyright notice is
+retained in [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+---
+
 ## 📄 License & attribution
 
 Bolo Agent is licensed under the [BSD 2-Clause License](LICENSE).

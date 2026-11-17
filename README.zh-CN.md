@@ -160,6 +160,10 @@ Bolo 内置 MCP 服务器,因此编码智能体可以直接在你的 Bolo 工作
 
 <img src="docs/images/star-history.png" alt="Bolo star history" width="80%">
 
+## 🙏 致谢
+
+Bolo 最初基于开源语音 AI 平台 [Dograh](https://github.com/dograh-hq/dograh) 开发。感谢 Dograh 团队和贡献者提供的基础。BSD 2-Clause 的原始版权声明保留在 [LICENSE](LICENSE) 与 [NOTICE](NOTICE) 中。
+
 ## 📄 许可协议
 
 Bolo Agent 基于 [BSD 2-Clause 协议](LICENSE)开源。

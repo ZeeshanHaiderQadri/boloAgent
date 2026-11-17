@@ -166,6 +166,10 @@ Codex、Claude Code、Cursor、または任意の MCP クライアントを接�
 
 <img src="docs/images/star-history.png" alt="Bolo star history" width="80%">
 
+## 🙏 謝辞
+
+Bolo は、オープンソースの音声 AI プラットフォーム [Dograh](https://github.com/dograh-hq/dograh) を基盤として始まりました。基盤を提供してくださった Dograh チームとコントリビューターに感謝します。BSD 2-Clause の原著作者の著作権表示は [LICENSE](LICENSE) と [NOTICE](NOTICE) に保持されています。
+
 ## 📄 ライセンス
 
 Bolo Agent は [BSD 2-Clause License](LICENSE) のもとで公開されています。
