@@ -145,6 +145,64 @@ async def test_update_encrypts_new_secret(db_session):
 
 
 @pytest.mark.asyncio
+async def test_update_with_another_organization_returns_none_and_changes_nothing(
+    db_session,
+):
+    user, org = await _org(db_session)
+    _, other_org = await _org(db_session)
+    credential = await db_session.create_credential(
+        organization_id=org.id,
+        user_id=user.id,
+        name="Scoped",
+        credential_type="bearer_token",
+        credential_data={"token": "original"},
+    )
+    before = await _stored_credential_data(db_session, credential.id)
+
+    updated = await db_session.update_credential(
+        credential_uuid=credential.credential_uuid,
+        organization_id=other_org.id,
+        credential_data={"token": "should-not-land"},
+    )
+
+    assert updated is None
+    assert await _stored_credential_data(db_session, credential.id) == before
+
+
+@pytest.mark.asyncio
+async def test_update_reselect_stays_organization_scoped(db_session, monkeypatch):
+    """The post-update re-select must not return a row from another org.
+
+    The pre-check normally catches this, but a row that changes hands between
+    the check and the re-select would slip through an unscoped select.
+    """
+    user, org = await _org(db_session)
+    _, other_org = await _org(db_session)
+    credential = await db_session.create_credential(
+        organization_id=org.id,
+        user_id=user.id,
+        name="Race",
+        credential_type="bearer_token",
+        credential_data={"token": "original"},
+    )
+    before = await _stored_credential_data(db_session, credential.id)
+
+    async def fake_get(credential_uuid, organization_id, active_only=True):
+        return credential
+
+    monkeypatch.setattr(db_session, "get_credential_by_uuid", fake_get)
+
+    updated = await db_session.update_credential(
+        credential_uuid=credential.credential_uuid,
+        organization_id=other_org.id,
+        credential_data={"token": "should-not-land"},
+    )
+
+    assert updated is None
+    assert await _stored_credential_data(db_session, credential.id) == before
+
+
+@pytest.mark.asyncio
 async def test_legacy_plaintext_still_authenticates_without_being_rewritten(db_session):
     user, org = await _org(db_session)
     legacy_token = "legacy-plaintext-token"

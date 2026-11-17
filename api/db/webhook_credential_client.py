@@ -199,13 +199,18 @@ class WebhookCredentialClient(BaseDBClient):
             )
             await session.commit()
 
-            # Fetch updated credential
+            # Fetch updated credential, keeping the organization scope on the
+            # re-select so a row that changed hands mid-update cannot be
+            # returned to the wrong organization.
             result = await session.execute(
                 select(ExternalCredentialModel).where(
-                    ExternalCredentialModel.credential_uuid == credential_uuid
+                    ExternalCredentialModel.credential_uuid == credential_uuid,
+                    ExternalCredentialModel.organization_id == organization_id,
                 )
             )
-            updated_credential = result.scalar_one()
+            updated_credential = result.scalar_one_or_none()
+            if updated_credential is None:
+                return None
 
             logger.info(
                 f"Updated webhook credential {credential_uuid} "
