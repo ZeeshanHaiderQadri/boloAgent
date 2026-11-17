@@ -87,11 +87,21 @@ from api.tasks.workflow_completion import (
 
 
 async def on_startup(_ctx):
+    from loguru import logger
+
+    from api.db import db_client
     from api.services.credentials.cipher import (
+        CredentialEncryptionError,
         require_credential_encryption_configured,
     )
 
     require_credential_encryption_configured()
+    try:
+        await db_client.verify_credential_encryption_readable()
+    except CredentialEncryptionError:
+        raise
+    except Exception as exc:
+        logger.warning("Skipping credential encryption startup probe: {}", exc)
 
 
 class WorkerSettings:

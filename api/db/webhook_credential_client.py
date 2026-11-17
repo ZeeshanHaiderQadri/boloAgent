@@ -35,6 +35,22 @@ class WebhookCredentialClient(BaseDBClient):
             )
         return credential
 
+    async def verify_credential_encryption_readable(self) -> None:
+        """Decrypt one stored row so a wrong key fails at startup, not at call time.
+
+        An empty table has nothing to prove. Decryption failures raise
+        CredentialEncryptionError; database errors are left to the caller.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(ExternalCredentialModel)
+                .order_by(ExternalCredentialModel.id)
+                .limit(1)
+            )
+            credential = result.scalar_one_or_none()
+        if credential is not None:
+            decrypt_credential_data(credential.credential_data)
+
     async def create_credential(
         self,
         organization_id: int,

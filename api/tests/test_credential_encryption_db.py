@@ -4,10 +4,12 @@ import json
 from uuid import uuid4
 
 import pytest
+from cryptography.fernet import Fernet
 from loguru import logger
 
 from api.db.models import ExternalCredentialModel
-from api.services.credentials.envelope import is_envelope
+from api.services.credentials.cipher import CredentialEncryptionError
+from api.services.credentials.envelope import build_envelope, is_envelope
 from api.utils.credential_auth import build_auth_header
 from scripts.rotate_credential_keys import rotate_credentials
 
@@ -43,6 +45,44 @@ async def _stored_credential_data(db_client, credential_id):
     )
     value = rows[0]["credential_data"]
     return json.loads(value) if isinstance(value, str) else value
+
+
+@pytest.mark.asyncio
+async def test_startup_probe_accepts_rows_encrypted_with_the_configured_key(
+    db_session,
+):
+    user, org = await _org(db_session)
+    await db_session.create_credential(
+        organization_id=org.id,
+        user_id=user.id,
+        name="Readable",
+        credential_type="bearer_token",
+        credential_data={"token": "probe-ok"},
+    )
+
+    await db_session.verify_credential_encryption_readable()
+
+
+@pytest.mark.asyncio
+async def test_startup_probe_rejects_rows_encrypted_with_an_unconfigured_key(
+    db_session,
+):
+    user, org = await _org(db_session)
+    other_key = Fernet.generate_key().decode()
+    async with db_session.async_session() as session:
+        session.add(
+            ExternalCredentialModel(
+                organization_id=org.id,
+                created_by=user.id,
+                name="Wrong key",
+                credential_type="bearer_token",
+                credential_data=build_envelope({"token": "unreadable"}, [other_key]),
+            )
+        )
+        await session.flush()
+
+    with pytest.raises(CredentialEncryptionError):
+        await db_session.verify_credential_encryption_readable()
 
 
 @pytest.mark.asyncio
