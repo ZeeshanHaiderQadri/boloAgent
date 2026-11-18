@@ -139,6 +139,16 @@ def _lead_filters(
     return filters
 
 
+def lead_filter_clauses(organization_id: int, **kwargs) -> list:
+    """Public entry point for the shared CRM filters.
+
+    The campaign audience resolver must select exactly the leads the operator
+    sees in the leads list, so it reuses ``_lead_filters`` rather than copying
+    the clauses.
+    """
+    return _lead_filters(organization_id, **kwargs)
+
+
 class LeadProjectNameConflictError(Exception):
     """Raised when a lead project name already exists in the organization."""
 
