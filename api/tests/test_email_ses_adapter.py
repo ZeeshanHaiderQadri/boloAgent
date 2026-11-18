@@ -8,7 +8,12 @@ so the assertions cover the settings and error mapping that matter.
 from typing import Any
 
 import pytest
-from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
+from botocore.exceptions import (
+    ClientError,
+    EndpointConnectionError,
+    NoCredentialsError,
+    ParamValidationError,
+)
 
 from api.enums import EmailProvider
 from api.services.email import ses as ses_module
@@ -221,6 +226,7 @@ async def test_missing_message_id_is_retryable():
         "TooManyRequestsException",
         "LimitExceededException",
         "SendingPausedException",
+        "ConfigurationSetSendingPausedException",
         "ServiceUnavailable",
         "RequestTimeout",
     ],
@@ -281,6 +287,16 @@ async def test_connection_failures_are_retryable():
     )
 
     with pytest.raises(EmailDeliveryError, match="SES connection failed"):
+        await adapter.send(outbound())
+
+
+async def test_parameter_validation_is_a_configuration_error():
+    adapter = make_adapter()
+    RECORDS["send_error"] = ParamValidationError(
+        report="Invalid type for parameter Destination"
+    )
+
+    with pytest.raises(EmailConfigurationError, match="parameters are invalid"):
         await adapter.send(outbound())
 
 
