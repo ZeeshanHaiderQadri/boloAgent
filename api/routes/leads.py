@@ -52,6 +52,7 @@ from api.services.leads.consent import (
     consent_reset_values,
     email_address_changed,
     email_change_activity,
+    has_address_bound_decision,
 )
 from api.services.leads.dispatch import (
     DispatchError,
@@ -977,22 +978,26 @@ async def update_lead(
 
     # Consent belongs to the address it was recorded for. If the operator
     # changes the address, the old decision no longer covers this mailbox.
+    # Only a decision tied to an old address can be described as a reset; the
+    # lead_edit activity below still records the changed field.
     consent_activities: list[dict] = []
     if request.email is not None and email_address_changed(
         lead.email, request.email or None
     ):
-        values.update(consent_reset_values())
-        consent_activities.append(
-            email_change_activity(
-                organization_id=organization_id,
-                lead_id=lead_id,
-                user_id=user.id,
-                previous_email=lead.email,
-                new_email=request.email or None,
-                previous_consent=lead.email_consent,
-                source="manual",
+        if lead.email_consent != "unknown":
+            values.update(consent_reset_values())
+        if has_address_bound_decision(lead.email, lead.email_consent):
+            consent_activities.append(
+                email_change_activity(
+                    organization_id=organization_id,
+                    lead_id=lead_id,
+                    user_id=user.id,
+                    previous_email=lead.email,
+                    new_email=request.email or None,
+                    previous_consent=lead.email_consent,
+                    source="manual",
+                )
             )
-        )
 
     updated = await db_client.update_lead(
         lead_id,

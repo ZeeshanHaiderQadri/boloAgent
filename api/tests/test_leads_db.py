@@ -377,3 +377,86 @@ async def test_scraper_email_change_resets_consent_and_records_why(db_session):
     assert reset[0].extra_metadata["previous_email"] == "old@apex-software-demo.com"
     assert reset[0].extra_metadata["new_email"] == "new@apex-software-demo.com"
     assert "old@apex-software-demo.com" in reset[0].body
+
+
+@pytest.mark.asyncio
+async def test_address_change_without_a_prior_decision_is_not_called_a_reset(
+    db_session,
+):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[
+            _row("Apex Labs", "p1", email="old@apex-software-demo.com"),
+            # This lead has no address on file at all.
+            _row("Cedar Works", "p2"),
+        ],
+    )
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[
+            _row("Apex Labs", "p1", email="new@apex-software-demo.com"),
+            _row("Cedar Works", "p2", email="hello@cedar-demo.com"),
+        ],
+    )
+
+    leads, _ = await db_session.list_leads(org.id)
+    for lead in leads:
+        assert lead.email_consent == "unknown"
+        activities = await db_session.list_lead_activities(lead.id, org.id)
+        assert not [
+            item
+            for item in activities
+            if item.extra_metadata.get("reason") == "email_changed"
+        ]
+        changes = [item for item in activities if item.title == "Email address changed"]
+        assert len(changes) == 1
+        assert changes[0].extra_metadata["source"] == "scraper"
+
+
+@pytest.mark.asyncio
+async def test_first_address_clears_consent_without_a_reset_entry(db_session):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[_row("Apex Labs", "p1")],
+    )
+    lead = (await db_session.list_leads(org.id))[0][0]
+    await db_session.update_lead(
+        lead.id,
+        org.id,
+        email_consent="opted_in",
+        email_consent_source="bulk",
+        email_consent_at=datetime.now(UTC),
+    )
+
+    # The lead had a decision but no address. A discovered address must not
+    # inherit that decision, yet the timeline should not claim a reset tied to
+    # an address that never existed.
+    lead_id = lead.id
+    org_id = org.id
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org_id,
+        leads=[_row("Apex Labs", "p1", email="hello@apex-software-demo.com")],
+    )
+
+    refreshed = await db_session.get_lead(lead_id, org_id)
+    inspect(refreshed).session.expire_all()
+    refreshed = await db_session.get_lead(lead_id, org_id)
+    assert refreshed.email == "hello@apex-software-demo.com"
+    assert refreshed.email_consent == "unknown"
+
+    activities = await db_session.list_lead_activities(lead_id, org_id)
+    assert not [
+        item
+        for item in activities
+        if item.extra_metadata.get("reason") == "email_changed"
+    ]
+    changes = [item for item in activities if item.title == "Email address changed"]
+    assert len(changes) == 1

@@ -1053,6 +1053,60 @@ def test_editing_the_email_resets_consent_in_the_same_update():
     assert "new@apex-software-demo.com" in activity["body"]
 
 
+def test_editing_the_email_without_consent_does_not_log_a_reset():
+    db = MagicMock()
+    db.get_lead = AsyncMock(
+        return_value=_lead(email="old@apex-software-demo.com", email_consent="unknown")
+    )
+    db.update_lead = AsyncMock(
+        return_value=_lead(email="new@apex-software-demo.com", email_consent="unknown")
+    )
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1", json={"email": "new@apex-software-demo.com"}
+        )
+
+    assert response.status_code == 200, response.text
+    values = db.update_lead.await_args.kwargs
+    assert "email_consent" not in values
+    assert values["activities"] is None
+    # The ordinary edit activity already records that the email changed.
+    activity = db.add_lead_activity.await_args.kwargs
+    assert activity["activity_type"] == "lead_edit"
+    assert "email" in activity["metadata"]["fields"]
+
+
+def test_adding_an_address_clears_consent_that_had_no_address():
+    db = MagicMock()
+    db.get_lead = AsyncMock(
+        return_value=_lead(
+            email=None,
+            email_consent="opted_in",
+            email_consent_source="bulk",
+            email_consent_at=NOW,
+        )
+    )
+    db.update_lead = AsyncMock(
+        return_value=_lead(
+            email="hello@apex-software-demo.com", email_consent="unknown"
+        )
+    )
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1", json={"email": "hello@apex-software-demo.com"}
+        )
+
+    assert response.status_code == 200, response.text
+    values = db.update_lead.await_args.kwargs
+    assert values["email_consent"] == "unknown"
+    # Nothing was tied to an old address, so this is not called a reset.
+    assert values["activities"] is None
+
+
 def test_editing_only_the_email_case_keeps_consent():
     db = MagicMock()
     db.get_lead = AsyncMock(return_value=_lead(email="Hello@Apex-Software-Demo.com"))

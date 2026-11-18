@@ -25,6 +25,8 @@ from api.services.leads.consent import (
     consent_reset_values,
     email_address_changed,
     email_change_activity,
+    has_address_bound_decision,
+    plain_email_change_activity,
 )
 
 LEAD_CRM_STATUSES = (
@@ -314,22 +316,34 @@ class LeadClient(BaseDBClient):
                     and new_email
                     and email_address_changed(previous.email, new_email)
                 ):
-                    # The consent decision was made about the old mailbox, so it
-                    # cannot carry over to the new one.
-                    refresh.update(consent_reset_values())
-                    session.add(
-                        LeadActivityModel(
-                            **email_change_activity(
-                                organization_id=organization_id,
-                                lead_id=previous.id,
-                                user_id=None,
-                                previous_email=previous.email,
-                                new_email=new_email,
-                                previous_consent=previous.email_consent,
-                                source="scraper",
-                            )
+                    if previous.email_consent != "unknown":
+                        # The old decision cannot carry over to the new mailbox,
+                        # even when the lead had no address when it was given.
+                        refresh.update(consent_reset_values())
+                    if has_address_bound_decision(
+                        previous.email, previous.email_consent
+                    ):
+                        activity = email_change_activity(
+                            organization_id=organization_id,
+                            lead_id=previous.id,
+                            user_id=None,
+                            previous_email=previous.email,
+                            new_email=new_email,
+                            previous_consent=previous.email_consent,
+                            source="scraper",
                         )
-                    )
+                    else:
+                        # No decision was tied to an old address, so the
+                        # timeline only explains the address change itself.
+                        activity = plain_email_change_activity(
+                            organization_id=organization_id,
+                            lead_id=previous.id,
+                            user_id=None,
+                            previous_email=previous.email,
+                            new_email=new_email,
+                            source="scraper",
+                        )
+                    session.add(LeadActivityModel(**activity))
                 statement = insert_stmt.on_conflict_do_update(
                     constraint="uq_leads_organization_dedupe_key",
                     set_=refresh,

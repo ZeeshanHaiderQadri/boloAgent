@@ -31,6 +31,18 @@ def consent_reset_values() -> dict[str, Any]:
     }
 
 
+def has_address_bound_decision(
+    previous_email: str | None, previous_consent: str
+) -> bool:
+    """True only when a decision existed and it was attached to an address.
+
+    That is the case where the timeline can honestly say consent was reset.
+    Consent recorded before any address was known is still cleared when an
+    address arrives, but the entry describes a plain address change.
+    """
+    return bool(previous_email) and previous_consent != "unknown"
+
+
 def email_change_activity(
     *,
     organization_id: int,
@@ -64,5 +76,33 @@ def email_change_activity(
             "reason": "email_changed",
             "previous_email": previous_email,
             "new_email": new_email,
+        },
+    }
+
+
+def plain_email_change_activity(
+    *,
+    organization_id: int,
+    lead_id: int,
+    user_id: int | None,
+    previous_email: str | None,
+    new_email: str | None,
+    source: str,
+) -> dict[str, Any]:
+    """Timeline entry for an address change with no consent to reset."""
+    return {
+        "organization_id": organization_id,
+        "lead_id": lead_id,
+        "user_id": user_id,
+        "activity_type": "lead_edit",
+        "title": "Email address changed",
+        "body": (
+            f"Email address changed from {previous_email or 'none'} to "
+            f"{new_email or 'none'}."
+        ),
+        "extra_metadata": {
+            "previous_email": previous_email,
+            "new_email": new_email,
+            "source": source,
         },
     }
