@@ -15,9 +15,7 @@ def _payload(name: str, source: str) -> dict:
 
 
 async def _user(db_session):
-    user, _ = await db_session.get_or_create_user_by_provider_id(
-        "template_deep_user"
-    )
+    user, _ = await db_session.get_or_create_user_by_provider_id("template_deep_user")
     user_id = user.id
     organization, _ = await db_session.get_or_create_organization_by_provider_id(
         "template_deep_org", user_id
