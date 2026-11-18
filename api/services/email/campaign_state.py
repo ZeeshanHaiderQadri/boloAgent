@@ -29,6 +29,12 @@ claims ``queued`` rows and moves them through ``sending`` to ``sent`` or
 ``failed``; provider feedback later moves ``sent`` to ``bounced`` or
 ``complained``.
 
+A bounce or complaint that arrives while a row is still ``sending`` must be
+applied **after** the sent state: first record the delivery result
+(``sending -> sent``), then apply the provider feedback
+(``sent -> bounced`` or ``sent -> complained``). ``sending -> bounced`` is not
+a valid transition, and writing it would overwrite the send worker's result.
+
 Deletion rules
 --------------
 
