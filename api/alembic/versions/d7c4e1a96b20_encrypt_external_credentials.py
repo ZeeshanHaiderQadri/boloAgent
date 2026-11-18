@@ -100,9 +100,7 @@ def downgrade() -> None:
 
     try:
         keys = _load_keys()
-        updates = plan_downgrade(
-            [(row.id, row.credential_data) for row in rows], keys
-        )
+        updates = plan_downgrade([(row.id, row.credential_data) for row in rows], keys)
     except EnvelopeError as exc:
         raise RuntimeError(
             f"Credential encryption downgrade failed: {exc}. Restore the "
