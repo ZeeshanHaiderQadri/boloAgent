@@ -28,6 +28,10 @@ from api.constants import DEFAULT_CAMPAIGN_RETRY_CONFIG
 
 from ..enums import (
     CallType,
+    EmailMessageStatus,
+    EmailProvider,
+    EmailSenderStatus,
+    EmailSuppressionReason,
     IntegrationAction,
     ToolCategory,
     ToolStatus,
@@ -1952,4 +1956,222 @@ class LeadCampaignDispatchModel(Base):
         ),
         Index("ix_lead_campaign_dispatches_lead", "lead_id"),
         Index("ix_lead_campaign_dispatches_campaign", "campaign_id"),
+    )
+
+
+class EmailSenderModel(Base):
+    """An organization-owned sending identity and its provider.
+
+    Bolo never sends from a shared platform account: every row points at an
+    ``external_credentials`` entry that the organization supplied. ``settings``
+    holds only non-secret provider options (SMTP host/port/security, SES
+    region, Mailgun domain), while the secret half lives encrypted in the
+    referenced credential.
+    """
+
+    __tablename__ = "email_senders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_uuid = Column(
+        String(36),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+
+    name = Column(String(255), nullable=False)  # Display name in the UI
+    provider = Column(
+        Enum(*[p.value for p in EmailProvider], name="email_provider"),
+        nullable=False,
+    )
+    from_name = Column(String(255), nullable=False)
+    from_email = Column(String(320), nullable=False)
+    reply_to_email = Column(String(320), nullable=True)
+
+    # Non-secret provider settings. Secrets stay in the encrypted credential.
+    settings = Column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    credential_id = Column(
+        Integer,
+        ForeignKey("external_credentials.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    status = Column(
+        Enum(*[s.value for s in EmailSenderStatus], name="email_sender_status"),
+        nullable=False,
+        default=EmailSenderStatus.PENDING.value,
+        server_default=text("'pending'"),
+    )
+    is_default = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    last_verified_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    organization = relationship("OrganizationModel")
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_email_senders_org_name"),
+        Index("ix_email_senders_organization_id", "organization_id"),
+        Index(
+            "ix_email_senders_one_default",
+            "organization_id",
+            unique=True,
+            postgresql_where=text("is_default"),
+        ),
+    )
+
+
+class EmailTemplateModel(Base):
+    """A reusable, organization-owned email template.
+
+    Templates are rendered when a message is queued; the message keeps its own
+    copy of the rendered subject and bodies so later edits never rewrite
+    history.
+    """
+
+    __tablename__ = "email_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_uuid = Column(
+        String(36),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+
+    name = Column(String(255), nullable=False)
+    subject = Column(String(998), nullable=False)
+    html_body = Column(Text, nullable=False)
+    text_body = Column(Text, nullable=True)
+
+    created_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_email_templates_org_name"),
+        Index("ix_email_templates_organization_id", "organization_id"),
+    )
+
+
+class EmailMessageModel(Base):
+    """One outbound email, from queue row to delivery audit record.
+
+    ``subject``/``html_body``/``text_body`` are the rendered snapshot actually
+    handed to the provider, so the row doubles as an immutable send record.
+    """
+
+    __tablename__ = "email_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message_uuid = Column(
+        String(36),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    sender_id = Column(
+        Integer, ForeignKey("email_senders.id", ondelete="RESTRICT"), nullable=False
+    )
+    template_id = Column(
+        Integer, ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True
+    )
+
+    to_email = Column(String(320), nullable=False)
+    to_name = Column(String(255), nullable=True)
+
+    subject = Column(String(998), nullable=False)
+    html_body = Column(Text, nullable=False)
+    text_body = Column(Text, nullable=True)
+    # Extra MIME headers, e.g. List-Unsubscribe and List-Unsubscribe-Post.
+    headers = Column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+
+    status = Column(
+        Enum(*[s.value for s in EmailMessageStatus], name="email_message_status"),
+        nullable=False,
+        default=EmailMessageStatus.QUEUED.value,
+        server_default=text("'queued'"),
+    )
+    provider_message_id = Column(String(255), nullable=True)
+    error_message = Column(Text, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0, server_default=text("0"))
+
+    scheduled_at = Column(DateTime(timezone=True), nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        Index("ix_email_messages_organization_id", "organization_id"),
+        Index(
+            "ix_email_messages_org_created",
+            "organization_id",
+            "created_at",
+        ),
+        # Worker claim path: oldest due message first.
+        Index("ix_email_messages_status_scheduled", "status", "scheduled_at"),
+    )
+
+
+class EmailSuppressionModel(Base):
+    """An address that must not receive further marketing email for this org."""
+
+    __tablename__ = "email_suppressions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    # Stored lowercased; the unique constraint is the dedupe guarantee.
+    email = Column(String(320), nullable=False)
+    reason = Column(
+        Enum(
+            *[r.value for r in EmailSuppressionReason],
+            name="email_suppression_reason",
+        ),
+        nullable=False,
+    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "email", name="uq_email_suppressions_org_email"
+        ),
+        Index("ix_email_suppressions_organization_id", "organization_id"),
     )
