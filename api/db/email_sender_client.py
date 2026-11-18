@@ -70,6 +70,19 @@ class EmailSenderClient(BaseDBClient):
             )
             return result.scalar_one_or_none()
 
+    async def get_email_sender_by_id(
+        self, organization_id: int, sender_id: int
+    ) -> Optional[EmailSenderModel]:
+        """Load a sender by primary key for campaign response rendering."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(EmailSenderModel).where(
+                    EmailSenderModel.organization_id == organization_id,
+                    EmailSenderModel.id == sender_id,
+                )
+            )
+            return result.scalar_one_or_none()
+
     async def create_email_sender(
         self,
         *,
