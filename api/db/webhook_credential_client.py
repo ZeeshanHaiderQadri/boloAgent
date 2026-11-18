@@ -5,13 +5,51 @@ from typing import List, Optional
 
 from loguru import logger
 from sqlalchemy import select, update
+from sqlalchemy.orm.attributes import set_committed_value
 
 from api.db.base_client import BaseDBClient
 from api.db.models import ExternalCredentialModel
+from api.services.credentials.cipher import (
+    decrypt_credential_data,
+    encrypt_credential_data,
+)
 
 
 class WebhookCredentialClient(BaseDBClient):
     """Client for managing webhook credentials (organization-scoped, UUID-referenced)."""
+
+    @staticmethod
+    def _decrypt_for_read(
+        credential: Optional[ExternalCredentialModel],
+    ) -> Optional[ExternalCredentialModel]:
+        """Replace the stored envelope with plaintext without dirtying the row.
+
+        ``set_committed_value`` is important here: assigning directly would mark
+        the JSON column as modified and could write plaintext back on flush.
+        """
+        if credential is not None:
+            set_committed_value(
+                credential,
+                "credential_data",
+                decrypt_credential_data(credential.credential_data),
+            )
+        return credential
+
+    async def verify_credential_encryption_readable(self) -> None:
+        """Decrypt one stored row so a wrong key fails at startup, not at call time.
+
+        An empty table has nothing to prove. Decryption failures raise
+        CredentialEncryptionError; database errors are left to the caller.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(ExternalCredentialModel)
+                .order_by(ExternalCredentialModel.id)
+                .limit(1)
+            )
+            credential = result.scalar_one_or_none()
+        if credential is not None:
+            decrypt_credential_data(credential.credential_data)
 
     async def create_credential(
         self,
@@ -42,7 +80,7 @@ class WebhookCredentialClient(BaseDBClient):
                 name=name,
                 description=description,
                 credential_type=credential_type,
-                credential_data=credential_data,
+                credential_data=encrypt_credential_data(credential_data),
             )
 
             session.add(credential)
@@ -53,7 +91,7 @@ class WebhookCredentialClient(BaseDBClient):
                 f"Created webhook credential '{name}' ({credential.credential_uuid}) "
                 f"for organization {organization_id}"
             )
-            return credential
+            return self._decrypt_for_read(credential)
 
     async def get_credentials_for_organization(
         self, organization_id: int, active_only: bool = True
@@ -78,7 +116,10 @@ class WebhookCredentialClient(BaseDBClient):
             query = query.order_by(ExternalCredentialModel.name)
 
             result = await session.execute(query)
-            return list(result.scalars().all())
+            return [
+                self._decrypt_for_read(credential)
+                for credential in result.scalars().all()
+            ]
 
     async def get_credential_by_uuid(
         self, credential_uuid: str, organization_id: int, active_only: bool = True
@@ -103,7 +144,7 @@ class WebhookCredentialClient(BaseDBClient):
                 query = query.where(ExternalCredentialModel.is_active.is_(True))
 
             result = await session.execute(query)
-            return result.scalar_one_or_none()
+            return self._decrypt_for_read(result.scalar_one_or_none())
 
     async def update_credential(
         self,
@@ -144,7 +185,9 @@ class WebhookCredentialClient(BaseDBClient):
             if credential_type is not None:
                 update_values["credential_type"] = credential_type
             if credential_data is not None:
-                update_values["credential_data"] = credential_data
+                update_values["credential_data"] = encrypt_credential_data(
+                    credential_data
+                )
 
             await session.execute(
                 update(ExternalCredentialModel)
@@ -156,19 +199,24 @@ class WebhookCredentialClient(BaseDBClient):
             )
             await session.commit()
 
-            # Fetch updated credential
+            # Fetch updated credential, keeping the organization scope on the
+            # re-select so a row that changed hands mid-update cannot be
+            # returned to the wrong organization.
             result = await session.execute(
                 select(ExternalCredentialModel).where(
-                    ExternalCredentialModel.credential_uuid == credential_uuid
+                    ExternalCredentialModel.credential_uuid == credential_uuid,
+                    ExternalCredentialModel.organization_id == organization_id,
                 )
             )
-            updated_credential = result.scalar_one()
+            updated_credential = result.scalar_one_or_none()
+            if updated_credential is None:
+                return None
 
             logger.info(
                 f"Updated webhook credential {credential_uuid} "
                 f"for organization {organization_id}"
             )
-            return updated_credential
+            return self._decrypt_for_read(updated_credential)
 
     async def delete_credential(
         self, credential_uuid: str, organization_id: int

@@ -24,6 +24,14 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent / ".env.test"
 load_dotenv(env_path)
 
+# Test-only credential encryption key. Production deployments must provide their
+# own key via BOLO_CREDENTIAL_ENCRYPTION_KEYS; this value is never used outside
+# the test suite.
+os.environ.setdefault(
+    "BOLO_CREDENTIAL_ENCRYPTION_KEYS",
+    "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
+)
+
 import logging
 import sys
 

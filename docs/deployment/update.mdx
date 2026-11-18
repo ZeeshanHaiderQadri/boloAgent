@@ -11,6 +11,41 @@ There are three update flows depending on how you deployed:
 - **Local Docker** — pull images and restart; see [Local deployment](#local-deployment).
 - **Remote, build mode** (you have a `docker-compose.override.yaml`) — update via git; see [Updating a source build](#updating-a-source-build).
 
+## Upgrading to credential encryption
+
+This release encrypts stored third-party credentials at rest and requires an encryption key. **Add the key before you update.** `docker-compose.yaml` marks it as required, so the stack will not start until it is present in `.env`.
+
+Generate a key:
+
+```bash
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Add it to `.env` (see [Credential encryption](/developer/environment-variables#credential-encryption) for the full reference):
+
+```bash
+BOLO_CREDENTIAL_ENCRYPTION_KEYS=<generated-key>
+```
+
+<Warning>
+Back up this key **separately from the database**, in a secret manager or an offline copy. If every copy of the key is lost, existing credential values cannot be recovered, even from a database backup.
+</Warning>
+
+After the new version is running:
+
+1. The API runs `alembic upgrade head` at startup (Helm installs run it in the migrate job), which encrypts existing plaintext credentials.
+2. Make sure every api and worker process from the previous version has stopped. Old workers do not know about encryption and can still write plaintext rows after the backfill.
+3. Run a rotation sweep to encrypt any rows those old workers wrote: `docker compose exec api python -m scripts.rotate_credential_keys --dry-run`, then the same command without `--dry-run`.
+4. Verify there are no plaintext rows left, then set `BOLO_CREDENTIAL_ENCRYPTION_REQUIRE=true` in `.env` and restart the api and worker. Only do this once the old version is fully drained — a plaintext row then fails loudly instead of being served.
+
+To roll back to a pre-encryption image, run the migration downgrade before starting the old image:
+
+```bash
+docker compose exec api alembic -c api/alembic.ini downgrade -1
+```
+
+The downgrade decrypts every credential row back to plaintext with the configured keys and writes nothing if any row cannot be decrypted. If the key is unavailable, restore the pre-upgrade database backup instead.
+
 ## Find an image version
 
 Bolo publishes two images — `bolo-api` and `bolo-ui` — to both container registries:

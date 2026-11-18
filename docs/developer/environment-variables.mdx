@@ -26,6 +26,32 @@ The relevant required variables for each mode are noted in the descriptions belo
 
 ---
 
+## Credential encryption
+
+Third-party credentials (webhook auth, and later email sender accounts) are encrypted at rest with Fernet. Set a key outside the `test` environment or the API and worker refuse to start.
+
+Generate a key:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `BOLO_CREDENTIAL_ENCRYPTION_KEYS` | N/A | **Required outside `test`.** One or more comma-separated Fernet keys. The first key encrypts new data; every configured key is tried during decryption, so rotation is append-new-key, restart the API and worker so they pick up the new primary key, run `python -m scripts.rotate_credential_keys`, then remove the old key and restart again. Treat this value as a secret and back it up separately from the database — losing every key makes existing credentials unrecoverable |
+| `BOLO_CREDENTIAL_ENCRYPTION_REQUIRE` | `false` | Reject plaintext credential rows instead of serving them. Set to `true` only after the rollout below is complete — never during a mixed-version rollout |
+
+On upgrade, the migration encrypts existing rows at startup. Workers from the previous version do not know about encryption and can still write plaintext rows afterward, so the order matters:
+
+1. Deploy the new version and let the migration run.
+2. Stop every api and worker process from the previous version and confirm the old version is fully drained.
+3. Sweep any plaintext rows those old workers wrote: `python -m scripts.rotate_credential_keys --dry-run`, then run the same command without `--dry-run`.
+4. Only after the sweep reports no plaintext rows, set `BOLO_CREDENTIAL_ENCRYPTION_REQUIRE=true` and restart the api and worker.
+
+Setting `BOLO_CREDENTIAL_ENCRYPTION_REQUIRE=true` while an old worker is still running makes that worker fail as soon as it reads a plaintext row, which can drop calls mid-flight.
+
+---
+
 ## Database
 
 | Variable | Default | Description |

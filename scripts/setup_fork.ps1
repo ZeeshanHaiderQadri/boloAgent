@@ -31,6 +31,17 @@ function Get-RemoteUrl([string]$Name) {
     try { return (git remote get-url $Name 2>$null) } catch { return $null }
 }
 
+function New-FernetKey {
+    $buffer = [byte[]]::new(32)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($buffer)
+    } finally {
+        $rng.Dispose()
+    }
+    return [Convert]::ToBase64String($buffer).Replace('+', '-').Replace('/', '_')
+}
+
 ###############################################################################
 ### 1) Configure git remotes
 ###############################################################################
@@ -155,6 +166,23 @@ foreach ($p in $pairs) {
         Write-Host "OK created $($p.Dst) from $($p.Src)" -ForegroundColor Green
     } else {
         Write-Host "WARN $($p.Src) not found, skipping" -ForegroundColor Yellow
+    }
+}
+
+# The examples keep the credential encryption key commented out, but the API
+# refuses to start without one outside the test environment and tests need one
+# to store credentials. Generate a per-checkout key so a fork never shares one.
+foreach ($envFile in @('api/.env', 'api/.env.test')) {
+    if ((Test-Path $envFile) -and -not (Select-String -Path $envFile -Pattern '^BOLO_CREDENTIAL_ENCRYPTION_KEYS=' -Quiet)) {
+        $lines = @(
+            '',
+            '# Application-level encryption for stored third-party credentials. Back this',
+            '# up separately from the database: losing every key makes existing encrypted',
+            '# credentials unrecoverable.',
+            "BOLO_CREDENTIAL_ENCRYPTION_KEYS=$(New-FernetKey)"
+        )
+        Add-Content -Path $envFile -Value $lines
+        Write-Host "OK added BOLO_CREDENTIAL_ENCRYPTION_KEYS to $envFile" -ForegroundColor Green
     }
 }
 Write-Host ''

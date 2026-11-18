@@ -57,6 +57,25 @@ mcp_app = mcp.http_app(path="/", stateless_http=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Credential rows are encrypted at rest. Fail before serving traffic if the
+    # key is missing rather than discovering it on the first credential read.
+    from api.db import db_client
+    from api.services.credentials.cipher import (
+        CredentialEncryptionError,
+        require_credential_encryption_configured,
+    )
+
+    require_credential_encryption_configured()
+    try:
+        # Decrypt one existing row so a wrong key fails now, not mid-call. A
+        # database outage should not block startup: the app needs the DB for
+        # everything else and will surface that error on real requests.
+        await db_client.verify_credential_encryption_readable()
+    except CredentialEncryptionError:
+        raise
+    except Exception as exc:
+        logger.warning("Skipping credential encryption startup probe: {}", exc)
+
     async with mcp_app.lifespan(app):
         # warmup arq pool
         await get_arq_redis()
