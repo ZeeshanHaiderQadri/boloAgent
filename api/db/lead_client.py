@@ -512,21 +512,23 @@ class LeadClient(BaseDBClient):
         activities: list[dict[str, Any]] | None = None,
         **values: Any,
     ) -> int:
-        if not lead_ids:
+        if not lead_ids and not activities:
             return 0
         values["updated_at"] = datetime.now(UTC)
         async with self.async_session() as session:
-            result = await session.execute(
-                update(LeadModel)
-                .where(
-                    LeadModel.organization_id == organization_id,
-                    LeadModel.id.in_(lead_ids),
+            ids: list[int] = []
+            if lead_ids:
+                result = await session.execute(
+                    update(LeadModel)
+                    .where(
+                        LeadModel.organization_id == organization_id,
+                        LeadModel.id.in_(lead_ids),
+                    )
+                    .values(**values)
+                    .returning(LeadModel.id)
                 )
-                .values(**values)
-                .returning(LeadModel.id)
-            )
-            ids = list(result.scalars().all())
-            if ids and activities:
+                ids = list(result.scalars().all())
+            if activities:
                 session.add_all([LeadActivityModel(**item) for item in activities])
             await session.commit()
             return len(ids)

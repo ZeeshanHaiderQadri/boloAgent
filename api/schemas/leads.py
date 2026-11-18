@@ -336,7 +336,8 @@ class BulkLeadEmailConsentRequest(LeadEmailConsentUpdateRequest):
 
 
 class BulkLeadEmailConsentResponse(BaseModel):
-    updated: int
+    matched: int
+    changed: int
 
 
 class LeadActivityCreateRequest(BaseModel):

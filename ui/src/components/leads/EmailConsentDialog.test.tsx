@@ -45,7 +45,7 @@ beforeEach(() => {
         data: {},
     } as never);
     vi.mocked(bulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPost).mockResolvedValue({
-        data: { updated: 2 },
+        data: { matched: 2, changed: 1 },
     } as never);
 });
 
@@ -109,5 +109,8 @@ describe("EmailConsentDialog", () => {
         expect(
             updateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatch,
         ).not.toHaveBeenCalled();
+        expect(toast.success).toHaveBeenCalledWith(
+            "Email consent updated for 1 of 2 lead(s); the reason was saved for all",
+        );
     });
 });

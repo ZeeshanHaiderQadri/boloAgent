@@ -43,6 +43,13 @@ interface EmailConsentDialogProps {
     onSaved: () => void | Promise<void>;
 }
 
+function bulkConsentMessage(changed: number, total: number): string {
+    if (changed === total) {
+        return `Email consent updated for ${changed} lead(s)`;
+    }
+    return `Email consent updated for ${changed} of ${total} lead(s); the reason was saved for all`;
+}
+
 export function EmailConsentDialog({
     open,
     onOpenChange,
@@ -93,7 +100,12 @@ export function EmailConsentDialog({
             }
             toast.success(
                 isBulk
-                    ? `Email consent updated for ${leadIds.length} lead(s)`
+                    ? bulkConsentMessage(
+                          response.data && "changed" in response.data
+                              ? response.data.changed
+                              : leadIds.length,
+                          leadIds.length,
+                      )
                     : "Email consent saved",
             );
             onOpenChange(false);

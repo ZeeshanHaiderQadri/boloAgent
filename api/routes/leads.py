@@ -129,23 +129,29 @@ def _email_consent_activity(
     source: str,
     reason: str | None,
     bulk: bool,
+    changed: bool = True,
 ) -> dict:
+    before = EMAIL_CONSENT_LABELS.get(lead.email_consent, lead.email_consent)
+    after = EMAIL_CONSENT_LABELS.get(consent, consent)
+    if changed:
+        title = f"Email consent: {before} → {after}"
+    else:
+        # The lead already had this decision. The operator still supplied a
+        # reason, so keep it on the timeline instead of silently dropping it.
+        title = f"Email consent confirmed: {after}"
     return {
         "organization_id": organization_id,
         "lead_id": lead.id,
         "user_id": user_id,
         "activity_type": "email_consent",
-        "title": (
-            "Email consent: "
-            f"{EMAIL_CONSENT_LABELS.get(lead.email_consent, lead.email_consent)} → "
-            f"{EMAIL_CONSENT_LABELS.get(consent, consent)}"
-        ),
+        "title": title,
         "body": reason,
         "extra_metadata": {
             "from": lead.email_consent,
             "to": consent,
             "source": source,
             "bulk": bulk,
+            "changed": changed,
             "warning": EMAIL_CONSENT_WARNING,
         },
     }
@@ -776,6 +782,12 @@ async def bulk_update_lead_email_consent(
         raise HTTPException(status_code=404, detail="No matching leads")
 
     now = datetime.now(UTC)
+    changed_ids = [
+        lead.id for lead in existing if lead.email_consent != request.email_consent
+    ]
+    # Record the reason for every matched lead, including those already in the
+    # chosen state: the operator's explanation is part of the audit trail even
+    # when no column changes.
     activities = [
         _email_consent_activity(
             lead,
@@ -785,17 +797,17 @@ async def bulk_update_lead_email_consent(
             source="bulk",
             reason=request.reason,
             bulk=True,
+            changed=lead.email_consent != request.email_consent,
         )
         for lead in existing
-        if lead.email_consent != request.email_consent
     ]
-    updated = await db_client.bulk_update_leads(
+    changed = await db_client.bulk_update_leads(
         organization_id,
-        [lead.id for lead in existing],
+        changed_ids,
         activities=activities,
         **_email_consent_values(request.email_consent, source="bulk", now=now),
     )
-    return BulkLeadEmailConsentResponse(updated=updated)
+    return BulkLeadEmailConsentResponse(matched=len(existing), changed=changed)
 
 
 @router.post("/dispatch-campaign", response_model=LeadDispatchResponse)
