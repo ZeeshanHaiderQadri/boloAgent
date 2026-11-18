@@ -7,6 +7,18 @@ campaign launch can refuse a template that lacks one.
 
 Existing rows are HTML templates; their current body becomes the source.
 
+The backfill sets ``has_unsubscribe_placeholder`` only when the stored HTML has
+an anchor whose ``href`` contains ``{{unsubscribe_link}}``, with optional
+spaces inside the braces. A mention in text, a comment, a script or a title
+attribute does not count.
+
+WARNING: downgrading drops ``source_body``, ``source_format`` and the flag.
+Newer application code reads all three on every template request, so roll the
+application back to this revision's predecessor *before* running
+``alembic downgrade``. Run the downgrade with the previous application version
+stopped as well; an older app can serve the remaining columns, but a newer one
+cannot.
+
 Revision ID: b7e3f1a2c9d4
 Revises: a4c9d2e17f60
 Create Date: 2026-11-18 12:00:00.000000
