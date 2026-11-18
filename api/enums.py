@@ -310,3 +310,18 @@ class EmailSuppressionReason(Enum):
     HARD_BOUNCE = "hard_bounce"
     COMPLAINT = "complaint"
     MANUAL = "manual"
+
+
+class LeadEmailConsent(Enum):
+    """Marketing-email consent recorded for a lead."""
+
+    UNKNOWN = "unknown"  # No consent captured yet; never marketing-eligible
+    OPTED_IN = "opted_in"
+    OPTED_OUT = "opted_out"
+
+
+class CredentialPurpose(Enum):
+    """What an external credential is for, so lists stay separate."""
+
+    WEBHOOK = "webhook"
+    EMAIL_SENDER = "email_sender"

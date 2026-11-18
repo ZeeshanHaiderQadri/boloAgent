@@ -28,11 +28,13 @@ from api.constants import DEFAULT_CAMPAIGN_RETRY_CONFIG
 
 from ..enums import (
     CallType,
+    CredentialPurpose,
     EmailMessageStatus,
     EmailProvider,
     EmailSenderStatus,
     EmailSuppressionReason,
     IntegrationAction,
+    LeadEmailConsent,
     ToolCategory,
     ToolStatus,
     TriggerState,
@@ -1262,6 +1264,16 @@ class ExternalCredentialModel(Base):
     # {"v": 1, "alg": "fernet", "key_id": "...", "ciphertext": "..."}
     credential_data = Column(JSON, nullable=False, default=dict)
 
+    # Which feature owns this credential. Webhook credentials are the only ones
+    # exposed through /api/v1/credentials; email sender credentials are managed
+    # through the email settings and never appear in that list.
+    purpose = Column(
+        Enum(*[p.value for p in CredentialPurpose], name="credential_purpose"),
+        nullable=False,
+        default=CredentialPurpose.WEBHOOK.value,
+        server_default=text("'webhook'"),
+    )
+
     # Audit fields
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -1282,6 +1294,7 @@ class ExternalCredentialModel(Base):
     __table_args__ = (
         Index("ix_webhook_credentials_organization_id", "organization_id"),
         Index("ix_webhook_credentials_uuid", "credential_uuid"),
+        Index("ix_webhook_credentials_org_purpose", "organization_id", "purpose"),
         UniqueConstraint("organization_id", "name", name="unique_org_credential_name"),
     )
 
@@ -1859,6 +1872,17 @@ class LeadModel(Base):
     last_contacted_at = Column(DateTime(timezone=True), nullable=True)
     next_follow_up_at = Column(DateTime(timezone=True), nullable=True)
     source = Column(String(32), nullable=False, default="google_maps")
+    # Marketing-email consent. Unknown means no consent was captured, so the
+    # lead is never eligible for a marketing send. The source records where the
+    # decision came from (import, form, unsubscribe link) and is free text.
+    email_consent = Column(
+        Enum(*[c.value for c in LeadEmailConsent], name="lead_email_consent"),
+        nullable=False,
+        default=LeadEmailConsent.UNKNOWN.value,
+        server_default=text("'unknown'"),
+    )
+    email_consent_source = Column(String(64), nullable=True)
+    email_consent_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at = Column(
         DateTime(timezone=True),
@@ -1875,6 +1899,7 @@ class LeadModel(Base):
         Index("ix_leads_org_created_at", "organization_id", "created_at"),
         Index("ix_leads_org_owner", "organization_id", "owner_user_id"),
         Index("ix_leads_org_project", "organization_id", "project_id"),
+        Index("ix_leads_org_email_consent", "organization_id", "email_consent"),
     )
 
 
@@ -2011,6 +2036,11 @@ class EmailSenderModel(Base):
     is_default = Column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Optional per-sender overrides. NULL means "use the provider default" from
+    # api/services/email/limits.py, which is conservative until the operator
+    # confirms the real quota with their provider.
+    daily_cap = Column(Integer, nullable=True)
+    rate_per_second = Column(Float, nullable=True)
     last_verified_at = Column(DateTime(timezone=True), nullable=True)
 
     created_by = Column(

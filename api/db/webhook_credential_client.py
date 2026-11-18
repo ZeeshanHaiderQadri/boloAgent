@@ -9,6 +9,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from api.db.base_client import BaseDBClient
 from api.db.models import ExternalCredentialModel
+from api.enums import CredentialPurpose
 from api.services.credentials.cipher import (
     decrypt_credential_data,
     encrypt_credential_data,
@@ -59,6 +60,7 @@ class WebhookCredentialClient(BaseDBClient):
         credential_type: str,
         credential_data: dict,
         description: Optional[str] = None,
+        purpose: str = CredentialPurpose.WEBHOOK.value,
     ) -> ExternalCredentialModel:
         """Create a new webhook credential.
 
@@ -69,6 +71,7 @@ class WebhookCredentialClient(BaseDBClient):
             credential_type: Type of credential (none, api_key, bearer_token, basic_auth, custom_header)
             credential_data: JSON data containing the credential details
             description: Optional description
+            purpose: Owning feature (webhook or email_sender)
 
         Returns:
             The created ExternalCredentialModel with auto-generated UUID
@@ -81,6 +84,7 @@ class WebhookCredentialClient(BaseDBClient):
                 description=description,
                 credential_type=credential_type,
                 credential_data=encrypt_credential_data(credential_data),
+                purpose=purpose,
             )
 
             session.add(credential)
@@ -94,13 +98,20 @@ class WebhookCredentialClient(BaseDBClient):
             return self._decrypt_for_read(credential)
 
     async def get_credentials_for_organization(
-        self, organization_id: int, active_only: bool = True
+        self,
+        organization_id: int,
+        active_only: bool = True,
+        purpose: Optional[str] = CredentialPurpose.WEBHOOK.value,
     ) -> List[ExternalCredentialModel]:
-        """Get all credentials for an organization.
+        """Get the credentials of one purpose for an organization.
+
+        Email sender credentials are stored in the same table but are never
+        listed as webhook credentials; pass ``purpose=None`` to see all.
 
         Args:
             organization_id: ID of the organization
             active_only: If True, only return active (non-deleted) credentials
+            purpose: Owning feature to filter by, or None for every purpose
 
         Returns:
             List of ExternalCredentialModel instances
@@ -112,6 +123,9 @@ class WebhookCredentialClient(BaseDBClient):
 
             if active_only:
                 query = query.where(ExternalCredentialModel.is_active.is_(True))
+
+            if purpose is not None:
+                query = query.where(ExternalCredentialModel.purpose == purpose)
 
             query = query.order_by(ExternalCredentialModel.name)
 

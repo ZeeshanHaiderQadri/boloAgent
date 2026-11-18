@@ -69,6 +69,8 @@ def upgrade() -> None:
             server_default=sa.text("false"),
             nullable=False,
         ),
+        sa.Column("daily_cap", sa.Integer(), nullable=True),
+        sa.Column("rate_per_second", sa.Float(), nullable=True),
         sa.Column("last_verified_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_by", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
