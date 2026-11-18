@@ -190,8 +190,16 @@ class EmailTemplateSummary(BaseModel):
 
 
 class EmailTemplateResponse(EmailTemplateSummary):
-    source: str
-    html_body: str
+    source: str = Field(
+        description=(
+            "The author's raw source exactly as typed (HTML or the MJML "
+            "subset). UNTRUSTED: it has not been sanitized and is returned only "
+            "so the editor can round-trip an edit. Never render it as HTML."
+        )
+    )
+    html_body: str = Field(
+        description="Sanitized, compiled HTML. Safe to preview in a sandboxed frame."
+    )
     text_body: str
     merge_fields: list[str]
     warnings: list[str]
