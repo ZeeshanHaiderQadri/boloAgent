@@ -48,6 +48,11 @@ from api.schemas.leads import (
 )
 from api.services.auth.depends import get_user
 from api.services.leads.call_outcomes import call_outcome
+from api.services.leads.consent import (
+    consent_reset_values,
+    email_address_changed,
+    email_change_activity,
+)
 from api.services.leads.dispatch import (
     DispatchError,
     DispatchQuotaError,
@@ -949,7 +954,31 @@ async def update_lead(
             request.phone or None, request.country or lead.country
         )
 
-    updated = await db_client.update_lead(lead_id, organization_id, **values)
+    # Consent belongs to the address it was recorded for. If the operator
+    # changes the address, the old decision no longer covers this mailbox.
+    consent_activities: list[dict] = []
+    if request.email is not None and email_address_changed(
+        lead.email, request.email or None
+    ):
+        values.update(consent_reset_values())
+        consent_activities.append(
+            email_change_activity(
+                organization_id=organization_id,
+                lead_id=lead_id,
+                user_id=user.id,
+                previous_email=lead.email,
+                new_email=request.email or None,
+                previous_consent=lead.email_consent,
+                source="manual",
+            )
+        )
+
+    updated = await db_client.update_lead(
+        lead_id,
+        organization_id,
+        activities=consent_activities or None,
+        **values,
+    )
     if updated is None:
         raise HTTPException(status_code=404, detail="Lead not found")
 

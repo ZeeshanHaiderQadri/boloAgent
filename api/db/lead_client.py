@@ -21,6 +21,11 @@ from api.db.models import (
     QueuedRunModel,
     WorkflowRunModel,
 )
+from api.services.leads.consent import (
+    consent_reset_values,
+    email_address_changed,
+    email_change_activity,
+)
 
 LEAD_CRM_STATUSES = (
     "new",
@@ -267,14 +272,19 @@ class LeadClient(BaseDBClient):
 
         async with self.async_session() as session:
             existing_keys_result = await session.execute(
-                select(LeadModel.dedupe_key).where(
+                select(
+                    LeadModel.id,
+                    LeadModel.dedupe_key,
+                    LeadModel.email,
+                    LeadModel.email_consent,
+                ).where(
                     LeadModel.organization_id == organization_id,
                     LeadModel.dedupe_key.in_(
                         [row["dedupe_key"] for row in rows if row.get("dedupe_key")]
                     ),
                 )
             )
-            existing_keys = set(existing_keys_result.scalars().all())
+            existing = {row.dedupe_key: row for row in existing_keys_result.all()}
 
             for row in rows:
                 dedupe_key = row.get("dedupe_key")
@@ -296,6 +306,30 @@ class LeadClient(BaseDBClient):
                 if not row.get("email"):
                     refresh.pop("email", None)
                 refresh["updated_at"] = datetime.now(UTC)
+
+                previous = existing.get(dedupe_key)
+                new_email = row.get("email")
+                if (
+                    previous is not None
+                    and new_email
+                    and email_address_changed(previous.email, new_email)
+                ):
+                    # The consent decision was made about the old mailbox, so it
+                    # cannot carry over to the new one.
+                    refresh.update(consent_reset_values())
+                    session.add(
+                        LeadActivityModel(
+                            **email_change_activity(
+                                organization_id=organization_id,
+                                lead_id=previous.id,
+                                user_id=None,
+                                previous_email=previous.email,
+                                new_email=new_email,
+                                previous_consent=previous.email_consent,
+                                source="scraper",
+                            )
+                        )
+                    )
                 statement = insert_stmt.on_conflict_do_update(
                     constraint="uq_leads_organization_dedupe_key",
                     set_=refresh,
@@ -311,11 +345,10 @@ class LeadClient(BaseDBClient):
                 )
                 await session.execute(link_stmt)
 
-                if dedupe_key in existing_keys:
+                if previous is not None:
                     updated_leads += 1
                 else:
                     new_leads += 1
-                    existing_keys.add(dedupe_key)
 
             await session.commit()
 
