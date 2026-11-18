@@ -1,3 +1,8 @@
+// Generated from EMAIL_CONSENT_WARNING in api/constants.py by
+// scripts/sync_email_consent_warning.py. Do not edit the JSON by hand: the API
+// stores this exact text with every consent activity.
+import emailConsentCopy from "@/constants/emailConsent.json";
+
 export const EMAIL_CONSENTS = ["unknown", "opted_in", "opted_out"] as const;
 
 export type EmailConsent = (typeof EMAIL_CONSENTS)[number];
@@ -15,12 +20,10 @@ export const EMAIL_CONSENT_CLASSES: Record<EmailConsent, string> = {
     opted_out: "border-transparent bg-rose-500/15 text-rose-700 dark:text-rose-300",
 };
 
-// Keep this text in sync with EMAIL_CONSENT_WARNING in api/routes/leads.py. The
-// backend stores it with every consent activity, so the audit trail shows the
-// exact warning the operator saw.
-export const EMAIL_CONSENT_WARNING =
-    "Only record consent you can prove. Marketing email without permission can " +
-    "breach anti-spam law and damage your sending domain.";
+// Generated from EMAIL_CONSENT_WARNING in api/constants.py by
+// scripts/sync_email_consent_warning.py. Do not edit the JSON by hand: the API
+// stores this exact text with every consent activity.
+export const EMAIL_CONSENT_WARNING = emailConsentCopy.warning;
 
 export function emailConsentLabel(consent: string | null | undefined): string {
     if (!consent) return EMAIL_CONSENT_LABELS.unknown;

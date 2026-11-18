@@ -13,6 +13,14 @@ APP_ROOT_DIR: Path = Path(__file__).resolve().parent
 
 VOICEMAIL_RECORDING_DURATION = 5.0
 
+# Shown in the UI and stored with every consent activity. Keep this as the one
+# source of truth: ``scripts/sync_email_consent_warning.py`` copies it into the
+# UI, and ``api/tests/test_shared_email_consent_warning.py`` fails if they drift.
+EMAIL_CONSENT_WARNING = (
+    "Only record consent you can prove. Marketing email without permission can "
+    "breach anti-spam law and damage your sending domain."
+)
+
 # Langfuse Configuration
 LANGFUSE_HOST = os.getenv("LANGFUSE_HOST")
 LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")

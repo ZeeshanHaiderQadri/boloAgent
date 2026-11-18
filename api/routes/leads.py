@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from loguru import logger
 
 from api.constants import (
+    EMAIL_CONSENT_WARNING,
     LEADS_DEFAULT_PROVIDER,
     LEADS_DISPATCH_MAX_LEADS,
     LEADS_ENABLE_DEMO_PROVIDER,
@@ -91,13 +92,6 @@ EMAIL_CONSENT_LABELS = {
     "opted_in": "Opted in",
     "opted_out": "Opted out",
 }
-
-# Stored with every consent activity so the audit trail shows exactly what the
-# operator was warned about when they made the decision.
-EMAIL_CONSENT_WARNING = (
-    "Only record consent you can prove. Marketing email without permission can "
-    "breach anti-spam law and damage your sending domain."
-)
 
 
 def _email_consent_values(
