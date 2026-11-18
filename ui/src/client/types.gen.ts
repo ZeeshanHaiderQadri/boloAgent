@@ -2454,10 +2454,14 @@ export type EmailTemplateResponse = {
     updated_at: string | null;
     /**
      * Source
+     *
+     * The author's raw source exactly as typed (HTML or the MJML subset). UNTRUSTED: it has not been sanitized and is returned only so the editor can round-trip an edit. Never render it as HTML.
      */
     source: string;
     /**
      * Html Body
+     *
+     * Sanitized, compiled HTML. Safe to preview in a sandboxed frame.
      */
     html_body: string;
     /**
