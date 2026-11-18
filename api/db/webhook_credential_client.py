@@ -297,7 +297,8 @@ class WebhookCredentialClient(BaseDBClient):
                 (
                     await session.execute(
                         select(EmailSenderModel.name).where(
-                            EmailSenderModel.credential_id == credential.id
+                            EmailSenderModel.credential_id == credential.id,
+                            EmailSenderModel.organization_id == organization_id,
                         )
                     )
                 )
