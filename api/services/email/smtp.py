@@ -25,6 +25,7 @@ from api.services.email.adapter import (
     ProviderSendResult,
 )
 from api.utils.url_security import (
+    ServiceHostResolutionError,
     validate_user_configured_service_host,
     validate_user_configured_smtp_port,
 )
@@ -77,6 +78,10 @@ def _resolve_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     try:
         validate_user_configured_smtp_port(port, field_name="SMTP port")
         validate_user_configured_service_host(host, port=port, field_name="SMTP host")
+    except ServiceHostResolutionError as exc:
+        # A DNS outage is transient; retrying is the correct response. Only a
+        # policy rejection (private address, bad port) is a configuration error.
+        raise EmailDeliveryError("SMTP host could not be resolved") from exc
     except ValueError as exc:
         raise EmailConfigurationError(str(exc)) from exc
 
@@ -174,6 +179,8 @@ class SmtpEmailAdapter(EmailAdapter):
             validate_user_configured_service_host(
                 host, port=port, field_name="SMTP host"
             )
+        except ServiceHostResolutionError as exc:
+            raise EmailDeliveryError("SMTP host could not be resolved") from exc
         except ValueError as exc:
             raise EmailConfigurationError(str(exc)) from exc
         if self._settings["security"] == "ssl":

@@ -10,6 +10,15 @@ _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 SMTP_ALLOWED_PORTS = frozenset({25, 465, 587, 2525})
 
 
+class ServiceHostResolutionError(ValueError):
+    """The host could not be resolved; the caller may retry later.
+
+    A ``ValueError`` subclass so existing callers that treat every rejection as
+    a bad value keep working, while adapters that distinguish a policy
+    rejection from a transient DNS failure can catch this one first.
+    """
+
+
 def validate_user_configured_service_url(
     url: str,
     *,
@@ -97,7 +106,9 @@ def _resolve_hostname_ips(
     try:
         addr_infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except socket.gaierror as e:
-        raise ValueError("Could not resolve service URL hostname") from e
+        raise ServiceHostResolutionError(
+            "Could not resolve service URL hostname"
+        ) from e
 
     return [ipaddress.ip_address(addr_info[4][0]) for addr_info in addr_infos]
 

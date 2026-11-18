@@ -1,6 +1,7 @@
 """Unit tests for the SMTP adapter. No network access; smtplib is faked."""
 
 import smtplib
+import socket
 
 import pytest
 
@@ -270,6 +271,21 @@ def test_saas_mode_rejects_nonstandard_smtp_ports(monkeypatch):
 
     with pytest.raises(EmailConfigurationError, match="must be one of"):
         _adapter({"host": "mail.example.test", "port": 2526})
+
+
+def test_resolution_failure_is_retryable_but_policy_rejection_is_not(monkeypatch):
+    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+
+    def unresolved(*args, **kwargs):
+        raise socket.gaierror("nodename nor servname provided")
+
+    monkeypatch.setattr(url_security.socket, "getaddrinfo", unresolved)
+
+    with pytest.raises(EmailDeliveryError, match="could not be resolved"):
+        _adapter({"host": "mail.example.test", "port": 587})
+
+    with pytest.raises(EmailConfigurationError, match="public IP"):
+        _adapter({"host": "127.0.0.1", "port": 25})
 
 
 def test_oss_mode_allows_a_private_relay_on_a_custom_port():
