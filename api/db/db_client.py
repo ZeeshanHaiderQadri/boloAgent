@@ -4,6 +4,7 @@ from api.db.builder_run_client import BuilderRunClient
 from api.db.campaign_client import CampaignClient
 from api.db.email_domain_client import EmailDomainClient
 from api.db.email_sender_client import EmailSenderClient
+from api.db.email_template_client import EmailTemplateClient
 from api.db.embed_token_client import EmbedTokenClient
 from api.db.folder_client import FolderClient
 from api.db.integration_client import IntegrationClient
@@ -49,6 +50,7 @@ class DBClient(
     APIKeyClient,
     EmbedTokenClient,
     EmailSenderClient,
+    EmailTemplateClient,
     EmailDomainClient,
     AgentTriggerClient,
     WebhookCredentialClient,

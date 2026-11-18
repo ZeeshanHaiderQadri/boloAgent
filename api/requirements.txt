@@ -42,3 +42,8 @@ langgraph-checkpoint==4.2.0
 openpyxl==3.1.5
 reportlab==5.1.0
 Pillow==13.0.0
+
+# Email template sanitizing. nh3 (MIT) wraps the Rust Ammonia sanitizer;
+# tinycss2 (BSD-3-Clause) parses inline style declarations before re-emitting.
+nh3==0.3.8
+tinycss2==1.4.0

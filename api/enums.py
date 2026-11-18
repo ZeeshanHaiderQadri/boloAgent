@@ -291,6 +291,13 @@ class EmailSenderStatus(Enum):
     DISABLED = "disabled"  # Kept for history, never used for sending
 
 
+class EmailTemplateFormat(Enum):
+    """Authoring format stored for an email template."""
+
+    HTML = "html"
+    MJML = "mjml"
+
+
 class EmailDomainStatus(Enum):
     """Verification state of a sending domain.
 

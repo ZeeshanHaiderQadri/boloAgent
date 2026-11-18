@@ -1476,6 +1476,25 @@ export type CreateEmailSenderRequest = {
 };
 
 /**
+ * CreateEmailTemplateRequest
+ */
+export type CreateEmailTemplateRequest = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Subject
+     */
+    subject: string;
+    source_format?: EmailTemplateFormat;
+    /**
+     * Source
+     */
+    source: string;
+};
+
+/**
  * CreateFolderRequest
  */
 export type CreateFolderRequest = {
@@ -2384,6 +2403,105 @@ export type EmailSenderResponse = {
      * Last Verified At
      */
     last_verified_at: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string | null;
+};
+
+/**
+ * EmailTemplateFormat
+ *
+ * Authoring format stored for an email template.
+ */
+export type EmailTemplateFormat = 'html' | 'mjml';
+
+/**
+ * EmailTemplateResponse
+ */
+export type EmailTemplateResponse = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Source Format
+     */
+    source_format: string;
+    /**
+     * Has Unsubscribe Placeholder
+     */
+    has_unsubscribe_placeholder: boolean;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string | null;
+    /**
+     * Source
+     *
+     * The author's raw source exactly as typed (HTML or the MJML subset). UNTRUSTED: it has not been sanitized and is returned only so the editor can round-trip an edit. Never render it as HTML.
+     */
+    source: string;
+    /**
+     * Html Body
+     *
+     * Sanitized, compiled HTML. Safe to preview in a sandboxed frame.
+     */
+    html_body: string;
+    /**
+     * Text Body
+     */
+    text_body: string;
+    /**
+     * Merge Fields
+     */
+    merge_fields: Array<string>;
+    /**
+     * Warnings
+     */
+    warnings: Array<string>;
+};
+
+/**
+ * EmailTemplateSummary
+ */
+export type EmailTemplateSummary = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Source Format
+     */
+    source_format: string;
+    /**
+     * Has Unsubscribe Placeholder
+     */
+    has_unsubscribe_placeholder: boolean;
     /**
      * Created At
      */
@@ -5206,6 +5324,47 @@ export type PresignedUploadUrlResponse = {
 };
 
 /**
+ * PreviewEmailTemplateRequest
+ */
+export type PreviewEmailTemplateRequest = {
+    /**
+     * Subject
+     */
+    subject: string;
+    source_format?: EmailTemplateFormat;
+    /**
+     * Source
+     */
+    source: string;
+};
+
+/**
+ * PreviewEmailTemplateResponse
+ */
+export type PreviewEmailTemplateResponse = {
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Html
+     */
+    html: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Has Unsubscribe Placeholder
+     */
+    has_unsubscribe_placeholder: boolean;
+    /**
+     * Warnings
+     */
+    warnings: Array<string>;
+};
+
+/**
  * ProcessDocumentRequestSchema
  *
  * Request schema for triggering document processing.
@@ -6884,6 +7043,34 @@ export type TelnyxConfigurationRequest = {
 };
 
 /**
+ * TestSendEmailTemplateRequest
+ */
+export type TestSendEmailTemplateRequest = {
+    /**
+     * Sender Uuid
+     */
+    sender_uuid?: string | null;
+};
+
+/**
+ * TestSendEmailTemplateResponse
+ */
+export type TestSendEmailTemplateResponse = {
+    /**
+     * Provider Message Id
+     */
+    provider_message_id: string;
+    /**
+     * To Email
+     */
+    to_email: string;
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
  * TestSendRequest
  */
 export type TestSendRequest = {
@@ -7864,6 +8051,25 @@ export type UpdateEmailSenderRequest = {
      * Rate Per Second
      */
     rate_per_second?: number | null;
+};
+
+/**
+ * UpdateEmailTemplateRequest
+ */
+export type UpdateEmailTemplateRequest = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Subject
+     */
+    subject?: string | null;
+    source_format?: EmailTemplateFormat | null;
+    /**
+     * Source
+     */
+    source?: string | null;
 };
 
 /**
@@ -15230,6 +15436,392 @@ export type ListEmailProvidersApiV1EmailProvidersGetResponses = {
 };
 
 export type ListEmailProvidersApiV1EmailProvidersGetResponse = ListEmailProvidersApiV1EmailProvidersGetResponses[keyof ListEmailProvidersApiV1EmailProvidersGetResponses];
+
+export type ListEmailTemplatesApiV1EmailTemplatesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/templates';
+};
+
+export type ListEmailTemplatesApiV1EmailTemplatesGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEmailTemplatesApiV1EmailTemplatesGetError = ListEmailTemplatesApiV1EmailTemplatesGetErrors[keyof ListEmailTemplatesApiV1EmailTemplatesGetErrors];
+
+export type ListEmailTemplatesApiV1EmailTemplatesGetResponses = {
+    /**
+     * Response List Email Templates Api V1 Email Templates Get
+     *
+     * Successful Response
+     */
+    200: Array<EmailTemplateSummary>;
+};
+
+export type ListEmailTemplatesApiV1EmailTemplatesGetResponse = ListEmailTemplatesApiV1EmailTemplatesGetResponses[keyof ListEmailTemplatesApiV1EmailTemplatesGetResponses];
+
+export type CreateEmailTemplateApiV1EmailTemplatesPostData = {
+    body: CreateEmailTemplateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/templates';
+};
+
+export type CreateEmailTemplateApiV1EmailTemplatesPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateEmailTemplateApiV1EmailTemplatesPostError = CreateEmailTemplateApiV1EmailTemplatesPostErrors[keyof CreateEmailTemplateApiV1EmailTemplatesPostErrors];
+
+export type CreateEmailTemplateApiV1EmailTemplatesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: EmailTemplateResponse;
+};
+
+export type CreateEmailTemplateApiV1EmailTemplatesPostResponse = CreateEmailTemplateApiV1EmailTemplatesPostResponses[keyof CreateEmailTemplateApiV1EmailTemplatesPostResponses];
+
+export type ListEmailTemplateMergeFieldsApiV1EmailTemplatesMergeFieldsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/templates/merge-fields';
+};
+
+export type ListEmailTemplateMergeFieldsApiV1EmailTemplatesMergeFieldsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEmailTemplateMergeFieldsApiV1EmailTemplatesMergeFieldsGetError = ListEmailTemplateMergeFieldsApiV1EmailTemplatesMergeFieldsGetErrors[keyof ListEmailTemplateMergeFieldsApiV1EmailTemplatesMergeFieldsGetErrors];
+
+export type ListEmailTemplateMergeFieldsApiV1EmailTemplatesMergeFieldsGetResponses = {
+    /**
+     * Response List Email Template Merge Fields Api V1 Email Templates Merge Fields Get
+     *
+     * Successful Response
+     */
+    200: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+export type ListEmailTemplateMergeFieldsApiV1EmailTemplatesMergeFieldsGetResponse = ListEmailTemplateMergeFieldsApiV1EmailTemplatesMergeFieldsGetResponses[keyof ListEmailTemplateMergeFieldsApiV1EmailTemplatesMergeFieldsGetResponses];
+
+export type PreviewEmailTemplateApiV1EmailTemplatesPreviewPostData = {
+    body: PreviewEmailTemplateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/templates/preview';
+};
+
+export type PreviewEmailTemplateApiV1EmailTemplatesPreviewPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewEmailTemplateApiV1EmailTemplatesPreviewPostError = PreviewEmailTemplateApiV1EmailTemplatesPreviewPostErrors[keyof PreviewEmailTemplateApiV1EmailTemplatesPreviewPostErrors];
+
+export type PreviewEmailTemplateApiV1EmailTemplatesPreviewPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PreviewEmailTemplateResponse;
+};
+
+export type PreviewEmailTemplateApiV1EmailTemplatesPreviewPostResponse = PreviewEmailTemplateApiV1EmailTemplatesPreviewPostResponses[keyof PreviewEmailTemplateApiV1EmailTemplatesPreviewPostResponses];
+
+export type DeleteEmailTemplateApiV1EmailTemplatesTemplateUuidDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Template Uuid
+         */
+        template_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/templates/{template_uuid}';
+};
+
+export type DeleteEmailTemplateApiV1EmailTemplatesTemplateUuidDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteEmailTemplateApiV1EmailTemplatesTemplateUuidDeleteError = DeleteEmailTemplateApiV1EmailTemplatesTemplateUuidDeleteErrors[keyof DeleteEmailTemplateApiV1EmailTemplatesTemplateUuidDeleteErrors];
+
+export type DeleteEmailTemplateApiV1EmailTemplatesTemplateUuidDeleteResponses = {
+    /**
+     * Response Delete Email Template Api V1 Email Templates  Template Uuid  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DeleteEmailTemplateApiV1EmailTemplatesTemplateUuidDeleteResponse = DeleteEmailTemplateApiV1EmailTemplatesTemplateUuidDeleteResponses[keyof DeleteEmailTemplateApiV1EmailTemplatesTemplateUuidDeleteResponses];
+
+export type GetEmailTemplateApiV1EmailTemplatesTemplateUuidGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Template Uuid
+         */
+        template_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/templates/{template_uuid}';
+};
+
+export type GetEmailTemplateApiV1EmailTemplatesTemplateUuidGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEmailTemplateApiV1EmailTemplatesTemplateUuidGetError = GetEmailTemplateApiV1EmailTemplatesTemplateUuidGetErrors[keyof GetEmailTemplateApiV1EmailTemplatesTemplateUuidGetErrors];
+
+export type GetEmailTemplateApiV1EmailTemplatesTemplateUuidGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailTemplateResponse;
+};
+
+export type GetEmailTemplateApiV1EmailTemplatesTemplateUuidGetResponse = GetEmailTemplateApiV1EmailTemplatesTemplateUuidGetResponses[keyof GetEmailTemplateApiV1EmailTemplatesTemplateUuidGetResponses];
+
+export type UpdateEmailTemplateApiV1EmailTemplatesTemplateUuidPatchData = {
+    body: UpdateEmailTemplateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Template Uuid
+         */
+        template_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/templates/{template_uuid}';
+};
+
+export type UpdateEmailTemplateApiV1EmailTemplatesTemplateUuidPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateEmailTemplateApiV1EmailTemplatesTemplateUuidPatchError = UpdateEmailTemplateApiV1EmailTemplatesTemplateUuidPatchErrors[keyof UpdateEmailTemplateApiV1EmailTemplatesTemplateUuidPatchErrors];
+
+export type UpdateEmailTemplateApiV1EmailTemplatesTemplateUuidPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailTemplateResponse;
+};
+
+export type UpdateEmailTemplateApiV1EmailTemplatesTemplateUuidPatchResponse = UpdateEmailTemplateApiV1EmailTemplatesTemplateUuidPatchResponses[keyof UpdateEmailTemplateApiV1EmailTemplatesTemplateUuidPatchResponses];
+
+export type DuplicateEmailTemplateApiV1EmailTemplatesTemplateUuidDuplicatePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Template Uuid
+         */
+        template_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/templates/{template_uuid}/duplicate';
+};
+
+export type DuplicateEmailTemplateApiV1EmailTemplatesTemplateUuidDuplicatePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DuplicateEmailTemplateApiV1EmailTemplatesTemplateUuidDuplicatePostError = DuplicateEmailTemplateApiV1EmailTemplatesTemplateUuidDuplicatePostErrors[keyof DuplicateEmailTemplateApiV1EmailTemplatesTemplateUuidDuplicatePostErrors];
+
+export type DuplicateEmailTemplateApiV1EmailTemplatesTemplateUuidDuplicatePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: EmailTemplateResponse;
+};
+
+export type DuplicateEmailTemplateApiV1EmailTemplatesTemplateUuidDuplicatePostResponse = DuplicateEmailTemplateApiV1EmailTemplatesTemplateUuidDuplicatePostResponses[keyof DuplicateEmailTemplateApiV1EmailTemplatesTemplateUuidDuplicatePostResponses];
+
+export type TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostData = {
+    body: TestSendEmailTemplateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Template Uuid
+         */
+        template_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/templates/{template_uuid}/test-send';
+};
+
+export type TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostError = TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostErrors[keyof TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostErrors];
+
+export type TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: TestSendEmailTemplateResponse;
+};
+
+export type TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostResponse = TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostResponses[keyof TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostResponses];
 
 export type ListToolsApiV1ToolsGetData = {
     body?: never;
