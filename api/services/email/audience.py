@@ -154,6 +154,11 @@ def _validate_rule(rule: AudienceRule) -> None:
     raise AudienceError(f"Unknown audience type: {audience_type!r}.")
 
 
+def validate_audience_rule(rule: AudienceRule) -> None:
+    """Raise :class:`AudienceError` when the rule shape is unusable."""
+    _validate_rule(rule)
+
+
 def _filter_kwargs(rule: AudienceRule) -> dict[str, Any]:
     if rule.audience_type == EmailCampaignAudienceType.PROJECT.value:
         return {"project_id": rule.project_id}
