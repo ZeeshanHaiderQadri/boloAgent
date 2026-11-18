@@ -211,6 +211,20 @@ async def test_header_injection_is_a_configuration_error():
         await adapter.send(outbound(headers={"List-Unsubscribe": "a\r\nBcc: x@y.z"}))
 
 
+async def test_bcc_headers_are_reserved_and_dropped():
+    adapter = make_adapter()
+
+    await adapter.send(
+        outbound(
+            headers={"Bcc": "hidden@example.net", "Resent-Bcc": "hidden@example.net"}
+        )
+    )
+
+    text = RECORDS["send_email"]["Content"]["Raw"]["Data"].decode("utf-8", "replace")
+    assert "hidden@example.net" not in text
+    assert "Bcc:" not in text
+
+
 async def test_missing_message_id_is_retryable():
     adapter = make_adapter()
     RECORDS["send_response"] = {}
