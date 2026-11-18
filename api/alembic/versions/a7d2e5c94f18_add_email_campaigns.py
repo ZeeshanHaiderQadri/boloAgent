@@ -15,6 +15,26 @@ PostgreSQL cannot remove an enum label, so ``downgrade`` intentionally leaves
 ``held`` in place; it is unused and harmless, and re-upgrading is a no-op for
 the enum.
 
+Campaign recipient addresses are normalized by the resolver: trimmed and
+lowercased. The database enforces the same rule for campaign rows only
+(``to_email = btrim(lower(to_email))``), so a padded address cannot slip past
+the per-campaign uniqueness index.
+
+WARNING: downgrading is destructive for campaign data. Roll the application
+back to this revision's predecessor *before* running ``alembic downgrade`` and
+keep the newer application stopped while it runs. The downgrade:
+
+* converts every ``held`` recipient row to ``cancelled`` (they were never
+  sent), so no row is left in a state the older code does not know;
+* drops ``email_campaigns`` with all campaign rows, their counters and audit
+  fields;
+* drops ``email_messages.campaign_id``/``lead_id`` and the campaign-only
+  indexes and check;
+* leaves the ``held`` enum label in place (PostgreSQL cannot remove a label).
+
+Ordinary (non-campaign) ``email_messages`` rows keep their content, address
+casing and spacing; only campaign-created rows are affected.
+
 Revision ID: a7d2e5c94f18
 Revises: b7e3f1a2c9d4
 Create Date: 2026-11-19 01:30:00.000000
@@ -105,6 +125,9 @@ def upgrade() -> None:
         sa.Column("scheduled_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("launched_by", sa.Integer(), nullable=True),
         sa.Column("launched_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("cancelled_by", sa.Integer(), nullable=True),
+        sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("failure_reason", sa.Text(), nullable=True),
         sa.Column(
             "recipient_count",
             sa.Integer(),
@@ -153,14 +176,39 @@ def upgrade() -> None:
             server_default=sa.text("0"),
             nullable=False,
         ),
+        sa.Column(
+            "sent_count", sa.Integer(), server_default=sa.text("0"), nullable=False
+        ),
+        sa.Column(
+            "failed_count", sa.Integer(), server_default=sa.text("0"), nullable=False
+        ),
+        sa.Column(
+            "bounced_count", sa.Integer(), server_default=sa.text("0"), nullable=False
+        ),
+        sa.Column(
+            "complained_count",
+            sa.Integer(),
+            server_default=sa.text("0"),
+            nullable=False,
+        ),
+        sa.Column(
+            "unsubscribed_count",
+            sa.Integer(),
+            server_default=sa.text("0"),
+            nullable=False,
+        ),
         sa.Column("created_by", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.ForeignKeyConstraint(
             ["organization_id"], ["organizations.id"], ondelete="CASCADE"
         ),
+        # NO ACTION, not RESTRICT: organization teardown cascades through both
+        # email_campaigns and email_senders in one statement, which RESTRICT
+        # would reject. A direct sender delete is still refused; the sender
+        # endpoint (PR b) detaches finished campaigns first.
         sa.ForeignKeyConstraint(
-            ["sender_id"], ["email_senders.id"], ondelete="RESTRICT"
+            ["sender_id"], ["email_senders.id"], ondelete="NO ACTION"
         ),
         sa.ForeignKeyConstraint(
             ["template_id"], ["email_templates.id"], ondelete="SET NULL"
@@ -169,6 +217,7 @@ def upgrade() -> None:
             ["consent_override_user_id"], ["users.id"], ondelete="SET NULL"
         ),
         sa.ForeignKeyConstraint(["launched_by"], ["users.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["cancelled_by"], ["users.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
@@ -215,26 +264,43 @@ def upgrade() -> None:
     )
     op.create_index("ix_email_messages_campaign_id", "email_messages", ["campaign_id"])
     op.create_index(
+        "ix_email_messages_campaign_status", "email_messages", ["campaign_id", "status"]
+    )
+    op.create_index("ix_email_messages_lead_id", "email_messages", ["lead_id"])
+    op.create_index(
         "uq_email_messages_campaign_email",
         "email_messages",
         ["campaign_id", "to_email"],
         unique=True,
         postgresql_where=sa.text("campaign_id IS NOT NULL"),
     )
+    # btrim rejects surrounding spaces; lower() rejects mixed case. The resolver
+    # must apply the same trim+lowercase before inserting campaign recipients.
     op.create_check_constraint(
         "ck_email_messages_campaign_to_email_lowercase",
         "email_messages",
-        "campaign_id IS NULL OR to_email = lower(to_email)",
+        "campaign_id IS NULL OR to_email = btrim(lower(to_email))",
     )
 
 
 def downgrade() -> None:
+    # DESTRUCTIVE. Read the module docstring: roll the application back first.
+    # A held row was never sent and the older code does not know the status, so
+    # convert it to cancelled before the campaign context (campaign_id) is
+    # dropped. This is deterministic and leaves no row in an unknown state.
+    op.execute("UPDATE email_messages SET status = 'cancelled' WHERE status = 'held'")
+
     op.drop_constraint(
         "ck_email_messages_campaign_to_email_lowercase",
         "email_messages",
         type_="check",
     )
     op.drop_index("uq_email_messages_campaign_email", table_name="email_messages")
+    # IF EXISTS: databases that ran the earlier, pre-final shape of this same
+    # revision never created these two indexes. Everything else below exists
+    # in both shapes.
+    op.execute("DROP INDEX IF EXISTS ix_email_messages_lead_id")
+    op.execute("DROP INDEX IF EXISTS ix_email_messages_campaign_status")
     op.drop_index("ix_email_messages_campaign_id", table_name="email_messages")
     op.drop_constraint(
         "fk_email_messages_campaign_id", "email_messages", type_="foreignkey"

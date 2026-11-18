@@ -1,7 +1,7 @@
 """Email campaign table and recipient-row constraints."""
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from api.db.models import (
@@ -9,6 +9,8 @@ from api.db.models import (
     EmailMessageModel,
     EmailSenderModel,
     LeadModel,
+    OrganizationModel,
+    UserModel,
 )
 from api.enums import EmailProvider
 
@@ -86,6 +88,14 @@ async def test_a_draft_campaign_has_safe_defaults(db_session):
     assert campaign.frozen_at is None
     assert campaign.launched_at is None
     assert campaign.consent_override_at is None
+    assert campaign.failure_reason is None
+    assert campaign.cancelled_by is None
+    assert campaign.cancelled_at is None
+    assert campaign.sent_count == 0
+    assert campaign.failed_count == 0
+    assert campaign.bounced_count == 0
+    assert campaign.complained_count == 0
+    assert campaign.unsubscribed_count == 0
 
 
 @pytest.mark.asyncio
@@ -160,6 +170,35 @@ async def test_campaign_recipients_must_be_lowercase(db_session):
             "Owner@Apex-Software-Demo.com",
             status="queued",
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "padded_address",
+    [
+        " owner@apex-software-demo.com",
+        "owner@apex-software-demo.com ",
+        "  OWNER@Apex-Software-Demo.com  ",
+    ],
+)
+async def test_campaign_recipients_must_not_be_padded(db_session, padded_address):
+    """A padded address would bypass the per-campaign uniqueness index, so the
+    database rejects it; the resolver must trim and lowercase."""
+    user, org = await _make_user_and_org(db_session, "campaign_padded")
+    sender = await _make_sender(db_session, user, org, "Padded sender")
+
+    async with db_session.async_session() as session:
+        campaign = await _make_campaign(session, org, "Padded")
+        with pytest.raises(IntegrityError):
+            async with session.begin_nested():
+                await _make_message(
+                    session,
+                    org,
+                    sender,
+                    campaign,
+                    padded_address,
+                    status="held",
+                )
 
 
 @pytest.mark.asyncio
@@ -267,3 +306,95 @@ async def test_a_sender_used_by_a_campaign_cannot_be_deleted(db_session):
                 await session.execute(
                     delete(EmailSenderModel).where(EmailSenderModel.id == sender.id)
                 )
+
+
+@pytest.mark.asyncio
+async def test_a_finished_campaign_can_detach_its_sender_before_deletion(db_session):
+    """Decision: a sender is deletable once only finished campaigns use it.
+
+    The sender endpoint (PR b) nulls ``sender_id`` on those campaigns in the
+    same transaction, then deletes. The snapshot columns remain the record.
+    """
+    user, org = await _make_user_and_org(db_session, "campaign_sender_detach")
+    sender = await _make_sender(db_session, user, org, "Finished sender")
+
+    async with db_session.async_session() as session:
+        campaign = await _make_campaign(
+            session,
+            org,
+            "Finished",
+            sender_id=sender.id,
+            status="completed",
+            sender_from_name="Bolo",
+            sender_from_email="hello@apex-software-demo.com",
+        )
+        campaign_id = campaign.id
+
+    async with db_session.async_session() as session:
+        await session.execute(
+            update(EmailCampaignModel)
+            .where(EmailCampaignModel.id == campaign_id)
+            .values(sender_id=None)
+        )
+        await session.execute(
+            delete(EmailSenderModel).where(EmailSenderModel.id == sender.id)
+        )
+        kept = await session.get(
+            EmailCampaignModel, campaign_id, populate_existing=True
+        )
+
+    assert kept is not None
+    assert kept.sender_id is None
+    assert kept.sender_from_email == "hello@apex-software-demo.com"
+
+
+@pytest.mark.asyncio
+async def test_deleting_an_organization_cascades_campaigns_and_their_sender(
+    db_session,
+):
+    """NO ACTION (not RESTRICT) lets organization teardown cascade through both
+    email_campaigns and email_senders in one statement."""
+    user, org = await _make_user_and_org(db_session, "campaign_org_teardown")
+    sender = await _make_sender(db_session, user, org, "Teardown sender")
+
+    async with db_session.async_session() as session:
+        campaign = await _make_campaign(session, org, "Teardown", sender_id=sender.id)
+        message = await _make_message(
+            session,
+            org,
+            sender,
+            campaign,
+            "owner@apex-software-demo.com",
+            status="held",
+        )
+        campaign_id = campaign.id
+        message_id = message.id
+        sender_id = sender.id
+
+    async with db_session.async_session() as session:
+        await session.execute(
+            update(UserModel)
+            .where(UserModel.id == user.id)
+            .values(selected_organization_id=None)
+        )
+        await session.execute(
+            text("DELETE FROM organization_users WHERE organization_id = :org_id"),
+            {"org_id": org.id},
+        )
+        await session.execute(
+            delete(OrganizationModel).where(OrganizationModel.id == org.id)
+        )
+
+    async with db_session.async_session() as session:
+        assert (
+            await session.get(EmailCampaignModel, campaign_id, populate_existing=True)
+            is None
+        )
+        assert (
+            await session.get(EmailMessageModel, message_id, populate_existing=True)
+            is None
+        )
+        assert (
+            await session.get(EmailSenderModel, sender_id, populate_existing=True)
+            is None
+        )

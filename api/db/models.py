@@ -2246,9 +2246,15 @@ class EmailCampaignModel(Base):
     # The live sender/template rows. Identity is ALSO copied into the snapshot
     # columns below so a launched campaign's audit record never changes when
     # the sender is edited. Sending still requires the live sender to exist and
-    # stay verified; a sender used by a campaign cannot be deleted.
+    # stay verified. ``NO ACTION`` (not ``RESTRICT``) so deleting an
+    # organization can cascade through both ``email_campaigns`` and
+    # ``email_senders`` in one statement, while a direct sender delete is still
+    # refused. The sender delete endpoint (PR b) nulls this column for
+    # finished campaigns in the same transaction before deleting the sender.
     sender_id = Column(
-        Integer, ForeignKey("email_senders.id", ondelete="RESTRICT"), nullable=True
+        Integer,
+        ForeignKey("email_senders.id", ondelete="NO ACTION"),
+        nullable=True,
     )
     template_id = Column(
         Integer, ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True
@@ -2303,6 +2309,12 @@ class EmailCampaignModel(Base):
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     launched_at = Column(DateTime(timezone=True), nullable=True)
+    cancelled_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    cancelled_at = Column(DateTime(timezone=True), nullable=True)
+    # Free-text reason shown by the progress screen when a campaign fails.
+    failure_reason = Column(Text, nullable=True)
 
     # Last preview or launch counts. Every excluded lead is accounted for.
     recipient_count = Column(Integer, nullable=False, default=0, server_default="0")
@@ -2325,6 +2337,14 @@ class EmailCampaignModel(Base):
     duplicates_collapsed_count = Column(
         Integer, nullable=False, default=0, server_default="0"
     )
+
+    # Progress counters for the campaign progress screen. Incremented by the
+    # send worker and provider-feedback handling, never by preview.
+    sent_count = Column(Integer, nullable=False, default=0, server_default="0")
+    failed_count = Column(Integer, nullable=False, default=0, server_default="0")
+    bounced_count = Column(Integer, nullable=False, default=0, server_default="0")
+    complained_count = Column(Integer, nullable=False, default=0, server_default="0")
+    unsubscribed_count = Column(Integer, nullable=False, default=0, server_default="0")
 
     created_by = Column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -2423,10 +2443,18 @@ class EmailMessageModel(Base):
             unique=True,
             postgresql_where=text("campaign_id IS NOT NULL"),
         ),
+        # Campaign rows only: the resolver must trim and lowercase before
+        # inserting, and the database refuses anything else. ``btrim`` also
+        # rejects leading or trailing spaces, which a bare ``lower()`` would
+        # let through and which would defeat the uniqueness index.
         CheckConstraint(
-            "campaign_id IS NULL OR to_email = lower(to_email)",
+            "campaign_id IS NULL OR to_email = btrim(lower(to_email))",
             name="ck_email_messages_campaign_to_email_lowercase",
         ),
+        # Progress screen: count one campaign's recipients by state.
+        Index("ix_email_messages_campaign_status", "campaign_id", "status"),
+        # Lead deletion / audit lookups by lead.
+        Index("ix_email_messages_lead_id", "lead_id"),
         Index("ix_email_messages_organization_id", "organization_id"),
         Index(
             "ix_email_messages_org_created",
