@@ -56,7 +56,7 @@ import { useAuth } from "@/lib/auth";
 
 const PROVIDER_LABELS: Record<string, string> = {
     smtp: "SMTP",
-    ses: "Amazon SES",
+    ses: "Amazon SES (untested)",
     mailgun: "Mailgun",
     mandrill: "Mandrill",
 };

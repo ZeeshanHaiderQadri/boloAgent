@@ -7,19 +7,28 @@ Core environment variables are centralized in `api/constants.py`. Variables mark
 
 ## Deployment Modes
 
-Bolo supports two deployment modes, set via `DEPLOYMENT_MODE`:
+Bolo has two independent settings: **deployment mode** and **outbound network policy**.
 
-- **OSS** (`oss`, the default): self-hosted deployments using [Docker Compose](/deployment/docker). Uses local JWT authentication and MinIO for storage. User-configured outbound destinations (model service URLs, SMTP servers) may point at localhost or private addresses, and SMTP may use any port.
-- **SaaS** (`saas`): a hosted deployment, typically outside Docker. Authentication and API key management are handled through Bolo Managed Platform Services (MPS). Every user-configured outbound destination must resolve to a public address, and SMTP is restricted to the standard submission ports (`25`, `465`, `587`, `2525`).
+### Deployment mode
 
-`DEPLOYMENT_MODE` chooses more than authentication: it also turns the outbound egress protections on or off. A multi-tenant deployment that runs in `oss` mode lets one tenant make Bolo infrastructure connect to another tenant's private network, so choose the mode deliberately rather than relying on the default.
+`DEPLOYMENT_MODE` selects the authentication and hosting model:
+
+- **OSS** (`oss`, the default): self-hosted deployments using [Docker Compose](/deployment/docker). Uses local JWT authentication and MinIO for storage. Sign-up, service keys and email senders are managed by your own install.
+- **SaaS** (`saas`): the Dograh-hosted platform. Authentication and API key management go through Bolo Managed Platform Services (MPS); billing, signup grants, hosted quotas and service keys that require a verified Stack identity are enabled. This mode expects Dograh's hosted services. A white-label install that runs `saas` without them will break service-key and billing flows; use `oss` instead.
+
+### Outbound network policy
+
+`OUTBOUND_NETWORK_POLICY` controls what user-configured destinations Bolo may connect to:
+
+- **`strict`**: resolves user-configured model URLs and SMTP hosts and rejects private, loopback, link-local, CGNAT and reserved addresses. SMTP is limited to ports `25`, `465`, `587` and `2525`.
+- **`off`**: leaves destinations unrestricted, which self-hosted installs need for local model servers and private SMTP relays.
+
+The two settings are deliberately independent. The default is `strict` when `DEPLOYMENT_MODE=saas` and `off` when `DEPLOYMENT_MODE=oss`, preserving earlier behaviour. **A customer-facing self-hosted install should set `DEPLOYMENT_MODE=oss` plus `OUTBOUND_NETWORK_POLICY=strict`.** Do not switch to `saas` just to get egress blocking: that also turns on Dograh's billing and identity requirements.
 
 <Warning>
   When `ENVIRONMENT=production`, the API and worker refuse to start unless
   `DEPLOYMENT_MODE` is set explicitly to `oss` or `saas`. This is a deliberate
-  guard: a hosted deployment must never inherit the permissive `oss` default by
-  accident. Set `DEPLOYMENT_MODE=saas` for a hosted deployment and
-  `DEPLOYMENT_MODE=oss` for a self-hosted one.
+  guard: a hosted deployment must never inherit the `oss` default by accident.
 </Warning>
 
 The relevant required variables for each mode are noted in the descriptions below.
@@ -31,7 +40,8 @@ The relevant required variables for each mode are noted in the descriptions belo
 | Variable | Default | Description |
 |---|---|---|
 | `ENVIRONMENT` | `local` | Runtime environment. Affects logging and behaviour. One of `local`, `production`, `test` |
-| `DEPLOYMENT_MODE` | `oss` | Deployment mode, one of `oss` or `saas`. **Required explicitly when `ENVIRONMENT=production`** — the API refuses to start otherwise. `saas` enforces public-address resolution for user-configured URLs and SMTP hosts and restricts SMTP to ports `25`, `465`, `587`, `2525`; `oss` leaves those unrestricted for private networks and local relays |
+| `DEPLOYMENT_MODE` | `oss` | Deployment mode, one of `oss` or `saas`. **Required explicitly when `ENVIRONMENT=production`** — the API refuses to start otherwise. `saas` is the Dograh-hosted platform (billing/MPS and verified Stack identity for service keys); `oss` is the self-hosted install. Does **not** control egress blocking — use `OUTBOUND_NETWORK_POLICY` for that |
+| `OUTBOUND_NETWORK_POLICY` | `strict` in `saas`, `off` in `oss` | `strict` rejects user-configured model URLs and SMTP hosts that resolve to private/loopback/link-local/CGNAT/reserved addresses and limits SMTP to `25`, `465`, `587`, `2525`. `off` allows private model servers and relays. Set `strict` explicitly on a customer-facing self-hosted install, keep `DEPLOYMENT_MODE=oss` |
 | `AUTH_PROVIDER` | `local` | Authentication provider. `local` (default) uses the built-in email/password flow. Set to `stack` to delegate to Stack Auth for social login — see [Authentication](/deployment/authentication) for the full setup |
 
 ---

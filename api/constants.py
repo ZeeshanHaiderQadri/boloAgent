@@ -77,15 +77,34 @@ if DEPLOYMENT_MODE not in {"oss", "saas"}:
         f"DEPLOYMENT_MODE must be 'oss' or 'saas' (got {_DEPLOYMENT_MODE_ENV!r})."
     )
 if ENVIRONMENT == Environment.PRODUCTION.value and not _EXPLICIT_DEPLOYMENT_MODE:
-    # The default (oss) turns off egress protections: user-configured service
-    # URLs and SMTP servers may point at private addresses. A hosted deployment
-    # that silently inherits that default is a security incident waiting to
-    # happen, so production must choose explicitly.
+    # The default (oss) turns off SaaS-only behaviour. A hosted deployment that
+    # silently inherits that default is a security incident waiting to happen,
+    # so production must choose explicitly. Egress blocking is controlled
+    # separately by OUTBOUND_NETWORK_POLICY (below).
     raise RuntimeError(
         "DEPLOYMENT_MODE must be set explicitly when ENVIRONMENT=production. "
-        "Use 'oss' for self-hosted installs or 'saas' for a hosted deployment; "
-        "the egress protections for user-configured URLs and SMTP servers "
-        "depend on it."
+        "Use 'oss' for self-hosted installs or 'saas' for a hosted deployment."
+    )
+
+# Outbound network policy for user-configured destinations (model URLs, SMTP
+# hosts and ports). This is deliberately independent of DEPLOYMENT_MODE:
+#   * "strict" resolves user-configured hosts and rejects private, loopback,
+#     link-local, CGNAT and reserved addresses, and limits SMTP to standard
+#     submission ports.
+#   * "off" leaves those destinations unrestricted, which self-hosted installs
+#     need for local model servers and private SMTP relays.
+# The default preserves the previous behaviour: strict in saas, off in oss.
+# A customer-facing self-hosted install should set DEPLOYMENT_MODE=oss plus
+# OUTBOUND_NETWORK_POLICY=strict explicitly.
+_OUTBOUND_NETWORK_POLICY_ENV = os.getenv("OUTBOUND_NETWORK_POLICY")
+_EXPLICIT_OUTBOUND_NETWORK_POLICY = (_OUTBOUND_NETWORK_POLICY_ENV or "").strip().lower()
+OUTBOUND_NETWORK_POLICY = _EXPLICIT_OUTBOUND_NETWORK_POLICY or (
+    "strict" if DEPLOYMENT_MODE == "saas" else "off"
+)
+if OUTBOUND_NETWORK_POLICY not in {"strict", "off"}:
+    raise RuntimeError(
+        "OUTBOUND_NETWORK_POLICY must be 'strict' or 'off' "
+        f"(got {_OUTBOUND_NETWORK_POLICY_ENV!r})."
     )
 CORS_ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()

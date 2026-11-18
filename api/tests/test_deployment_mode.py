@@ -22,6 +22,7 @@ def _load_constants(
     *,
     environment: str | None,
     deployment_mode: str | None,
+    outbound_network_policy: str | None = None,
 ):
     """Execute ``api/constants.py`` fresh so its module-level env reads run again."""
     if environment is None:
@@ -32,6 +33,10 @@ def _load_constants(
         monkeypatch.delenv("DEPLOYMENT_MODE", raising=False)
     else:
         monkeypatch.setenv("DEPLOYMENT_MODE", deployment_mode)
+    if outbound_network_policy is None:
+        monkeypatch.delenv("OUTBOUND_NETWORK_POLICY", raising=False)
+    else:
+        monkeypatch.setenv("OUTBOUND_NETWORK_POLICY", outbound_network_policy)
 
     spec = importlib.util.spec_from_file_location(
         f"_constants_probe_{next(_module_ids)}", CONSTANTS_PATH
@@ -116,3 +121,96 @@ def test_helm_chart_has_no_default_and_fails_to_render_without_the_value():
     assert "\n  deploymentMode: " not in values
     assert "required" in template
     assert "config.deploymentMode" in template
+
+
+def test_egress_policy_defaults_to_strict_in_saas(monkeypatch: pytest.MonkeyPatch):
+    module = _load_constants(monkeypatch, environment="local", deployment_mode="saas")
+
+    assert module.OUTBOUND_NETWORK_POLICY == "strict"
+
+
+@pytest.mark.parametrize("environment", [None, "local", "test", "production"])
+def test_egress_policy_defaults_to_off_in_oss(
+    monkeypatch: pytest.MonkeyPatch, environment: str | None
+):
+    module = _load_constants(
+        monkeypatch,
+        environment=environment,
+        deployment_mode="oss",
+    )
+
+    assert module.OUTBOUND_NETWORK_POLICY == "off"
+
+
+def test_egress_policy_can_be_enabled_independently_of_saas(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    module = _load_constants(
+        monkeypatch,
+        environment="production",
+        deployment_mode="oss",
+        outbound_network_policy="strict",
+    )
+
+    assert module.DEPLOYMENT_MODE == "oss"
+    assert module.OUTBOUND_NETWORK_POLICY == "strict"
+
+
+def test_egress_policy_can_be_disabled_explicitly_in_saas(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    module = _load_constants(
+        monkeypatch,
+        environment="production",
+        deployment_mode="saas",
+        outbound_network_policy="off",
+    )
+
+    assert module.OUTBOUND_NETWORK_POLICY == "off"
+
+
+def test_egress_policy_is_normalized(monkeypatch: pytest.MonkeyPatch):
+    module = _load_constants(
+        monkeypatch,
+        environment="local",
+        deployment_mode="oss",
+        outbound_network_policy="  STRICT  ",
+    )
+
+    assert module.OUTBOUND_NETWORK_POLICY == "strict"
+
+
+def test_unknown_egress_policy_is_rejected(monkeypatch: pytest.MonkeyPatch):
+    with pytest.raises(
+        RuntimeError, match="OUTBOUND_NETWORK_POLICY must be 'strict' or 'off'"
+    ):
+        _load_constants(
+            monkeypatch,
+            environment="local",
+            deployment_mode="oss",
+            outbound_network_policy="blocked",
+        )
+
+
+def test_hostinger_compose_defaults_egress_to_strict():
+    text = (REPO_ROOT / "deploy/hostinger/docker-compose.yaml").read_text()
+    assert 'OUTBOUND_NETWORK_POLICY: "${OUTBOUND_NETWORK_POLICY:-strict}"' in text
+
+
+def test_main_compose_passes_egress_policy_through():
+    text = (REPO_ROOT / "docker-compose.yaml").read_text()
+    assert 'OUTBOUND_NETWORK_POLICY: "${OUTBOUND_NETWORK_POLICY:-}"' in text
+
+
+def test_helm_chart_defaults_egress_to_strict():
+    values = (REPO_ROOT / "deploy/helm/bolo/values.yaml").read_text()
+    template = (REPO_ROOT / "deploy/helm/bolo/templates/configmap.yaml").read_text()
+    assert "\n  outboundNetworkPolicy: strict\n" in values
+    assert "OUTBOUND_NETWORK_POLICY" in template
+    assert ".Values.config.outboundNetworkPolicy" in template
+
+
+def test_helm_aws_example_sets_the_required_deployment_mode():
+    values = (REPO_ROOT / "deploy/helm/bolo/examples/values-aws.yaml").read_text()
+    assert "\n  deploymentMode: oss\n" in values
+    assert "\n  outboundNetworkPolicy: strict\n" in values

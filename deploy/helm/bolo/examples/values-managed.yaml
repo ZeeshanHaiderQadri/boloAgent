@@ -33,6 +33,7 @@ exposure:
 config:
   environment: production
   deploymentMode: oss
+  outboundNetworkPolicy: strict
   logLevel: INFO
   enableAwsS3: true
 

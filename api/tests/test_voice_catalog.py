@@ -221,7 +221,7 @@ async def test_provider_errors_are_safe_and_redirects_are_not_followed(
 async def test_private_service_url_is_blocked_in_saas(
     monkeypatch, connection, upstream
 ):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
     connection.connection_settings["base_url"] = "http://127.0.0.1"
     requests = upstream(lambda request: pytest.fail("Must not contact private server"))
     with pytest.raises(HTTPException) as exc:

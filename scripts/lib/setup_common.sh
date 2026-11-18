@@ -260,6 +260,10 @@ bolo_sync_remote_env_file() {
     # a hosted one. Written explicitly because the API refuses to start with
     # ENVIRONMENT=production when the mode is unset.
     bolo_set_env_key "$env_file" DEPLOYMENT_MODE "${DEPLOYMENT_MODE:-oss}"
+    # Customer-facing remote installs get the strict egress policy even though
+    # DEPLOYMENT_MODE stays oss. An operator who needs a private model server
+    # or relay can set "off" explicitly and it is preserved here.
+    bolo_set_env_key "$env_file" OUTBOUND_NETWORK_POLICY "${OUTBOUND_NETWORK_POLICY:-strict}"
     bolo_set_env_key "$env_file" SERVER_IP "$server_ip"
     bolo_set_env_key "$env_file" PUBLIC_HOST "$public_host"
     bolo_set_env_key "$env_file" PUBLIC_BASE_URL "$public_base_url"
@@ -280,6 +284,7 @@ bolo_validate_remote_runtime_env() {
     # No silent default here: "oss" disables the outbound egress protections, so
     # a production install has to state which kind of deployment it is.
     [[ "${DEPLOYMENT_MODE:-}" == "oss" || "${DEPLOYMENT_MODE:-}" == "saas" ]] || bolo_fail "DEPLOYMENT_MODE must be set to 'oss' or 'saas' when ENVIRONMENT=production"
+    [[ "${OUTBOUND_NETWORK_POLICY:-}" == "strict" || "${OUTBOUND_NETWORK_POLICY:-}" == "off" ]] || bolo_fail "OUTBOUND_NETWORK_POLICY must be 'strict' or 'off'"
     [[ -n "${TURN_SECRET:-}" ]] || bolo_fail "TURN_SECRET is missing"
     [[ -n "${PUBLIC_HOST:-}" ]] || bolo_fail "PUBLIC_HOST is missing"
     [[ -n "${PUBLIC_BASE_URL:-}" ]] || bolo_fail "PUBLIC_BASE_URL is missing"
@@ -395,7 +400,7 @@ bolo_preflight_remote_init_render() {
     turn_conf="$tmp_root/coturn/turnserver.conf"
 
     (
-        export ENVIRONMENT DEPLOYMENT_MODE SERVER_IP PUBLIC_HOST PUBLIC_BASE_URL BACKEND_API_ENDPOINT MINIO_PUBLIC_ENDPOINT TURN_HOST TURN_SECRET FASTAPI_WORKERS
+        export ENVIRONMENT DEPLOYMENT_MODE OUTBOUND_NETWORK_POLICY SERVER_IP PUBLIC_HOST PUBLIC_BASE_URL BACKEND_API_ENDPOINT MINIO_PUBLIC_ENDPOINT TURN_HOST TURN_SECRET FASTAPI_WORKERS
         export BOLO_INIT_WORKSPACE_DIR="$project_dir"
         export BOLO_INIT_OUTPUT_ROOT="$tmp_root"
         export BOLO_INIT_CERTS_DIR="$cert_dir"

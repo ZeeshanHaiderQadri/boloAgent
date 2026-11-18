@@ -290,6 +290,11 @@ class LeadClient(BaseDBClient):
                     for field in _LEAD_REFRESH_FIELDS
                     if field in row
                 }
+                # A later scrape often cannot recover an address the first page
+                # exposed (different page layout, lazy-loaded contact block).
+                # Never replace a known address with an empty value.
+                if not row.get("email"):
+                    refresh.pop("email", None)
                 refresh["updated_at"] = datetime.now(UTC)
                 statement = insert_stmt.on_conflict_do_update(
                     constraint="uq_leads_organization_dedupe_key",

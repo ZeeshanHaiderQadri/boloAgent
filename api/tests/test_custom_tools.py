@@ -2815,7 +2815,7 @@ class TestUrlPathParameters:
 
     @pytest.mark.asyncio
     async def test_saas_rejects_private_rendered_hostname(self, monkeypatch):
-        monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+        monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
         tool = MockToolModel(
             tool_uuid="uuid",
             name="Tenant API",

@@ -38,7 +38,7 @@ const HOSTINGER_PRESET = {
 
 const PROVIDERS: { value: EmailProvider; label: string; supported: boolean }[] = [
     { value: "smtp", label: "SMTP (Hostinger or any mail host)", supported: true },
-    { value: "ses", label: "Amazon SES", supported: true },
+    { value: "ses", label: "Amazon SES (untested)", supported: true },
     { value: "mailgun", label: "Mailgun (coming soon)", supported: false },
     { value: "mandrill", label: "Mandrill (coming soon)", supported: false },
 ];
@@ -420,7 +420,8 @@ function SenderDialogForm({ open, onOpenChange, sender, onSaved }: SenderDialogP
                             <p className="text-xs text-muted-foreground">
                                 The From address or its whole domain must first be verified in
                                 SES. A new account stays in the sandbox and can only send to
-                                verified addresses.
+                                verified addresses. This adapter has not been tested against a
+                                live AWS account in this build; use SMTP for production sending.
                             </p>
                         </div>
                     )}

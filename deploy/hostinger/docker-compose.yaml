@@ -145,12 +145,17 @@ services:
       # order TURN URIs UDP-first. Required for correct remote WebRTC.
       ENVIRONMENT: "production"
       # This compose file is the self-hosted install, so "oss" is the usual
-      # value: private-address outbound destinations and non-standard SMTP
-      # ports stay allowed. Use "saas" if this host serves other organizations
-      # — SaaS mode rejects private addresses and restricts SMTP ports.
+      # value. It keeps local/private model servers usable; customer-facing
+      # installs pair it with OUTBOUND_NETWORK_POLICY=strict below. "saas" is
+      # for the Dograh-hosted platform and also enables its billing/MPS paths.
       # Required here (the ":?" form stops Compose with a readable message) so
       # a hosted deployment cannot silently inherit the permissive default.
       DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:?Set DEPLOYMENT_MODE to oss or saas in .env}"
+      # Reject private/loopback/link-local/CGNAT destinations and non-standard
+      # SMTP ports. Defaults to strict because this is a customer-facing
+      # install; set "off" only when this box must reach a private model or
+      # relay that you trust.
+      OUTBOUND_NETWORK_POLICY: "${OUTBOUND_NETWORK_POLICY:-strict}"
       LOG_LEVEL: "INFO"
 
       # Public HTTPS origin (Traefik-terminated). Used for absolute URLs and

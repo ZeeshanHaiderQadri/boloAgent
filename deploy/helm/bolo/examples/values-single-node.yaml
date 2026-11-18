@@ -16,6 +16,7 @@ exposure:
 config:
   environment: production
   deploymentMode: oss
+  outboundNetworkPolicy: strict
   logLevel: DEBUG
 
 web:

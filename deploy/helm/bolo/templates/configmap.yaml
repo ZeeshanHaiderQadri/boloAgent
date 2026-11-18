@@ -7,7 +7,8 @@ metadata:
     {{- include "bolo.labels" . | nindent 4 }}
 data:
   ENVIRONMENT: {{ .Values.config.environment | quote }}
-  DEPLOYMENT_MODE: {{ required "config.deploymentMode is required: set it to oss (self-hosted) or saas (hosted)" .Values.config.deploymentMode | quote }}
+  DEPLOYMENT_MODE: {{ required "config.deploymentMode is required: set it to oss (self-hosted) or saas (Dograh-hosted platform)" .Values.config.deploymentMode | quote }}
+  OUTBOUND_NETWORK_POLICY: {{ .Values.config.outboundNetworkPolicy | default "strict" | quote }}
   LOG_LEVEL: {{ .Values.config.logLevel | quote }}
   BACKEND_API_ENDPOINT: {{ .Values.config.backendApiEndpoint | quote }}
   MINIO_BUCKET: {{ .Values.config.minioBucket | quote }}

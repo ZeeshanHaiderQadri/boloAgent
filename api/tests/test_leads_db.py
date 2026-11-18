@@ -242,6 +242,30 @@ async def test_pending_call_outcome_query_compiles(db_session):
 
 
 @pytest.mark.asyncio
+async def test_upsert_keeps_the_existing_email_when_a_later_scrape_finds_none(
+    db_session,
+):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[_row("Apex Labs", "p1", email="sales@apex-software.com")],
+    )
+    lead = (await db_session.list_leads(org.id))[0][0]
+    assert lead.email == "sales@apex-software.com"
+
+    for missing in (None, ""):
+        await db_session.upsert_leads_for_search(
+            search_id=search.id,
+            organization_id=org.id,
+            leads=[_row("Apex Labs", "p1", email=missing)],
+        )
+        refreshed = await db_session.get_lead(lead.id, org.id)
+        assert refreshed.email == "sales@apex-software.com"
+
+
+@pytest.mark.asyncio
 async def test_email_consent_survives_scraper_refresh_and_filters(db_session):
     user, org = await _org(db_session)
     search = await _search(db_session, user, org)

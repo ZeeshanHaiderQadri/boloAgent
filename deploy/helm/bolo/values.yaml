@@ -104,13 +104,17 @@ exposure:
 # -----------------------------------------------------------------------------
 config:
   environment: production
-  # Egress policy and auth model. REQUIRED, no default: set "oss" for a
-  # self-hosted cluster or "saas" for a hosted, multi-tenant deployment.
-  # "saas" rejects user-configured URLs and SMTP servers that resolve to
-  # private addresses and restricts SMTP to the standard submission ports.
-  # The chart refuses to render until this is set, and the API refuses to
-  # start with environment=production and no explicit mode.
+  # Auth/hosted-feature mode. REQUIRED, no default: set "oss" for a
+  # self-hosted cluster or "saas" for the Dograh-hosted platform (which also
+  # enables its MPS billing and service-key identity paths). The chart refuses
+  # to render until this is set, and the API refuses to start with
+  # environment=production and no explicit mode.
   # deploymentMode: oss
+  # Egress policy for user-configured model URLs and SMTP hosts. "strict"
+  # rejects private/loopback/link-local/CGNAT destinations and limits SMTP to
+  # the standard submission ports; "off" allows private model servers and
+  # relays. Customer-facing clusters should keep "strict".
+  outboundNetworkPolicy: strict
   logLevel: INFO
   backendApiEndpoint: ""  # public URL the browser uses to reach the API; auto-derived from exposure.host if empty in NOTES
   minioBucket: voice-audio

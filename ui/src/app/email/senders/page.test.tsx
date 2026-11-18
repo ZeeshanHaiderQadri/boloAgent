@@ -82,6 +82,25 @@ describe("email senders page", () => {
         });
     });
 
+    it("marks the SES provider as untested", async () => {
+        vi.mocked(listEmailSendersApiV1EmailSendersGet).mockResolvedValue({
+            data: [
+                sender,
+                {
+                    ...sender,
+                    uuid: "sender-ses",
+                    name: "SES mailbox",
+                    provider: "ses",
+                    is_default: false,
+                },
+            ],
+        } as never);
+
+        render(<EmailSendersPage />);
+
+        expect(await screen.findByText("Amazon SES (untested)")).toBeDefined();
+    });
+
     it("verifies a sender and refreshes the list", async () => {
         render(<EmailSendersPage />);
         await screen.findByRole("heading", { name: "Support" });

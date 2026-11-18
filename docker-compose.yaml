@@ -105,6 +105,7 @@ services:
       # "oss" default, while ENVIRONMENT=production then hits the API's guard
       # and refuses to start without an explicit oss/saas choice.
       DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-}"
+      OUTBOUND_NETWORK_POLICY: "${OUTBOUND_NETWORK_POLICY:-}"
       SERVER_IP: "${SERVER_IP:-}"
       PUBLIC_HOST: "${PUBLIC_HOST:-}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
@@ -171,6 +172,10 @@ services:
       # ENVIRONMENT=production then fails the API's startup guard until an
       # explicit oss/saas choice is made. A default here would defeat it.
       DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-}"
+      # Egress policy for user-configured model URLs and SMTP hosts. Empty
+      # derives "strict" from DEPLOYMENT_MODE=saas and "off" from oss. Set
+      # "strict" explicitly on a customer-facing self-hosted install.
+      OUTBOUND_NETWORK_POLICY: "${OUTBOUND_NETWORK_POLICY:-}"
       LOG_LEVEL: "INFO"
 
       # Set to "false" in .env to disable public signup (invite-only installs).

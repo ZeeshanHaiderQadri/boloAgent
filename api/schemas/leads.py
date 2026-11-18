@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from api.constants import LEADS_MAX_TARGET_RESULTS
+from api.utils.email_validation import EmailValidationError, validate_email_address
 
 LeadCrmStatus = Literal[
     "new",
@@ -213,7 +214,6 @@ class LeadUpdateRequest(BaseModel):
         "title",
         "category",
         "phone",
-        "email",
         "website",
         "address",
         "city",
@@ -226,6 +226,19 @@ class LeadUpdateRequest(BaseModel):
         if value is None:
             return None
         return value.strip()
+
+    @field_validator("email")
+    @classmethod
+    def _valid_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text:
+            return ""
+        try:
+            return validate_email_address(text)
+        except EmailValidationError as exc:
+            raise ValueError(str(exc)) from exc
 
     @field_validator("tags")
     @classmethod

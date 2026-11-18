@@ -14,6 +14,12 @@
 #   LB_IP=$(kubectl get svc bolo-coturn -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 #   helm upgrade bolo . --reuse-values --set coturn.externalIp=$LB_IP --set config.turnHost=$LB_IP
 
+config:
+  # Self-hosted EKS cluster (not the Dograh-hosted platform).
+  deploymentMode: oss
+  # Reject private/loopback model endpoints and non-standard SMTP ports.
+  outboundNetworkPolicy: strict
+
 database:
   mode: external  # use RDS Postgres
 redis:

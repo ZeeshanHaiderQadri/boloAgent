@@ -14,9 +14,8 @@ There are three update flows depending on how you deployed:
 ## Upgrading to the required `DEPLOYMENT_MODE`
 
 The API and worker now refuse to start when `ENVIRONMENT=production` and
-`DEPLOYMENT_MODE` is unset or empty. Previously the permissive `oss` mode was
-silently assumed, which disables the outbound egress protections for
-user-configured model URLs and SMTP servers.
+`DEPLOYMENT_MODE` is unset or empty. Previously the `oss` default was silently
+assumed.
 
 Docker and Helm installs are already covered: `setup_remote.sh` and
 `update_remote.sh` write `DEPLOYMENT_MODE` into `.env`, and the Helm chart
@@ -28,16 +27,20 @@ startup without it:
 ```bash
 # Self-hosted install (the usual case):
 DEPLOYMENT_MODE=oss
+# Customer-facing self-hosted install: block private egress too.
+OUTBOUND_NETWORK_POLICY=strict
 
-# Hosted / multi-tenant install:
+# Dograh-hosted platform only (billing/MPS paths):
 DEPLOYMENT_MODE=saas
 ```
 
-`saas` is required for any deployment that serves other organizations; it
+`OUTBOUND_NETWORK_POLICY` is now independent of `DEPLOYMENT_MODE`: `strict`
 rejects user-configured URLs and SMTP servers that resolve to private
-addresses and restricts SMTP to the standard submission ports. See
-[Deployment Modes](/developer/environment-variables#deployment-modes) for the
-full behaviour difference.
+addresses and restricts SMTP to the standard submission ports; `off` permits
+private model servers and relays. Fresh remote installs write `strict`; an
+existing install that needs a private destination can set `off` explicitly.
+See [Deployment Modes](/developer/environment-variables#deployment-modes) for
+the full behaviour difference.
 
 ## Upgrading to credential encryption
 
