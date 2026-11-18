@@ -123,15 +123,24 @@ def test_normalize_guardrails_nan_and_rejects_titleless_rows():
 def test_dedupe_prefers_place_then_cid_then_data_then_hash():
     base = {"title": "Same Name", "address": "1 Main St", "phone": "+14155550100"}
 
-    assert normalize_lead_row(
-        {**base, "place_id": "p1", "cid": "c1"}, country_hint="US", source="demo"
-    )["dedupe_key"] == "place:p1"
-    assert normalize_lead_row(
-        {**base, "cid": "c1", "data_id": "d1"}, country_hint="US", source="demo"
-    )["dedupe_key"] == "cid:c1"
-    assert normalize_lead_row(
-        {**base, "data_id": "d1"}, country_hint="US", source="demo"
-    )["dedupe_key"] == "data:d1"
+    assert (
+        normalize_lead_row(
+            {**base, "place_id": "p1", "cid": "c1"}, country_hint="US", source="demo"
+        )["dedupe_key"]
+        == "place:p1"
+    )
+    assert (
+        normalize_lead_row(
+            {**base, "cid": "c1", "data_id": "d1"}, country_hint="US", source="demo"
+        )["dedupe_key"]
+        == "cid:c1"
+    )
+    assert (
+        normalize_lead_row({**base, "data_id": "d1"}, country_hint="US", source="demo")[
+            "dedupe_key"
+        ]
+        == "data:d1"
+    )
     hashed = normalize_lead_row(base, country_hint="US", source="demo")
     assert hashed["dedupe_key"].startswith("hash:")
 

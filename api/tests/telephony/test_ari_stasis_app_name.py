@@ -149,9 +149,7 @@ def test_websocket_authenticates_as_the_ari_user_and_subscribes_to_the_app():
 
 
 def test_origination_and_external_media_use_the_stasis_app():
-    provider = ARIProvider(
-        _config_loader(_legacy(stasis_app_name="bolo_a1b2c3d4e5f6"))
-    )
+    provider = ARIProvider(_config_loader(_legacy(stasis_app_name="bolo_a1b2c3d4e5f6")))
 
     assert provider.stasis_app_name == "bolo_a1b2c3d4e5f6"
     # Authentication is unchanged — it is the ari.conf section name.

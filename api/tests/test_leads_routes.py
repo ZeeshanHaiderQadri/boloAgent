@@ -492,9 +492,7 @@ def test_update_search_can_append_current_leads_to_existing_campaign():
 
     with (
         patch("api.routes.leads.db_client", db),
-        patch(
-            "api.routes.leads.add_leads_to_campaign", new=AsyncMock()
-        ) as append,
+        patch("api.routes.leads.add_leads_to_campaign", new=AsyncMock()) as append,
         patch("api.routes.leads.enqueue_job", new=AsyncMock()),
     ):
         response = _app().patch(
@@ -594,9 +592,7 @@ def test_update_search_can_start_from_scratch():
 
 
 def test_update_search_rejects_target_below_existing_leads():
-    search = _search(
-        status="completed", results_count=80, target_results=80
-    )
+    search = _search(status="completed", results_count=80, target_results=80)
     db = MagicMock()
     db.get_lead_search = AsyncMock(return_value=search)
     db.update_lead_search = AsyncMock()

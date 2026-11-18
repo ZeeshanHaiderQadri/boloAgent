@@ -125,8 +125,7 @@ async def test_production_worker_wiring_exports_a_metric_through_real_pipeline(r
     )
     await asyncio.wait_for(run_pipeline_worker(worker), timeout=5)
     assert (
-        value(runtime, "bolo_ai_latency_seconds_count", service="OpenAILLMService")
-        == 1
+        value(runtime, "bolo_ai_latency_seconds_count", service="OpenAILLMService") == 1
     )
 
 
@@ -204,12 +203,10 @@ async def test_service_metrics_deduplicate_hops_and_keep_latency_kinds_separate(
     await observer.cleanup()
 
     assert value(runtime, "bolo_ai_latency_seconds_count", kind="ttfb") == 2
-    assert value(
-        runtime, "bolo_ai_latency_seconds_sum", kind="ttfb"
-    ) == pytest.approx(0.6)
-    assert (
-        value(runtime, "bolo_ai_latency_seconds_bucket", kind="ttfb", le="0.3") == 1
+    assert value(runtime, "bolo_ai_latency_seconds_sum", kind="ttfb") == pytest.approx(
+        0.6
     )
+    assert value(runtime, "bolo_ai_latency_seconds_bucket", kind="ttfb", le="0.3") == 1
     assert value(runtime, "bolo_ai_latency_seconds_count", kind="ttfa") == 1
     assert value(runtime, "bolo_ai_latency_seconds_sum", kind="ttfat") == 0.8
     labels = samples(runtime, "bolo_ai_latency_seconds_count", kind="ttfb")[0].labels

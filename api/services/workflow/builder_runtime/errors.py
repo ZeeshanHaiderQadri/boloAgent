@@ -27,7 +27,9 @@ class BuilderModelError(HTTPException):
             )
         elif upstream_status_code == 429:
             status_code = 429
-            message = "Bolo's model service (MPS) is rate limiting requests. Try again later."
+            message = (
+                "Bolo's model service (MPS) is rate limiting requests. Try again later."
+            )
         elif upstream_status_code is not None and 400 <= upstream_status_code < 500:
             status_code = upstream_status_code
             message = (

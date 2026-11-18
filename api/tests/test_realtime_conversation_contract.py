@@ -69,9 +69,7 @@ def realtime_service(request, monkeypatch):
             params=BoloUltravoxOneShotInputParams(api_key="test")
         )
     elif provider == "live":
-        service = BoloOpenAILiveLLMService(
-            api_key="test", backend_model="gpt-5.4-mini"
-        )
+        service = BoloOpenAILiveLLMService(api_key="test", backend_model="gpt-5.4-mini")
     elif provider == "azure":
         service = BoloAzureRealtimeLLMService(
             api_key="test", base_url="wss://example.test/openai/v1/realtime"

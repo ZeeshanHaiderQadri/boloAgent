@@ -113,9 +113,7 @@ def upgrade():
         ),
         sa.ForeignKeyConstraint(["lead_id"], ["leads.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "search_id", "lead_id", name="uq_lead_search_results_pair"
-        ),
+        sa.UniqueConstraint("search_id", "lead_id", name="uq_lead_search_results_pair"),
     )
     op.create_index("ix_lead_search_results_id", "lead_search_results", ["id"])
     op.create_index(
@@ -163,9 +161,7 @@ def upgrade():
             ["organization_id"], ["organizations.id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(["lead_id"], ["leads.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["campaign_id"], ["campaigns.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["campaign_id"], ["campaigns.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "campaign_id",
@@ -173,7 +169,9 @@ def upgrade():
             name="uq_lead_dispatch_campaign_source",
         ),
     )
-    op.create_index("ix_lead_campaign_dispatches_id", "lead_campaign_dispatches", ["id"])
+    op.create_index(
+        "ix_lead_campaign_dispatches_id", "lead_campaign_dispatches", ["id"]
+    )
     op.create_index(
         "ix_lead_campaign_dispatches_lead", "lead_campaign_dispatches", ["lead_id"]
     )

@@ -216,9 +216,7 @@ def _oss_run_authorization_denied_result(
 
 def _service_uses_bolo(service: Any) -> bool:
     provider = getattr(service, "provider", None)
-    return (
-        provider == ServiceProviders.BOLO or provider == ServiceProviders.BOLO.value
-    )
+    return provider == ServiceProviders.BOLO or provider == ServiceProviders.BOLO.value
 
 
 def _bolo_api_keys(user_config: Any) -> set[str]:

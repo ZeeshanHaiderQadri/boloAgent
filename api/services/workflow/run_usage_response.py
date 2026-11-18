@@ -28,9 +28,7 @@ def format_public_cost_info(
         if "bolo_token_usage" in cost_info:
             bolo_token_usage = cost_info.get("bolo_token_usage") or 0
         elif "total_cost_usd" in cost_info:
-            bolo_token_usage = round(
-                float(cost_info.get("total_cost_usd", 0)) * 100, 2
-            )
+            bolo_token_usage = round(float(cost_info.get("total_cost_usd", 0)) * 100, 2)
 
     if duration is None and bolo_token_usage == 0:
         return None

@@ -16,9 +16,7 @@ _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 _PHONE_SPLIT_RE = re.compile(r"\s*(?:[/;|,]|\bor\b)\s*", re.IGNORECASE)
 
 
-def parse_google_maps_csv(
-    text: str, *, partial: bool = False
-) -> list[dict[str, Any]]:
+def parse_google_maps_csv(text: str, *, partial: bool = False) -> list[dict[str, Any]]:
     """Parse the scraper's CSV export into dictionaries keyed by header name.
 
     While a scrape is running the CSV grows a row at a time, so a download can

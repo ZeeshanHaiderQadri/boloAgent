@@ -180,9 +180,7 @@ def test_assign_leads_by_ids_dedupes_and_returns_counts():
     db.assign_leads_to_project = AsyncMock(return_value=2)
 
     with patch("api.routes.lead_projects.db_client", db):
-        response = _app().post(
-            "/lead-projects/5/leads", json={"lead_ids": [7, 8, 7]}
-        )
+        response = _app().post("/lead-projects/5/leads", json={"lead_ids": [7, 8, 7]})
 
     assert response.status_code == 200
     assert response.json()["assigned"] == 2
@@ -292,17 +290,13 @@ async def test_project_counts_and_org_scoping(db_session):
     assert await db_session.assign_leads_to_project(org.id, project.id, ids) == 2
 
     rows = await db_session.list_lead_projects(org.id)
-    assert [(row[0].name, row[1], row[2]) for row in rows] == [
-        ("Austin coffee", 2, 1)
-    ]
+    assert [(row[0].name, row[1], row[2]) for row in rows] == [("Austin coffee", 2, 1)]
 
     _other_user, other_org = await _org(db_session)
     assert await db_session.list_lead_projects(other_org.id) == []
     assert await db_session.get_lead_project(project.id, other_org.id) is None
     # Another org cannot see or move these leads through the project endpoint.
-    assert (
-        await db_session.assign_leads_to_project(other_org.id, project.id, ids) == 0
-    )
+    assert await db_session.assign_leads_to_project(other_org.id, project.id, ids) == 0
 
 
 @pytest.mark.asyncio
@@ -379,7 +373,9 @@ async def test_project_stats_export_scope_and_unassign(db_session):
     by_search = await db_session.lead_stats(org.id, search_id=search.id)
     assert by_search["total"] == 2
 
-    assert await db_session.unassign_leads_from_project(org.id, project.id, [lead_id]) == 1
+    assert (
+        await db_session.unassign_leads_from_project(org.id, project.id, [lead_id]) == 1
+    )
     assert (await db_session.get_lead_project(project.id, org.id))[1] == 0
 
 
@@ -390,7 +386,9 @@ async def test_deleting_a_project_unfiles_leads_and_frees_the_name(db_session):
         db_session, user, org, [_row("Apex Coffee", "p1")]
     )
     project = await db_session.create_lead_project(org.id, "Temp")
-    await db_session.assign_leads_to_project(org.id, project.id, [leads["Apex Coffee"].id])
+    await db_session.assign_leads_to_project(
+        org.id, project.id, [leads["Apex Coffee"].id]
+    )
 
     assert await db_session.delete_lead_project(project.id, org.id) == 1
     assert await db_session.get_lead_project(project.id, org.id) is None

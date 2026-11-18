@@ -51,9 +51,7 @@ def upgrade():
         ondelete="SET NULL",
     )
     op.create_index("ix_leads_project_id", "leads", ["project_id"])
-    op.create_index(
-        "ix_leads_org_project", "leads", ["organization_id", "project_id"]
-    )
+    op.create_index("ix_leads_org_project", "leads", ["organization_id", "project_id"])
 
 
 def downgrade():
@@ -63,8 +61,6 @@ def downgrade():
     op.drop_column("leads", "project_id")
 
     op.drop_index("ix_lead_projects_org_created", table_name="lead_projects")
-    op.drop_index(
-        "ix_lead_projects_organization_id", table_name="lead_projects"
-    )
+    op.drop_index("ix_lead_projects_organization_id", table_name="lead_projects")
     op.drop_index("ix_lead_projects_id", table_name="lead_projects")
     op.drop_table("lead_projects")

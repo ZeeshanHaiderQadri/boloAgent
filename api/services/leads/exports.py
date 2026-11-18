@@ -252,7 +252,18 @@ def build_pdf(
     table = Table(
         data,
         repeatRows=1,
-        colWidths=[40 * mm, 27 * mm, 27 * mm, 33 * mm, 22 * mm, 15 * mm, 15 * mm, 13 * mm, 14 * mm, 24 * mm],
+        colWidths=[
+            40 * mm,
+            27 * mm,
+            27 * mm,
+            33 * mm,
+            22 * mm,
+            15 * mm,
+            15 * mm,
+            13 * mm,
+            14 * mm,
+            24 * mm,
+        ],
     )
     table.setStyle(
         TableStyle(
@@ -263,7 +274,12 @@ def build_pdf(
                 ("FONTSIZE", (0, 0), (-1, -1), 7),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F3F8F6")]),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#F3F8F6")],
+                ),
                 ("LINEBELOW", (0, 0), (-1, 0), 0.7, colors.HexColor(TEAL)),
                 ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#D5E3DE")),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
