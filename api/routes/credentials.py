@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from api.db import db_client
 from api.db.models import UserModel
+from api.db.webhook_credential_client import CredentialInUseError
 from api.enums import WebhookCredentialType
 from api.sdk_expose import sdk_expose
 from api.services.auth.depends import get_user
@@ -281,9 +282,19 @@ async def delete_credential(
             status_code=400, detail="No organization selected for the user"
         )
 
-    deleted = await db_client.delete_credential(
-        credential_uuid, user.selected_organization_id
-    )
+    try:
+        deleted = await db_client.delete_credential(
+            credential_uuid, user.selected_organization_id
+        )
+    except CredentialInUseError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This credential is still used by the email sender(s): "
+                + ", ".join(exc.sender_names)
+                + ". Delete or re-point them first."
+            ),
+        ) from exc
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Credential not found")
