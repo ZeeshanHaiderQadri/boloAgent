@@ -49,6 +49,19 @@ def test_production_requires_an_explicit_deployment_mode(
         _load_constants(monkeypatch, environment="production", deployment_mode=None)
 
 
+@pytest.mark.parametrize("environment", [" Production ", "PRODUCTION", "production\n"])
+def test_production_is_normalized_before_the_guard(
+    monkeypatch: pytest.MonkeyPatch, environment: str
+):
+    with pytest.raises(RuntimeError, match="DEPLOYMENT_MODE must be set explicitly"):
+        _load_constants(monkeypatch, environment=environment, deployment_mode=None)
+
+
+def test_environment_is_stored_normalized(monkeypatch: pytest.MonkeyPatch):
+    module = _load_constants(monkeypatch, environment="  TEST  ", deployment_mode=None)
+    assert module.ENVIRONMENT == "test"
+
+
 def test_production_rejects_an_empty_deployment_mode(
     monkeypatch: pytest.MonkeyPatch,
 ):
