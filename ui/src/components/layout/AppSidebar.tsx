@@ -13,6 +13,7 @@ import {
   FileText,
   Home,
   Key,
+  LayoutTemplate,
   LogOut,
   type LucideIcon,
   Mail,
@@ -137,6 +138,11 @@ const NAV_SECTIONS: SidebarNavSection[] = [
         title: "Email",
         url: "/email/senders",
         icon: Mail,
+      },
+      {
+        title: "Email templates",
+        url: "/email/templates",
+        icon: LayoutTemplate,
       },
       {
         title: "Files",
