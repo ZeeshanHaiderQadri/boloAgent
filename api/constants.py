@@ -67,7 +67,24 @@ def is_prompt_cache_disabled() -> bool:
     return os.getenv("BOLO_PROMPT_CACHE_DISABLED", "").lower() in {"1", "true"}
 
 
-DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "oss")
+_DEPLOYMENT_MODE_ENV = os.getenv("DEPLOYMENT_MODE")
+_EXPLICIT_DEPLOYMENT_MODE = (_DEPLOYMENT_MODE_ENV or "").strip()
+DEPLOYMENT_MODE = _EXPLICIT_DEPLOYMENT_MODE.lower() or "oss"
+if DEPLOYMENT_MODE not in {"oss", "saas"}:
+    raise RuntimeError(
+        f"DEPLOYMENT_MODE must be 'oss' or 'saas' (got {_DEPLOYMENT_MODE_ENV!r})."
+    )
+if ENVIRONMENT == Environment.PRODUCTION.value and not _EXPLICIT_DEPLOYMENT_MODE:
+    # The default (oss) turns off egress protections: user-configured service
+    # URLs and SMTP servers may point at private addresses. A hosted deployment
+    # that silently inherits that default is a security incident waiting to
+    # happen, so production must choose explicitly.
+    raise RuntimeError(
+        "DEPLOYMENT_MODE must be set explicitly when ENVIRONMENT=production. "
+        "Use 'oss' for self-hosted installs or 'saas' for a hosted deployment; "
+        "the egress protections for user-configured URLs and SMTP servers "
+        "depend on it."
+    )
 CORS_ALLOWED_ORIGINS = [
     o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()
 ]

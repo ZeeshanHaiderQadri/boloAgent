@@ -256,6 +256,10 @@ bolo_sync_remote_env_file() {
     bolo_is_ipv4 "$server_ip" || bolo_fail "SERVER_IP must be an IPv4 address (got: $server_ip)"
 
     bolo_set_env_key "$env_file" ENVIRONMENT "${ENVIRONMENT:-production}"
+    # Egress policy and auth model: "oss" for a self-hosted install, "saas" for
+    # a hosted one. Written explicitly because the API refuses to start with
+    # ENVIRONMENT=production when the mode is unset.
+    bolo_set_env_key "$env_file" DEPLOYMENT_MODE "${DEPLOYMENT_MODE:-oss}"
     bolo_set_env_key "$env_file" SERVER_IP "$server_ip"
     bolo_set_env_key "$env_file" PUBLIC_HOST "$public_host"
     bolo_set_env_key "$env_file" PUBLIC_BASE_URL "$public_base_url"
@@ -273,6 +277,9 @@ bolo_sync_remote_env_file() {
 
 bolo_validate_remote_runtime_env() {
     [[ "${FASTAPI_WORKERS:-}" =~ ^[1-9][0-9]*$ ]] || bolo_fail "FASTAPI_WORKERS must be a positive integer"
+    # No silent default here: "oss" disables the outbound egress protections, so
+    # a production install has to state which kind of deployment it is.
+    [[ "${DEPLOYMENT_MODE:-}" == "oss" || "${DEPLOYMENT_MODE:-}" == "saas" ]] || bolo_fail "DEPLOYMENT_MODE must be set to 'oss' or 'saas' when ENVIRONMENT=production"
     [[ -n "${TURN_SECRET:-}" ]] || bolo_fail "TURN_SECRET is missing"
     [[ -n "${PUBLIC_HOST:-}" ]] || bolo_fail "PUBLIC_HOST is missing"
     [[ -n "${PUBLIC_BASE_URL:-}" ]] || bolo_fail "PUBLIC_BASE_URL is missing"
@@ -388,7 +395,7 @@ bolo_preflight_remote_init_render() {
     turn_conf="$tmp_root/coturn/turnserver.conf"
 
     (
-        export ENVIRONMENT SERVER_IP PUBLIC_HOST PUBLIC_BASE_URL BACKEND_API_ENDPOINT MINIO_PUBLIC_ENDPOINT TURN_HOST TURN_SECRET FASTAPI_WORKERS
+        export ENVIRONMENT DEPLOYMENT_MODE SERVER_IP PUBLIC_HOST PUBLIC_BASE_URL BACKEND_API_ENDPOINT MINIO_PUBLIC_ENDPOINT TURN_HOST TURN_SECRET FASTAPI_WORKERS
         export BOLO_INIT_WORKSPACE_DIR="$project_dir"
         export BOLO_INIT_OUTPUT_ROOT="$tmp_root"
         export BOLO_INIT_CERTS_DIR="$cert_dir"
