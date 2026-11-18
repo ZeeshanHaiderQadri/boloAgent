@@ -1388,6 +1388,62 @@ export type CreateCredentialRequest = {
 };
 
 /**
+ * CreateEmailDomainRequest
+ */
+export type CreateEmailDomainRequest = {
+    /**
+     * Domain
+     */
+    domain: string;
+    /**
+     * Sender Uuid
+     */
+    sender_uuid: string;
+};
+
+/**
+ * CreateEmailSenderRequest
+ */
+export type CreateEmailSenderRequest = {
+    /**
+     * Name
+     */
+    name: string;
+    provider: EmailProvider;
+    /**
+     * From Name
+     */
+    from_name: string;
+    /**
+     * From Email
+     */
+    from_email: string;
+    /**
+     * Reply To Email
+     */
+    reply_to_email?: string | null;
+    /**
+     * Settings
+     */
+    settings?: {
+        [key: string]: unknown;
+    };
+    credentials: EmailCredentials;
+    /**
+     * Is Default
+     */
+    is_default?: boolean;
+    /**
+     * Daily Cap
+     */
+    daily_cap?: number | null;
+    /**
+     * Rate Per Second
+     */
+    rate_per_second?: number | null;
+};
+
+/**
  * CreateFolderRequest
  */
 export type CreateFolderRequest = {
@@ -2150,6 +2206,160 @@ export type DuplicateTemplateRequest = {
      * Workflow Name
      */
     workflow_name: string;
+};
+
+/**
+ * EmailCredentials
+ *
+ * Secret half of a sender. Never returned by any endpoint.
+ */
+export type EmailCredentials = {
+    /**
+     * Username
+     */
+    username?: string | null;
+    /**
+     * Password
+     */
+    password?: string | null;
+    /**
+     * Access Key Id
+     */
+    access_key_id?: string | null;
+    /**
+     * Secret Access Key
+     */
+    secret_access_key?: string | null;
+    /**
+     * Session Token
+     */
+    session_token?: string | null;
+};
+
+/**
+ * EmailDomainResponse
+ */
+export type EmailDomainResponse = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Domain
+     */
+    domain: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Sender Uuid
+     */
+    sender_uuid: string | null;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Verification
+     */
+    verification: {
+        [key: string]: unknown;
+    };
+    /**
+     * Last Checked At
+     */
+    last_checked_at: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string | null;
+};
+
+/**
+ * EmailProvider
+ *
+ * Outbound email providers. Every sender brings its own account.
+ */
+export type EmailProvider = 'smtp' | 'ses' | 'mailgun' | 'mandrill';
+
+/**
+ * EmailSenderResponse
+ */
+export type EmailSenderResponse = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * From Name
+     */
+    from_name: string;
+    /**
+     * From Email
+     */
+    from_email: string;
+    /**
+     * Reply To Email
+     */
+    reply_to_email: string | null;
+    /**
+     * Settings
+     */
+    settings: {
+        [key: string]: unknown;
+    };
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Is Default
+     */
+    is_default: boolean;
+    limits: SenderLimitsResponse;
+    /**
+     * Daily Cap Override
+     */
+    daily_cap_override: number | null;
+    /**
+     * Rate Per Second Override
+     */
+    rate_per_second_override: number | null;
+    /**
+     * Credentials Configured
+     */
+    credentials_configured: boolean;
+    /**
+     * Credential Hint
+     */
+    credential_hint: {
+        [key: string]: string;
+    };
+    /**
+     * Last Verified At
+     */
+    last_verified_at: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string | null;
 };
 
 /**
@@ -5907,6 +6117,20 @@ export type ScheduleConfigResponse = {
 };
 
 /**
+ * SenderLimitsResponse
+ */
+export type SenderLimitsResponse = {
+    /**
+     * Daily Cap
+     */
+    daily_cap: number;
+    /**
+     * Rate Per Second
+     */
+    rate_per_second: number;
+};
+
+/**
  * ServiceKeyResponse
  */
 export type ServiceKeyResponse = {
@@ -6590,6 +6814,30 @@ export type TelnyxConfigurationRequest = {
      * Webhook public key from Mission Control Portal → Keys & Credentials → Public Key. Used to verify Telnyx webhook signatures.
      */
     webhook_public_key?: string | null;
+};
+
+/**
+ * TestSendRequest
+ */
+export type TestSendRequest = {
+    /**
+     * To Email
+     */
+    to_email: string;
+};
+
+/**
+ * TestSendResponse
+ */
+export type TestSendResponse = {
+    /**
+     * Provider Message Id
+     */
+    provider_message_id: string;
+    /**
+     * Message
+     */
+    message: string;
 };
 
 /**
@@ -7497,6 +7745,61 @@ export type UpdateCredentialRequest = {
 };
 
 /**
+ * UpdateEmailDomainRequest
+ */
+export type UpdateEmailDomainRequest = {
+    /**
+     * Domain
+     */
+    domain?: string | null;
+    /**
+     * Sender Uuid
+     */
+    sender_uuid?: string | null;
+};
+
+/**
+ * UpdateEmailSenderRequest
+ */
+export type UpdateEmailSenderRequest = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * From Name
+     */
+    from_name?: string | null;
+    /**
+     * From Email
+     */
+    from_email?: string | null;
+    /**
+     * Reply To Email
+     */
+    reply_to_email?: string | null;
+    /**
+     * Settings
+     */
+    settings?: {
+        [key: string]: unknown;
+    } | null;
+    credentials?: EmailCredentials | null;
+    /**
+     * Is Default
+     */
+    is_default?: boolean | null;
+    /**
+     * Daily Cap
+     */
+    daily_cap?: number | null;
+    /**
+     * Rate Per Second
+     */
+    rate_per_second?: number | null;
+};
+
+/**
  * UpdateFolderRequest
  */
 export type UpdateFolderRequest = {
@@ -7753,6 +8056,34 @@ export type ValidationError = {
     ctx?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * VerifySenderResponse
+ */
+export type VerifySenderResponse = {
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Last Verified At
+     */
+    last_verified_at: string | null;
+    /**
+     * Sandbox Mode
+     */
+    sandbox_mode?: boolean | null;
+    /**
+     * Send Quota
+     */
+    send_quota?: {
+        [key: string]: number;
+    } | null;
+    /**
+     * Message
+     */
+    message: string;
 };
 
 /**
@@ -14150,6 +14481,597 @@ export type UpdateCredentialApiV1CredentialsCredentialUuidPutResponses = {
 };
 
 export type UpdateCredentialApiV1CredentialsCredentialUuidPutResponse = UpdateCredentialApiV1CredentialsCredentialUuidPutResponses[keyof UpdateCredentialApiV1CredentialsCredentialUuidPutResponses];
+
+export type ListEmailSendersApiV1EmailSendersGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/senders';
+};
+
+export type ListEmailSendersApiV1EmailSendersGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEmailSendersApiV1EmailSendersGetError = ListEmailSendersApiV1EmailSendersGetErrors[keyof ListEmailSendersApiV1EmailSendersGetErrors];
+
+export type ListEmailSendersApiV1EmailSendersGetResponses = {
+    /**
+     * Response List Email Senders Api V1 Email Senders Get
+     *
+     * Successful Response
+     */
+    200: Array<EmailSenderResponse>;
+};
+
+export type ListEmailSendersApiV1EmailSendersGetResponse = ListEmailSendersApiV1EmailSendersGetResponses[keyof ListEmailSendersApiV1EmailSendersGetResponses];
+
+export type CreateEmailSenderApiV1EmailSendersPostData = {
+    body: CreateEmailSenderRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/senders';
+};
+
+export type CreateEmailSenderApiV1EmailSendersPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateEmailSenderApiV1EmailSendersPostError = CreateEmailSenderApiV1EmailSendersPostErrors[keyof CreateEmailSenderApiV1EmailSendersPostErrors];
+
+export type CreateEmailSenderApiV1EmailSendersPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: EmailSenderResponse;
+};
+
+export type CreateEmailSenderApiV1EmailSendersPostResponse = CreateEmailSenderApiV1EmailSendersPostResponses[keyof CreateEmailSenderApiV1EmailSendersPostResponses];
+
+export type DeleteEmailSenderApiV1EmailSendersSenderUuidDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Sender Uuid
+         */
+        sender_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/senders/{sender_uuid}';
+};
+
+export type DeleteEmailSenderApiV1EmailSendersSenderUuidDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteEmailSenderApiV1EmailSendersSenderUuidDeleteError = DeleteEmailSenderApiV1EmailSendersSenderUuidDeleteErrors[keyof DeleteEmailSenderApiV1EmailSendersSenderUuidDeleteErrors];
+
+export type DeleteEmailSenderApiV1EmailSendersSenderUuidDeleteResponses = {
+    /**
+     * Response Delete Email Sender Api V1 Email Senders  Sender Uuid  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DeleteEmailSenderApiV1EmailSendersSenderUuidDeleteResponse = DeleteEmailSenderApiV1EmailSendersSenderUuidDeleteResponses[keyof DeleteEmailSenderApiV1EmailSendersSenderUuidDeleteResponses];
+
+export type GetEmailSenderApiV1EmailSendersSenderUuidGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Sender Uuid
+         */
+        sender_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/senders/{sender_uuid}';
+};
+
+export type GetEmailSenderApiV1EmailSendersSenderUuidGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEmailSenderApiV1EmailSendersSenderUuidGetError = GetEmailSenderApiV1EmailSendersSenderUuidGetErrors[keyof GetEmailSenderApiV1EmailSendersSenderUuidGetErrors];
+
+export type GetEmailSenderApiV1EmailSendersSenderUuidGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailSenderResponse;
+};
+
+export type GetEmailSenderApiV1EmailSendersSenderUuidGetResponse = GetEmailSenderApiV1EmailSendersSenderUuidGetResponses[keyof GetEmailSenderApiV1EmailSendersSenderUuidGetResponses];
+
+export type UpdateEmailSenderApiV1EmailSendersSenderUuidPatchData = {
+    body: UpdateEmailSenderRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Sender Uuid
+         */
+        sender_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/senders/{sender_uuid}';
+};
+
+export type UpdateEmailSenderApiV1EmailSendersSenderUuidPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateEmailSenderApiV1EmailSendersSenderUuidPatchError = UpdateEmailSenderApiV1EmailSendersSenderUuidPatchErrors[keyof UpdateEmailSenderApiV1EmailSendersSenderUuidPatchErrors];
+
+export type UpdateEmailSenderApiV1EmailSendersSenderUuidPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailSenderResponse;
+};
+
+export type UpdateEmailSenderApiV1EmailSendersSenderUuidPatchResponse = UpdateEmailSenderApiV1EmailSendersSenderUuidPatchResponses[keyof UpdateEmailSenderApiV1EmailSendersSenderUuidPatchResponses];
+
+export type VerifyEmailSenderApiV1EmailSendersSenderUuidVerifyPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Sender Uuid
+         */
+        sender_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/senders/{sender_uuid}/verify';
+};
+
+export type VerifyEmailSenderApiV1EmailSendersSenderUuidVerifyPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type VerifyEmailSenderApiV1EmailSendersSenderUuidVerifyPostError = VerifyEmailSenderApiV1EmailSendersSenderUuidVerifyPostErrors[keyof VerifyEmailSenderApiV1EmailSendersSenderUuidVerifyPostErrors];
+
+export type VerifyEmailSenderApiV1EmailSendersSenderUuidVerifyPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: VerifySenderResponse;
+};
+
+export type VerifyEmailSenderApiV1EmailSendersSenderUuidVerifyPostResponse = VerifyEmailSenderApiV1EmailSendersSenderUuidVerifyPostResponses[keyof VerifyEmailSenderApiV1EmailSendersSenderUuidVerifyPostResponses];
+
+export type TestSendEmailApiV1EmailSendersSenderUuidTestSendPostData = {
+    body: TestSendRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Sender Uuid
+         */
+        sender_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/senders/{sender_uuid}/test-send';
+};
+
+export type TestSendEmailApiV1EmailSendersSenderUuidTestSendPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type TestSendEmailApiV1EmailSendersSenderUuidTestSendPostError = TestSendEmailApiV1EmailSendersSenderUuidTestSendPostErrors[keyof TestSendEmailApiV1EmailSendersSenderUuidTestSendPostErrors];
+
+export type TestSendEmailApiV1EmailSendersSenderUuidTestSendPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: TestSendResponse;
+};
+
+export type TestSendEmailApiV1EmailSendersSenderUuidTestSendPostResponse = TestSendEmailApiV1EmailSendersSenderUuidTestSendPostResponses[keyof TestSendEmailApiV1EmailSendersSenderUuidTestSendPostResponses];
+
+export type ListEmailDomainsApiV1EmailDomainsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/domains';
+};
+
+export type ListEmailDomainsApiV1EmailDomainsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEmailDomainsApiV1EmailDomainsGetError = ListEmailDomainsApiV1EmailDomainsGetErrors[keyof ListEmailDomainsApiV1EmailDomainsGetErrors];
+
+export type ListEmailDomainsApiV1EmailDomainsGetResponses = {
+    /**
+     * Response List Email Domains Api V1 Email Domains Get
+     *
+     * Successful Response
+     */
+    200: Array<EmailDomainResponse>;
+};
+
+export type ListEmailDomainsApiV1EmailDomainsGetResponse = ListEmailDomainsApiV1EmailDomainsGetResponses[keyof ListEmailDomainsApiV1EmailDomainsGetResponses];
+
+export type CreateEmailDomainApiV1EmailDomainsPostData = {
+    body: CreateEmailDomainRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/domains';
+};
+
+export type CreateEmailDomainApiV1EmailDomainsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateEmailDomainApiV1EmailDomainsPostError = CreateEmailDomainApiV1EmailDomainsPostErrors[keyof CreateEmailDomainApiV1EmailDomainsPostErrors];
+
+export type CreateEmailDomainApiV1EmailDomainsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: EmailDomainResponse;
+};
+
+export type CreateEmailDomainApiV1EmailDomainsPostResponse = CreateEmailDomainApiV1EmailDomainsPostResponses[keyof CreateEmailDomainApiV1EmailDomainsPostResponses];
+
+export type DeleteEmailDomainApiV1EmailDomainsDomainUuidDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Domain Uuid
+         */
+        domain_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/domains/{domain_uuid}';
+};
+
+export type DeleteEmailDomainApiV1EmailDomainsDomainUuidDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteEmailDomainApiV1EmailDomainsDomainUuidDeleteError = DeleteEmailDomainApiV1EmailDomainsDomainUuidDeleteErrors[keyof DeleteEmailDomainApiV1EmailDomainsDomainUuidDeleteErrors];
+
+export type DeleteEmailDomainApiV1EmailDomainsDomainUuidDeleteResponses = {
+    /**
+     * Response Delete Email Domain Api V1 Email Domains  Domain Uuid  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DeleteEmailDomainApiV1EmailDomainsDomainUuidDeleteResponse = DeleteEmailDomainApiV1EmailDomainsDomainUuidDeleteResponses[keyof DeleteEmailDomainApiV1EmailDomainsDomainUuidDeleteResponses];
+
+export type GetEmailDomainApiV1EmailDomainsDomainUuidGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Domain Uuid
+         */
+        domain_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/domains/{domain_uuid}';
+};
+
+export type GetEmailDomainApiV1EmailDomainsDomainUuidGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEmailDomainApiV1EmailDomainsDomainUuidGetError = GetEmailDomainApiV1EmailDomainsDomainUuidGetErrors[keyof GetEmailDomainApiV1EmailDomainsDomainUuidGetErrors];
+
+export type GetEmailDomainApiV1EmailDomainsDomainUuidGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailDomainResponse;
+};
+
+export type GetEmailDomainApiV1EmailDomainsDomainUuidGetResponse = GetEmailDomainApiV1EmailDomainsDomainUuidGetResponses[keyof GetEmailDomainApiV1EmailDomainsDomainUuidGetResponses];
+
+export type UpdateEmailDomainApiV1EmailDomainsDomainUuidPatchData = {
+    body: UpdateEmailDomainRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Domain Uuid
+         */
+        domain_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/domains/{domain_uuid}';
+};
+
+export type UpdateEmailDomainApiV1EmailDomainsDomainUuidPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateEmailDomainApiV1EmailDomainsDomainUuidPatchError = UpdateEmailDomainApiV1EmailDomainsDomainUuidPatchErrors[keyof UpdateEmailDomainApiV1EmailDomainsDomainUuidPatchErrors];
+
+export type UpdateEmailDomainApiV1EmailDomainsDomainUuidPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailDomainResponse;
+};
+
+export type UpdateEmailDomainApiV1EmailDomainsDomainUuidPatchResponse = UpdateEmailDomainApiV1EmailDomainsDomainUuidPatchResponses[keyof UpdateEmailDomainApiV1EmailDomainsDomainUuidPatchResponses];
+
+export type VerifyEmailDomainApiV1EmailDomainsDomainUuidVerifyPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Domain Uuid
+         */
+        domain_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/domains/{domain_uuid}/verify';
+};
+
+export type VerifyEmailDomainApiV1EmailDomainsDomainUuidVerifyPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type VerifyEmailDomainApiV1EmailDomainsDomainUuidVerifyPostError = VerifyEmailDomainApiV1EmailDomainsDomainUuidVerifyPostErrors[keyof VerifyEmailDomainApiV1EmailDomainsDomainUuidVerifyPostErrors];
+
+export type VerifyEmailDomainApiV1EmailDomainsDomainUuidVerifyPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailDomainResponse;
+};
+
+export type VerifyEmailDomainApiV1EmailDomainsDomainUuidVerifyPostResponse = VerifyEmailDomainApiV1EmailDomainsDomainUuidVerifyPostResponses[keyof VerifyEmailDomainApiV1EmailDomainsDomainUuidVerifyPostResponses];
+
+export type ListEmailProvidersApiV1EmailProvidersGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/providers';
+};
+
+export type ListEmailProvidersApiV1EmailProvidersGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+};
+
+export type ListEmailProvidersApiV1EmailProvidersGetResponses = {
+    /**
+     * Response List Email Providers Api V1 Email Providers Get
+     *
+     * Successful Response
+     */
+    200: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+export type ListEmailProvidersApiV1EmailProvidersGetResponse = ListEmailProvidersApiV1EmailProvidersGetResponses[keyof ListEmailProvidersApiV1EmailProvidersGetResponses];
 
 export type ListToolsApiV1ToolsGetData = {
     body?: never;
