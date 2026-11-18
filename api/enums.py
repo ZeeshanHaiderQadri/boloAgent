@@ -321,6 +321,42 @@ class EmailMessageStatus(Enum):
     BOUNCED = "bounced"
     COMPLAINED = "complained"
     CANCELLED = "cancelled"
+    # A frozen campaign recipient. Held rows are never claimed by the send
+    # worker; the campaign launch step moves them to ``queued``.
+    HELD = "held"
+
+
+class EmailCampaignStatus(Enum):
+    """Lifecycle of one email campaign.
+
+    Only ``draft`` is reachable while sending is behind its feature flag.
+    Transitions are enforced by ``api.services.email.campaign_state``.
+    """
+
+    DRAFT = "draft"
+    READY = "ready"  # sender, template and audience chosen; preview has recipients
+    LAUNCHING = "launching"  # audience frozen, recipient rows created as held
+    SENDING = "sending"  # held rows released to queued for the worker
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
+class EmailCampaignAudienceType(Enum):
+    """How a campaign's audience rule refers to leads."""
+
+    LEADS = "leads"  # explicit lead ids
+    PROJECT = "project"
+    TAG = "tag"
+    FILTER = "filter"  # the leads-list filter object, all matches
+
+
+class EmailCampaignConsentPolicy(Enum):
+    """Which consent states an audience may include."""
+
+    OPTED_IN_ONLY = "opted_in_only"
+    # Including unknown consent needs a written reason and a visible warning.
+    INCLUDE_UNKNOWN = "include_unknown"
 
 
 class EmailSuppressionReason(Enum):

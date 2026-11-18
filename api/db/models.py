@@ -30,6 +30,9 @@ from api.constants import DEFAULT_CAMPAIGN_RETRY_CONFIG
 from ..enums import (
     CallType,
     CredentialPurpose,
+    EmailCampaignAudienceType,
+    EmailCampaignConsentPolicy,
+    EmailCampaignStatus,
     EmailDomainStatus,
     EmailMessageStatus,
     EmailProvider,
@@ -2209,11 +2212,144 @@ class EmailTemplateModel(Base):
     )
 
 
+class EmailCampaignModel(Base):
+    """A planned email send to a frozen list of leads.
+
+    Nothing here sends by itself: the launch step (future) freezes the template
+    copy and the audience, and creates ``email_messages`` rows in the ``held``
+    state. The send worker only ever claims ``queued`` rows, so a campaign can
+    be prepared safely while sending is behind its feature flag.
+    """
+
+    __tablename__ = "email_campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_uuid = Column(
+        String(36),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    name = Column(String(255), nullable=False)
+
+    status = Column(
+        Enum(*[s.value for s in EmailCampaignStatus], name="email_campaign_status"),
+        nullable=False,
+        default=EmailCampaignStatus.DRAFT.value,
+        server_default=text("'draft'"),
+    )
+
+    # The live sender/template rows. Identity is ALSO copied into the snapshot
+    # columns below so a launched campaign's audit record never changes when
+    # the sender is edited. Sending still requires the live sender to exist and
+    # stay verified; a sender used by a campaign cannot be deleted.
+    sender_id = Column(
+        Integer, ForeignKey("email_senders.id", ondelete="RESTRICT"), nullable=True
+    )
+    template_id = Column(
+        Integer, ForeignKey("email_templates.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Frozen at launch. Subject/HTML/text are the template copy at that moment;
+    # the unsubscribe flag is re-checked against the frozen HTML.
+    frozen_subject = Column(String(998), nullable=True)
+    frozen_html_body = Column(Text, nullable=True)
+    frozen_text_body = Column(Text, nullable=True)
+    frozen_has_unsubscribe = Column(Boolean, nullable=True)
+    frozen_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Sender identity snapshot (from address/name and reply-to at launch).
+    sender_from_name = Column(String(255), nullable=True)
+    sender_from_email = Column(String(320), nullable=True)
+    sender_reply_to_email = Column(String(320), nullable=True)
+
+    # The audience RULE. The frozen recipient list lives in email_messages.
+    audience_type = Column(
+        Enum(
+            *[t.value for t in EmailCampaignAudienceType],
+            name="email_campaign_audience_type",
+        ),
+        nullable=False,
+        default=EmailCampaignAudienceType.LEADS.value,
+        server_default=text("'leads'"),
+    )
+    audience = Column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+
+    consent_policy = Column(
+        Enum(
+            *[p.value for p in EmailCampaignConsentPolicy],
+            name="email_campaign_consent_policy",
+        ),
+        nullable=False,
+        default=EmailCampaignConsentPolicy.OPTED_IN_ONLY.value,
+        server_default=text("'opted_in_only'"),
+    )
+    # Audit of an override that admits unknown-consent leads.
+    consent_override_reason = Column(Text, nullable=True)
+    consent_override_user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    consent_override_at = Column(DateTime(timezone=True), nullable=True)
+    consent_override_warning = Column(Text, nullable=True)
+
+    scheduled_at = Column(DateTime(timezone=True), nullable=True)
+    launched_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    launched_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Last preview or launch counts. Every excluded lead is accounted for.
+    recipient_count = Column(Integer, nullable=False, default=0, server_default="0")
+    eligible_count = Column(Integer, nullable=False, default=0, server_default="0")
+    excluded_opted_out_count = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    excluded_unknown_count = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    excluded_suppressed_count = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    excluded_invalid_email_count = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    excluded_no_email_count = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    duplicates_collapsed_count = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+    created_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_email_campaigns_org_name"),
+        Index("ix_email_campaigns_organization_id", "organization_id"),
+        Index("ix_email_campaigns_org_status", "organization_id", "status"),
+    )
+
+
 class EmailMessageModel(Base):
     """One outbound email, from queue row to delivery audit record.
 
     ``subject``/``html_body``/``text_body`` are the rendered snapshot actually
     handed to the provider, so the row doubles as an immutable send record.
+    Campaign recipient rows are created in the ``held`` state and keep their
+    campaign and lead references.
     """
 
     __tablename__ = "email_messages"
@@ -2228,6 +2364,16 @@ class EmailMessageModel(Base):
     )
     organization_id = Column(
         Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    campaign_id = Column(
+        Integer,
+        ForeignKey("email_campaigns.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    # SET NULL keeps the audit row when a lead is removed from the CRM.
+    lead_id = Column(
+        Integer, ForeignKey("leads.id", ondelete="SET NULL"), nullable=True
     )
     sender_id = Column(
         Integer, ForeignKey("email_senders.id", ondelete="RESTRICT"), nullable=False
@@ -2267,6 +2413,20 @@ class EmailMessageModel(Base):
     )
 
     __table_args__ = (
+        # Campaign recipients are addressed once each: the resolver writes
+        # normalized addresses, and this partial unique index makes a duplicate
+        # impossible even if two writers race.
+        Index(
+            "uq_email_messages_campaign_email",
+            "campaign_id",
+            "to_email",
+            unique=True,
+            postgresql_where=text("campaign_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "campaign_id IS NULL OR to_email = lower(to_email)",
+            name="ck_email_messages_campaign_to_email_lowercase",
+        ),
         Index("ix_email_messages_organization_id", "organization_id"),
         Index(
             "ix_email_messages_org_created",
