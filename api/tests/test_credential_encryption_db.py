@@ -191,7 +191,9 @@ async def test_update_reselect_stays_organization_scoped(db_session, monkeypatch
     )
     before = await _stored_credential_data(db_session, credential.id)
 
-    async def fake_get(credential_uuid, organization_id, active_only=True, purpose=None):
+    async def fake_get(
+        credential_uuid, organization_id, active_only=True, purpose=None
+    ):
         return credential
 
     monkeypatch.setattr(db_session, "get_credential_by_uuid", fake_get)
