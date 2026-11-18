@@ -1,6 +1,7 @@
 """Real PostgreSQL coverage for the lead client: dedupe, CRM fields, filters."""
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
@@ -262,3 +263,64 @@ async def test_upsert_keeps_the_existing_email_when_a_later_scrape_finds_none(
         )
         refreshed = await db_session.get_lead(lead.id, org.id)
         assert refreshed.email == "sales@apex-software.com"
+
+
+@pytest.mark.asyncio
+async def test_email_consent_survives_scraper_refresh_and_filters(db_session):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[_row("Apex Labs", "p1"), _row("Cedar Works", "p2")],
+    )
+    leads = {lead.title: lead for lead in (await db_session.list_leads(org.id))[0]}
+
+    recorded_at = datetime(2026, 11, 17, 9, 30, tzinfo=UTC)
+    await db_session.update_lead(
+        leads["Apex Labs"].id,
+        org.id,
+        email_consent="opted_in",
+        email_consent_source="manual",
+        email_consent_at=recorded_at,
+    )
+    await db_session.update_lead(
+        leads["Cedar Works"].id,
+        org.id,
+        email_consent="opted_out",
+        email_consent_source="bulk",
+        email_consent_at=recorded_at,
+    )
+
+    # A later scraper run refreshes business fields but must never overwrite a
+    # consent decision.
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[
+            _row("Apex Labs Renamed", "p1", review_count="999"),
+            _row("Cedar Works", "p2"),
+        ],
+    )
+    refreshed = await db_session.get_lead(leads["Apex Labs"].id, org.id)
+    assert refreshed.email_consent == "opted_in"
+    assert refreshed.email_consent_source == "manual"
+    assert refreshed.email_consent_at == recorded_at
+
+    opted_in, opted_in_total = await db_session.list_leads(
+        org.id, email_consent="opted_in"
+    )
+    assert opted_in_total == 1
+    assert [lead.id for lead in opted_in] == [leads["Apex Labs"].id]
+
+    opted_out, opted_out_total = await db_session.list_leads(
+        org.id, email_consent="opted_out"
+    )
+    assert opted_out_total == 1
+    assert [lead.id for lead in opted_out] == [leads["Cedar Works"].id]
+
+    unknown, unknown_total = await db_session.list_leads(
+        org.id, email_consent="unknown"
+    )
+    assert unknown_total == 0
+    assert unknown == []

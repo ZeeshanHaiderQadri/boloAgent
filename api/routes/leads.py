@@ -20,6 +20,8 @@ from api.db import db_client
 from api.db.models import UserModel
 from api.schemas.leads import (
     LEAD_CRM_STATUSES,
+    BulkLeadEmailConsentRequest,
+    BulkLeadEmailConsentResponse,
     BulkLeadUpdateRequest,
     LeadActivityCreateRequest,
     LeadActivityResponse,
@@ -27,6 +29,8 @@ from api.schemas.leads import (
     LeadDetailResponse,
     LeadDispatchRequest,
     LeadDispatchResponse,
+    LeadEmailConsentUpdateRequest,
+    LeadEmailConsentValue,
     LeadFacetsResponse,
     LeadListResponse,
     LeadMetaResponse,
@@ -81,6 +85,71 @@ def _total_pages(total: int, limit: int) -> int:
 
 
 ACTIVE_SEARCH_STATUSES = {"queued", "running", "stopping"}
+
+EMAIL_CONSENT_LABELS = {
+    "unknown": "Unknown",
+    "opted_in": "Opted in",
+    "opted_out": "Opted out",
+}
+
+# Stored with every consent activity so the audit trail shows exactly what the
+# operator was warned about when they made the decision.
+EMAIL_CONSENT_WARNING = (
+    "Only record consent you can prove. Marketing email without permission can "
+    "breach anti-spam law and damage your sending domain."
+)
+
+
+def _email_consent_values(
+    consent: str, *, source: str, now: datetime
+) -> dict[str, object]:
+    """Columns to write for a consent decision.
+
+    ``unknown`` means no decision has been captured, so the source and
+    timestamp are cleared rather than leaving a stale record behind.
+    """
+    if consent == "unknown":
+        return {
+            "email_consent": consent,
+            "email_consent_source": None,
+            "email_consent_at": None,
+        }
+    return {
+        "email_consent": consent,
+        "email_consent_source": source,
+        "email_consent_at": now,
+    }
+
+
+def _email_consent_activity(
+    lead,
+    *,
+    organization_id: int,
+    user_id: int,
+    consent: str,
+    source: str,
+    reason: str | None,
+    bulk: bool,
+) -> dict:
+    return {
+        "organization_id": organization_id,
+        "lead_id": lead.id,
+        "user_id": user_id,
+        "activity_type": "email_consent",
+        "title": (
+            "Email consent: "
+            f"{EMAIL_CONSENT_LABELS.get(lead.email_consent, lead.email_consent)} → "
+            f"{EMAIL_CONSENT_LABELS.get(consent, consent)}"
+        ),
+        "body": reason,
+        "extra_metadata": {
+            "from": lead.email_consent,
+            "to": consent,
+            "source": source,
+            "bulk": bulk,
+            "warning": EMAIL_CONSENT_WARNING,
+        },
+    }
 
 
 def _available_provider(provider: str | None) -> str:
@@ -483,6 +552,7 @@ async def _query_leads(
     city: str | None,
     category: str | None,
     tag: str | None,
+    email_consent: str | None,
     sort: str,
     page: int,
     limit: int,
@@ -503,6 +573,7 @@ async def _query_leads(
         city=city,
         category=category,
         tag=tag,
+        email_consent=email_consent,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -523,6 +594,7 @@ async def list_leads(
     city: str | None = Query(default=None, max_length=120),
     category: str | None = Query(default=None, max_length=120),
     tag: str | None = Query(default=None, max_length=40),
+    email_consent: LeadEmailConsentValue | None = Query(default=None),
     sort: LeadSortQuery = Query(default="created_at"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
@@ -542,6 +614,7 @@ async def list_leads(
         city=city,
         category=category,
         tag=tag,
+        email_consent=email_consent,
         sort=sort,
         page=page,
         limit=limit,
@@ -570,6 +643,7 @@ async def export_leads(
     city: str | None = Query(default=None, max_length=120),
     category: str | None = Query(default=None, max_length=120),
     tag: str | None = Query(default=None, max_length=40),
+    email_consent: LeadEmailConsentValue | None = Query(default=None),
     sort: LeadSortQuery = Query(default="created_at"),
     user: UserModel = Depends(get_user),
 ):
@@ -588,6 +662,7 @@ async def export_leads(
         city=city,
         category=category,
         tag=tag,
+        email_consent=email_consent,
         sort=sort,
         limit=LEADS_EXPORT_MAX_ROWS,
         offset=0,
@@ -690,6 +765,40 @@ async def bulk_update_leads(
     return {"updated": updated}
 
 
+@router.post("/email-consent/bulk", response_model=BulkLeadEmailConsentResponse)
+async def bulk_update_lead_email_consent(
+    request: BulkLeadEmailConsentRequest,
+    user: UserModel = Depends(get_user),
+) -> BulkLeadEmailConsentResponse:
+    organization_id = _organization_id(user)
+    lead_ids = list(dict.fromkeys(request.lead_ids))
+    existing = await db_client.get_leads_by_ids(lead_ids, organization_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="No matching leads")
+
+    now = datetime.now(UTC)
+    updated = await db_client.bulk_update_leads(
+        organization_id,
+        [lead.id for lead in existing],
+        **_email_consent_values(request.email_consent, source="bulk", now=now),
+    )
+    activities = [
+        _email_consent_activity(
+            lead,
+            organization_id=organization_id,
+            user_id=user.id,
+            consent=request.email_consent,
+            source="bulk",
+            reason=request.reason,
+            bulk=True,
+        )
+        for lead in existing
+        if lead.email_consent != request.email_consent
+    ]
+    await db_client.add_lead_activities_bulk(activities)
+    return BulkLeadEmailConsentResponse(updated=updated)
+
+
 @router.post("/dispatch-campaign", response_model=LeadDispatchResponse)
 async def dispatch_leads(
     request: LeadDispatchRequest,
@@ -717,6 +826,40 @@ async def dispatch_leads(
         skipped=result.skipped,
         warnings=result.warnings,
     )
+
+
+@router.patch("/{lead_id}/email-consent", response_model=LeadResponse)
+async def update_lead_email_consent(
+    lead_id: int,
+    request: LeadEmailConsentUpdateRequest,
+    user: UserModel = Depends(get_user),
+) -> LeadResponse:
+    organization_id = _organization_id(user)
+    lead = await db_client.get_lead(lead_id, organization_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    now = datetime.now(UTC)
+    updated = await db_client.update_lead(
+        lead_id,
+        organization_id,
+        **_email_consent_values(request.email_consent, source="manual", now=now),
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    activity = _email_consent_activity(
+        lead,
+        organization_id=organization_id,
+        user_id=user.id,
+        consent=request.email_consent,
+        source="manual",
+        reason=request.reason,
+        bulk=False,
+    )
+    activity["metadata"] = activity.pop("extra_metadata")
+    await db_client.add_lead_activity(**activity)
+    return LeadResponse.model_validate(updated)
 
 
 @router.get("/{lead_id}", response_model=LeadDetailResponse)

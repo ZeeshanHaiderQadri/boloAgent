@@ -76,6 +76,9 @@ def _lead(**overrides):
         "source": "demo",
         "last_contacted_at": None,
         "next_follow_up_at": None,
+        "email_consent": "unknown",
+        "email_consent_source": None,
+        "email_consent_at": None,
         "created_at": NOW,
         "updated_at": NOW,
     }
@@ -785,3 +788,161 @@ def test_bulk_update_can_append_tags_without_replacing_them():
     assert response.json() == {"updated": 2}
     db.add_tags_to_leads.assert_awaited_once_with(11, [1, 2], ["menu-ready"])
     assert "tags" not in db.bulk_update_leads.await_args.kwargs
+
+
+def test_list_leads_passes_the_email_consent_filter():
+    db = MagicMock()
+    db.list_leads = AsyncMock(return_value=([_lead(email_consent="opted_in")], 1))
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().get("/leads?email_consent=opted_in")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["leads"][0]["email_consent"] == "opted_in"
+    assert db.list_leads.await_args.kwargs["email_consent"] == "opted_in"
+
+
+def test_recording_email_consent_requires_a_written_reason_for_opt_in():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1/email-consent",
+            json={"email_consent": "opted_in", "reason": "   "},
+        )
+
+    assert response.status_code == 422
+    db.update_lead.assert_not_called()
+
+
+def test_recording_email_consent_stores_source_time_and_warning():
+    db = MagicMock()
+    db.get_lead = AsyncMock(
+        return_value=_lead(email_consent="unknown", email_consent_source=None)
+    )
+    db.update_lead = AsyncMock(
+        return_value=_lead(
+            email_consent="opted_in",
+            email_consent_source="manual",
+            email_consent_at=NOW,
+        )
+    )
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1/email-consent",
+            json={
+                "email_consent": "opted_in",
+                "reason": "Customer asked to receive seasonal offers on 17 Nov.",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["email_consent"] == "opted_in"
+    values = db.update_lead.await_args.kwargs
+    assert values["email_consent"] == "opted_in"
+    assert values["email_consent_source"] == "manual"
+    assert values["email_consent_at"] is not None
+    activity = db.add_lead_activity.await_args.kwargs
+    assert activity["activity_type"] == "email_consent"
+    assert activity["user_id"] == USER.id
+    assert activity["body"] == "Customer asked to receive seasonal offers on 17 Nov."
+    assert activity["metadata"]["from"] == "unknown"
+    assert activity["metadata"]["to"] == "opted_in"
+    assert activity["metadata"]["source"] == "manual"
+    assert activity["metadata"]["bulk"] is False
+    assert "anti-spam" in activity["metadata"]["warning"]
+
+
+def test_recording_email_consent_can_opt_out_without_a_reason():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead(email_consent="opted_in"))
+    db.update_lead = AsyncMock(
+        return_value=_lead(
+            email_consent="opted_out",
+            email_consent_source="manual",
+            email_consent_at=NOW,
+        )
+    )
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1/email-consent", json={"email_consent": "opted_out"}
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["email_consent"] == "opted_out"
+    assert db.add_lead_activity.await_args.kwargs["body"] is None
+
+
+def test_clearing_email_consent_removes_source_and_timestamp():
+    db = MagicMock()
+    db.get_lead = AsyncMock(
+        return_value=_lead(
+            email_consent="opted_out",
+            email_consent_source="manual",
+            email_consent_at=NOW,
+        )
+    )
+    db.update_lead = AsyncMock(return_value=_lead(email_consent="unknown"))
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1/email-consent", json={"email_consent": "unknown"}
+        )
+
+    assert response.status_code == 200, response.text
+    values = db.update_lead.await_args.kwargs
+    assert values["email_consent"] == "unknown"
+    assert values["email_consent_source"] is None
+    assert values["email_consent_at"] is None
+
+
+def test_bulk_email_consent_updates_leads_and_logs_changed_rows():
+    db = MagicMock()
+    db.get_leads_by_ids = AsyncMock(
+        return_value=[
+            _lead(id=1, email_consent="unknown"),
+            _lead(id=2, email_consent="opted_out"),
+            _lead(id=3, email_consent="opted_in"),
+        ]
+    )
+    db.bulk_update_leads = AsyncMock(return_value=3)
+    db.add_lead_activities_bulk = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().post(
+            "/leads/email-consent/bulk",
+            json={
+                "lead_ids": [1, 2, 3],
+                "email_consent": "opted_in",
+                "reason": "All three signed up at the trade show booth.",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"updated": 3}
+    values = db.bulk_update_leads.await_args.kwargs
+    assert values["email_consent"] == "opted_in"
+    assert values["email_consent_source"] == "bulk"
+    assert values["email_consent_at"] is not None
+    activities = db.add_lead_activities_bulk.await_args.args[0]
+    # Only the rows whose consent actually changed get an activity entry.
+    assert [item["lead_id"] for item in activities] == [1, 2]
+    assert activities[0]["extra_metadata"]["source"] == "bulk"
+    assert activities[0]["extra_metadata"]["bulk"] is True
+    assert activities[0]["body"] == "All three signed up at the trade show booth."
+
+
+def test_bulk_email_consent_requires_a_reason_for_opt_in():
+    with patch("api.routes.leads.db_client", MagicMock()):
+        response = _app().post(
+            "/leads/email-consent/bulk",
+            json={"lead_ids": [1], "email_consent": "opted_in"},
+        )
+
+    assert response.status_code == 422

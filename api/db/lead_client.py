@@ -73,6 +73,7 @@ def _lead_filters(
     city: str | None = None,
     category: str | None = None,
     tag: str | None = None,
+    email_consent: str | None = None,
 ) -> list:
     """Shared CRM filter clauses for listing, exporting and bulk assignment.
 
@@ -126,6 +127,8 @@ def _lead_filters(
         )
     if tag:
         filters.append(cast(LeadModel.tags, String).ilike(f'%"{tag}"%'))
+    if email_consent:
+        filters.append(LeadModel.email_consent == email_consent)
     return filters
 
 
@@ -370,6 +373,7 @@ class LeadClient(BaseDBClient):
         city: str | None = None,
         category: str | None = None,
         tag: str | None = None,
+        email_consent: str | None = None,
         sort: str = "created_at",
         limit: int = 50,
         offset: int = 0,
@@ -388,6 +392,7 @@ class LeadClient(BaseDBClient):
             city=city,
             category=category,
             tag=tag,
+            email_consent=email_consent,
         )
 
         order_clause = {

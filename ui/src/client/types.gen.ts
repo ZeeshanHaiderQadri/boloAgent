@@ -623,6 +623,34 @@ export type BuilderTurnRequest = {
 };
 
 /**
+ * BulkLeadEmailConsentRequest
+ */
+export type BulkLeadEmailConsentRequest = {
+    /**
+     * Email Consent
+     */
+    email_consent: 'unknown' | 'opted_in' | 'opted_out';
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Lead Ids
+     */
+    lead_ids: Array<number>;
+};
+
+/**
+ * BulkLeadEmailConsentResponse
+ */
+export type BulkLeadEmailConsentResponse = {
+    /**
+     * Updated
+     */
+    updated: number;
+};
+
+/**
  * BulkLeadUpdateRequest
  */
 export type BulkLeadUpdateRequest = {
@@ -3337,6 +3365,25 @@ export type LeadDispatchSkipped = {
 };
 
 /**
+ * LeadEmailConsentUpdateRequest
+ *
+ * Record a marketing-email consent decision for a lead.
+ *
+ * Consent lives outside the general lead patch so the decision is always
+ * explicit and carries who recorded it, when, and (for opt-ins) why.
+ */
+export type LeadEmailConsentUpdateRequest = {
+    /**
+     * Email Consent
+     */
+    email_consent: 'unknown' | 'opted_in' | 'opted_out';
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
  * LeadFacetsResponse
  *
  * Filter values available in the CRM for the current organization.
@@ -3501,6 +3548,10 @@ export type LeadProjectFilters = {
      * Tag
      */
     tag?: string | null;
+    /**
+     * Email Consent
+     */
+    email_consent?: 'unknown' | 'opted_in' | 'opted_out' | null;
 };
 
 /**
@@ -3671,6 +3722,18 @@ export type LeadResponse = {
      * Next Follow Up At
      */
     next_follow_up_at?: string | null;
+    /**
+     * Email Consent
+     */
+    email_consent?: 'unknown' | 'opted_in' | 'opted_out';
+    /**
+     * Email Consent Source
+     */
+    email_consent_source?: string | null;
+    /**
+     * Email Consent At
+     */
+    email_consent_at?: string | null;
     /**
      * Created At
      */
@@ -13523,6 +13586,10 @@ export type ListLeadsApiV1LeadsGetData = {
          */
         tag?: string | null;
         /**
+         * Email Consent
+         */
+        email_consent?: 'unknown' | 'opted_in' | 'opted_out' | null;
+        /**
          * Sort
          */
         sort?: 'created_at' | 'rating' | 'title' | 'status';
@@ -13627,6 +13694,10 @@ export type ExportLeadsApiV1LeadsExportGetData = {
          */
         tag?: string | null;
         /**
+         * Email Consent
+         */
+        email_consent?: 'unknown' | 'opted_in' | 'opted_out' | null;
+        /**
          * Sort
          */
         sort?: 'created_at' | 'rating' | 'title' | 'status';
@@ -13697,6 +13768,45 @@ export type BulkUpdateLeadsApiV1LeadsBulkPostResponses = {
 
 export type BulkUpdateLeadsApiV1LeadsBulkPostResponse = BulkUpdateLeadsApiV1LeadsBulkPostResponses[keyof BulkUpdateLeadsApiV1LeadsBulkPostResponses];
 
+export type BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostData = {
+    body: BulkLeadEmailConsentRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/leads/email-consent/bulk';
+};
+
+export type BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostError = BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostErrors[keyof BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostErrors];
+
+export type BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: BulkLeadEmailConsentResponse;
+};
+
+export type BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostResponse = BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostResponses[keyof BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostResponses];
+
 export type DispatchLeadsApiV1LeadsDispatchCampaignPostData = {
     body: LeadDispatchRequest;
     headers?: {
@@ -13735,6 +13845,50 @@ export type DispatchLeadsApiV1LeadsDispatchCampaignPostResponses = {
 };
 
 export type DispatchLeadsApiV1LeadsDispatchCampaignPostResponse = DispatchLeadsApiV1LeadsDispatchCampaignPostResponses[keyof DispatchLeadsApiV1LeadsDispatchCampaignPostResponses];
+
+export type UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchData = {
+    body: LeadEmailConsentUpdateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Lead Id
+         */
+        lead_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/{lead_id}/email-consent';
+};
+
+export type UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchError = UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchErrors[keyof UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchErrors];
+
+export type UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadResponse;
+};
+
+export type UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchResponse = UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchResponses[keyof UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchResponses];
 
 export type DeleteLeadApiV1LeadsLeadIdDeleteData = {
     body?: never;

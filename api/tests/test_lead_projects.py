@@ -113,6 +113,7 @@ def test_create_project_with_filters_saves_the_exact_filtered_set():
         "city": None,
         "category": None,
         "tag": "menu-ready",
+        "email_consent": None,
     }
 
 

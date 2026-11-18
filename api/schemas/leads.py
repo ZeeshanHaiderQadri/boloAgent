@@ -30,6 +30,8 @@ LEAD_CRM_STATUSES: list[str] = [
     "do_not_call",
 ]
 
+LeadEmailConsentValue = Literal["unknown", "opted_in", "opted_out"]
+
 
 class LeadSearchParams(BaseModel):
     """Query settings shared by search creation and editing."""
@@ -166,6 +168,9 @@ class LeadResponse(BaseModel):
     source: str
     last_contacted_at: datetime | None = None
     next_follow_up_at: datetime | None = None
+    email_consent: LeadEmailConsentValue = "unknown"
+    email_consent_source: str | None = None
+    email_consent_at: datetime | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -300,6 +305,40 @@ class BulkLeadUpdateRequest(BaseModel):
         return self
 
 
+class LeadEmailConsentUpdateRequest(BaseModel):
+    """Record a marketing-email consent decision for a lead.
+
+    Consent lives outside the general lead patch so the decision is always
+    explicit and carries who recorded it, when, and (for opt-ins) why.
+    """
+
+    email_consent: LeadEmailConsentValue
+    reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _strip_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def _reason_required_for_opt_in(self):
+        if self.email_consent == "opted_in" and not self.reason:
+            raise ValueError(
+                "A written reason is required when recording email consent"
+            )
+        return self
+
+
+class BulkLeadEmailConsentRequest(LeadEmailConsentUpdateRequest):
+    lead_ids: list[int] = Field(min_length=1, max_length=1000)
+
+
+class BulkLeadEmailConsentResponse(BaseModel):
+    updated: int
+
+
 class LeadActivityCreateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=255)
     body: str = Field(min_length=1, max_length=20000)
@@ -418,6 +457,7 @@ class LeadProjectFilters(BaseModel):
     city: str | None = Field(default=None, max_length=120)
     category: str | None = Field(default=None, max_length=120)
     tag: str | None = Field(default=None, max_length=40)
+    email_consent: LeadEmailConsentValue | None = None
 
 
 class LeadProjectCreateRequest(BaseModel):

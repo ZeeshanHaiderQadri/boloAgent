@@ -9,6 +9,7 @@ import {
     Pencil,
     RefreshCw,
     Search,
+    ShieldCheck,
     Trash2,
     Users,
 } from "lucide-react";
@@ -33,6 +34,7 @@ import type {
 } from "@/client/types.gen";
 import { PageLayout, PageSection } from "@/components/layout/PageLayout";
 import { DispatchLeadsDialog } from "@/components/leads/DispatchLeadsDialog";
+import { EmailConsentDialog } from "@/components/leads/EmailConsentDialog";
 import { ExportLeadsButton } from "@/components/leads/ExportLeadsButton";
 import { LeadTable } from "@/components/leads/LeadTable";
 import { Button } from "@/components/ui/button";
@@ -195,6 +197,7 @@ export default function AllLeadsPage() {
     const [bulkStatus, setBulkStatus] = useState("");
     const [bulkBusy, setBulkBusy] = useState(false);
     const [dispatchOpen, setDispatchOpen] = useState(false);
+    const [consentOpen, setConsentOpen] = useState(false);
 
     // Projects are saved lists of these same CRM rows (one project per lead).
     const [projects, setProjects] = useState<LeadProjectResponse[]>([]);
@@ -970,6 +973,15 @@ export default function AllLeadsPage() {
                             {bulkBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                             Apply status
                         </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={bulkBusy}
+                            onClick={() => setConsentOpen(true)}
+                        >
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            Email consent
+                        </Button>
                         <Button size="sm" onClick={() => setDispatchOpen(true)}>
                             <Megaphone className="h-3.5 w-3.5" />
                             Send to campaign
@@ -1099,6 +1111,13 @@ export default function AllLeadsPage() {
                 open={dispatchOpen}
                 onOpenChange={setDispatchOpen}
                 onDispatched={() => setSelectedIds([])}
+            />
+
+            <EmailConsentDialog
+                leadIds={selectedIds}
+                open={consentOpen}
+                onOpenChange={setConsentOpen}
+                onSaved={() => fetchLeads()}
             />
 
             <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
