@@ -6,6 +6,9 @@ from api.constants import DEPLOYMENT_MODE
 
 _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
 
+# Standard SMTP submission and relay ports. Anything else is a network scan.
+SMTP_ALLOWED_PORTS = frozenset({25, 465, 587, 2525})
+
 
 def validate_user_configured_service_url(
     url: str,
@@ -34,6 +37,53 @@ def validate_user_configured_service_url(
             raise ValueError(
                 f"{field_name} must resolve to a public IP address in SaaS mode"
             )
+
+
+def validate_user_configured_service_host(
+    host: str,
+    *,
+    field_name: str,
+    port: int | None = None,
+) -> None:
+    """Apply the same egress policy to a bare host, such as an SMTP server.
+
+    SMTP settings carry no scheme, so the URL variant cannot be reused. The
+    policy is identical: in SaaS mode the host must not be localhost and must
+    resolve to public addresses only. DNS can change between a settings check
+    and a connection, so callers should re-run this immediately before
+    connecting.
+    """
+    if DEPLOYMENT_MODE == "oss":
+        return
+
+    hostname = host.strip()
+    if hostname.startswith("[") and hostname.endswith("]"):
+        hostname = hostname[1:-1]
+    if not hostname:
+        raise ValueError(f"{field_name} must include a host")
+
+    if hostname.lower() == "localhost":
+        raise ValueError(f"{field_name} cannot point to localhost in SaaS mode")
+
+    for ip in _resolve_hostname_ips(hostname, port):
+        if _is_blocked_saas_service_ip(ip):
+            raise ValueError(
+                f"{field_name} must resolve to a public IP address in SaaS mode"
+            )
+
+
+def validate_user_configured_smtp_port(port: int, *, field_name: str) -> None:
+    """Keep user-configured SMTP on standard ports in SaaS deployments.
+
+    Self-hosted relays legitimately listen on other ports, so OSS deployments
+    keep the unrestricted behaviour.
+    """
+    if DEPLOYMENT_MODE == "oss":
+        return
+
+    if port not in SMTP_ALLOWED_PORTS:
+        allowed = ", ".join(str(value) for value in sorted(SMTP_ALLOWED_PORTS))
+        raise ValueError(f"{field_name} must be one of {allowed} in SaaS mode")
 
 
 def _resolve_hostname_ips(

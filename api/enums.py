@@ -272,3 +272,56 @@ class PostHogEvent(str, Enum):
     ORGANIZATION_USER_ASSOCIATED = "organization_user_associated"
     # usage_* events track orgs hitting capacity/limit boundaries
     USAGE_CONCURRENT_CALL_LIMIT_REACHED = "usage_concurrent_call_limit_reached"
+
+
+class EmailProvider(Enum):
+    """Outbound email providers. Every sender brings its own account."""
+
+    SMTP = "smtp"  # Universal SMTP, including Hostinger's preset
+    SES = "ses"  # Amazon SES
+    MAILGUN = "mailgun"
+    MANDRILL = "mandrill"  # Mailchimp Transactional
+
+
+class EmailSenderStatus(Enum):
+    """Lifecycle of a configured sending identity."""
+
+    PENDING = "pending"  # Saved, credentials not yet verified
+    VERIFIED = "verified"  # Ready to send
+    DISABLED = "disabled"  # Kept for history, never used for sending
+
+
+class EmailMessageStatus(Enum):
+    """Lifecycle of one outbound message."""
+
+    QUEUED = "queued"
+    SENDING = "sending"
+    SENT = "sent"
+    FAILED = "failed"
+    BOUNCED = "bounced"
+    COMPLAINED = "complained"
+    CANCELLED = "cancelled"
+
+
+class EmailSuppressionReason(Enum):
+    """Why an address must not receive further marketing email."""
+
+    UNSUBSCRIBED = "unsubscribed"
+    HARD_BOUNCE = "hard_bounce"
+    COMPLAINT = "complaint"
+    MANUAL = "manual"
+
+
+class LeadEmailConsent(Enum):
+    """Marketing-email consent recorded for a lead."""
+
+    UNKNOWN = "unknown"  # No consent captured yet; never marketing-eligible
+    OPTED_IN = "opted_in"
+    OPTED_OUT = "opted_out"
+
+
+class CredentialPurpose(Enum):
+    """What an external credential is for, so lists stay separate."""
+
+    WEBHOOK = "webhook"
+    EMAIL_SENDER = "email_sender"
