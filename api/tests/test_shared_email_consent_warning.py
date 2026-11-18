@@ -21,3 +21,14 @@ def test_ui_warning_matches_the_backend_constant():
         "ui/src/constants/emailConsent.json is out of date; run "
         "`python scripts/sync_email_consent_warning.py`."
     )
+
+
+def test_sync_script_documents_loading_the_api_env():
+    script = (
+        Path(__file__).resolve().parents[2]
+        / "scripts"
+        / "sync_email_consent_warning.py"
+    )
+
+    text = script.read_text(encoding="utf-8")
+    assert "source api/.env" in text

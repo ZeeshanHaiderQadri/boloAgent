@@ -2,8 +2,10 @@
 
 ``EMAIL_CONSENT_WARNING`` in ``api/constants.py`` is the single source of truth.
 The UI imports the generated JSON so the text an operator sees always matches the
-text stored in the audit trail. Run this after changing the constant:
+text stored in the audit trail. Load ``api/.env`` first so the constants import
+sees the same settings as the backend, then run:
 
+    set -a && source api/.env && set +a
     python scripts/sync_email_consent_warning.py
 """
 
