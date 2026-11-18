@@ -253,6 +253,47 @@ class SesEmailAdapter(EmailAdapter):
             raise EmailDeliveryError("SES returned no message id")
         return ProviderSendResult(provider_message_id=message_id)
 
+    async def get_domain_verification(self, domain: str) -> dict[str, Any]:
+        """Read the SES identity status for a sending domain.
+
+        Returns the non-secret facts the UI needs to finish DNS setup: whether
+        sending is allowed, the provider's status string, and the DKIM tokens
+        that must be published as CNAME records. An identity that does not
+        exist yet is reported as ``NotFound`` rather than an error, because the
+        operator may still be creating it in the AWS console.
+        """
+        await self._assert_egress_allowed()
+        try:
+            async with self._client() as client:
+                response = await client.get_email_identity(EmailIdentity=domain)
+        except ClientError as exc:
+            if _error_code(exc) == "NotFoundException":
+                return {
+                    "verified": False,
+                    "verification_status": "NotFound",
+                    "details": {"verification_status": "NotFound", "dkim_tokens": []},
+                }
+            raise self._map_client_error(exc) from exc
+        except BotoCoreError as exc:
+            raise self._map_botocore_error(exc) from exc
+
+        dkim = response.get("DkimAttributes") or {}
+        tokens = [str(token) for token in (dkim.get("Tokens") or [])]
+        verification_status = str(response.get("VerificationStatus") or "Pending")
+        details: dict[str, Any] = {
+            "verification_status": verification_status,
+            "dkim_tokens": tokens,
+        }
+        mail_from = response.get("MailFromAttributes") or {}
+        mail_from_status = mail_from.get("MailFromDomainStatus")
+        if mail_from_status:
+            details["mail_from_status"] = str(mail_from_status)
+        return {
+            "verified": bool(response.get("VerifiedForSendingStatus")),
+            "verification_status": verification_status,
+            "details": details,
+        }
+
     def _client(self) -> Any:
         kwargs: dict[str, Any] = {
             "region_name": self._region,

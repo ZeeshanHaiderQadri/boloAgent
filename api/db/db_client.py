@@ -2,6 +2,8 @@ from api.db.agent_trigger_client import AgentTriggerClient
 from api.db.api_key_client import APIKeyClient
 from api.db.builder_run_client import BuilderRunClient
 from api.db.campaign_client import CampaignClient
+from api.db.email_domain_client import EmailDomainClient
+from api.db.email_sender_client import EmailSenderClient
 from api.db.embed_token_client import EmbedTokenClient
 from api.db.folder_client import FolderClient
 from api.db.integration_client import IntegrationClient
@@ -46,6 +48,8 @@ class DBClient(
     ReportsClient,
     APIKeyClient,
     EmbedTokenClient,
+    EmailSenderClient,
+    EmailDomainClient,
     AgentTriggerClient,
     WebhookCredentialClient,
     WebhookDeliveryClient,
@@ -76,6 +80,8 @@ class DBClient(
     - APIKeyClient: handles API key operations
     - EmbedTokenClient: handles embed token and session operations
     - AgentTriggerClient: handles agent trigger operations for API-based call triggering
+    - EmailSenderClient: handles email senders and encrypted credentials
+    - EmailDomainClient: handles sending domains and their verification
     - WebhookCredentialClient: handles webhook credential operations
     - WebhookDeliveryClient: handles durable outbound webhook delivery records
     - ToolClient: handles tool operations for reusable HTTP API tools

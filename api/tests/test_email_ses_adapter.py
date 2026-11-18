@@ -67,6 +67,8 @@ class FakeSESClient:
         value = identities[EmailIdentity]
         if isinstance(value, Exception):
             raise value
+        if isinstance(value, dict):
+            return value
         return {"VerifiedForSendingStatus": bool(value)}
 
 
@@ -443,3 +445,46 @@ def test_invalid_settings_are_configuration_errors(settings: dict[str, Any]):
 def test_missing_credentials_are_configuration_errors(credentials: dict[str, Any]):
     with pytest.raises(EmailConfigurationError, match="access_key_id"):
         make_adapter(credentials=credentials)
+
+
+@pytest.mark.asyncio
+async def test_domain_verification_reports_dkim_tokens():
+    RECORDS["identities"]["example.com"] = {
+        "VerifiedForSendingStatus": True,
+        "VerificationStatus": "Success",
+        "DkimAttributes": {"Tokens": ["token-a", "token-b"]},
+        "MailFromAttributes": {"MailFromDomainStatus": "Success"},
+    }
+    adapter = make_adapter()
+
+    result = await adapter.get_domain_verification("example.com")
+
+    assert result["verified"] is True
+    assert result["verification_status"] == "Success"
+    assert result["details"] == {
+        "verification_status": "Success",
+        "dkim_tokens": ["token-a", "token-b"],
+        "mail_from_status": "Success",
+    }
+
+
+@pytest.mark.asyncio
+async def test_missing_domain_identity_is_reported_not_raised():
+    adapter = make_adapter()
+
+    result = await adapter.get_domain_verification("new.example.com")
+
+    assert result == {
+        "verified": False,
+        "verification_status": "NotFound",
+        "details": {"verification_status": "NotFound", "dkim_tokens": []},
+    }
+
+
+@pytest.mark.asyncio
+async def test_domain_verification_errors_use_the_shared_mapping():
+    RECORDS["identities"]["example.com"] = client_error("AccessDenied", status=403)
+    adapter = make_adapter()
+
+    with pytest.raises(EmailConfigurationError, match="AccessDenied"):
+        await adapter.get_domain_verification("example.com")

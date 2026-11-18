@@ -30,6 +30,7 @@ from api.constants import DEFAULT_CAMPAIGN_RETRY_CONFIG
 from ..enums import (
     CallType,
     CredentialPurpose,
+    EmailDomainStatus,
     EmailMessageStatus,
     EmailProvider,
     EmailSenderStatus,
@@ -2065,6 +2066,73 @@ class EmailSenderModel(Base):
             unique=True,
             postgresql_where=text("is_default"),
         ),
+    )
+
+
+class EmailDomainModel(Base):
+    """A sending domain an organization has registered with a provider.
+
+    The domain is linked to the sender whose credentials are used to ask the
+    provider about it: an SES identity is checked through that sender's AWS
+    account, while SMTP hosts publish no verification API. ``verification``
+    stores the provider's non-secret answer (DKIM tokens, status strings) so
+    the UI can show which DNS records still need to be published.
+    """
+
+    __tablename__ = "email_domains"
+
+    id = Column(Integer, primary_key=True, index=True)
+    domain_uuid = Column(
+        String(36),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    # A domain outlives the sender whose credentials checked it; verification
+    # then has to be re-pointed at another sender before it works again.
+    sender_id = Column(
+        Integer, ForeignKey("email_senders.id", ondelete="SET NULL"), nullable=True
+    )
+    domain = Column(String(253), nullable=False)
+    provider = Column(
+        Enum(*[p.value for p in EmailProvider], name="email_provider"),
+        nullable=False,
+    )
+    status = Column(
+        Enum(*[s.value for s in EmailDomainStatus], name="email_domain_status"),
+        nullable=False,
+        default=EmailDomainStatus.PENDING.value,
+        server_default=text("'pending'"),
+    )
+    verification = Column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    last_checked_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    sender = relationship("EmailSenderModel")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "domain", name="uq_email_domains_org_domain"
+        ),
+        CheckConstraint(
+            "domain = lower(domain)", name="ck_email_domains_domain_lowercase"
+        ),
+        Index("ix_email_domains_organization_id", "organization_id"),
     )
 
 

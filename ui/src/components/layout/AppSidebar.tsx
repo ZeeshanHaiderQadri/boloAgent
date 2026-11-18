@@ -15,6 +15,7 @@ import {
   Key,
   LogOut,
   type LucideIcon,
+  Mail,
   Megaphone,
   Phone,
   Plug,
@@ -131,6 +132,11 @@ const NAV_SECTIONS: SidebarNavSection[] = [
         title: "Credentials",
         url: "/credentials",
         icon: ShieldCheck,
+      },
+      {
+        title: "Email",
+        url: "/email/senders",
+        icon: Mail,
       },
       {
         title: "Files",
