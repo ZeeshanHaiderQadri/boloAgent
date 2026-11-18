@@ -61,6 +61,7 @@ def _filter_kwargs(filters: LeadProjectFilters | None) -> dict:
         "city": filters.city,
         "category": filters.category,
         "tag": filters.tag,
+        "email_consent": filters.email_consent,
     }
 
 

@@ -15,6 +15,7 @@ import {
     PhoneOff,
     Plus,
     RefreshCw,
+    ShieldCheck,
     Star,
     StickyNote,
     Trash2,
@@ -34,6 +35,8 @@ import {
 import type { LeadDetailResponse, LeadUpdateRequest } from "@/client/types.gen";
 import { PageShell } from "@/components/layout/PageShell";
 import { DispatchLeadsDialog } from "@/components/leads/DispatchLeadsDialog";
+import { EmailConsentBadge } from "@/components/leads/EmailConsentBadge";
+import { EmailConsentDialog } from "@/components/leads/EmailConsentDialog";
 import { LeadStatusBadge } from "@/components/leads/LeadStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,6 +100,7 @@ export default function LeadDetailPage() {
     const [noteBody, setNoteBody] = useState("");
     const [noteBusy, setNoteBusy] = useState(false);
     const [dispatchOpen, setDispatchOpen] = useState(false);
+    const [consentOpen, setConsentOpen] = useState(false);
 
     useEffect(() => {
         if (!loading && !user) redirectToLogin();
@@ -536,6 +540,38 @@ export default function LeadDetailPage() {
                             </div>
 
                             <div className="space-y-2">
+                                <Label>Email consent</Label>
+                                <div className="flex items-center justify-between gap-2">
+                                    <EmailConsentBadge consent={lead.email_consent} />
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setConsentOpen(true)}
+                                    >
+                                        <ShieldCheck className="h-3.5 w-3.5" />
+                                        Change
+                                    </Button>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    {lead.email_consent === "unknown"
+                                        ? "No permission recorded. This lead will not receive marketing email."
+                                        : `${
+                                              lead.email_consent_source === "bulk"
+                                                  ? "Recorded in bulk"
+                                                  : lead.email_consent_source === "manual"
+                                                    ? "Recorded manually"
+                                                    : lead.email_consent_source
+                                                      ? `Recorded via ${lead.email_consent_source}`
+                                                      : "Recorded"
+                                          }${
+                                              lead.email_consent_at
+                                                  ? ` on ${formatDateTime(lead.email_consent_at, timezone)}`
+                                                  : ""
+                                          }.`}
+                                </p>
+                            </div>
+
+                            <div className="space-y-2">
                                 <Label htmlFor="lead-tags">Tags</Label>
                                 <div className="flex gap-2">
                                     <Input
@@ -709,6 +745,14 @@ export default function LeadDetailPage() {
                 leadIds={[lead.id]}
                 open={dispatchOpen}
                 onOpenChange={setDispatchOpen}
+            />
+
+            <EmailConsentDialog
+                leadIds={[lead.id]}
+                current={lead.email_consent}
+                open={consentOpen}
+                onOpenChange={setConsentOpen}
+                onSaved={() => load(false)}
             />
         </PageShell>
     );

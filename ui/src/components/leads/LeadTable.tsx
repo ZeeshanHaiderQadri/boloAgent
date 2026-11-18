@@ -18,6 +18,7 @@ import {
 import { useOrganizationTimezone } from "@/hooks/useOrganizationTimezone";
 import { formatDate } from "@/lib/dateTime";
 
+import { EmailConsentBadge } from "./EmailConsentBadge";
 import { LeadStatusBadge } from "./LeadStatusBadge";
 
 interface LeadTableProps {
@@ -182,14 +183,20 @@ export function LeadTable({
                                 {!compact && (
                                     <TableCell className="max-w-[220px]">
                                         {lead.email ? (
-                                            <a
-                                                href={`mailto:${lead.email}`}
-                                                onClick={(event) => event.stopPropagation()}
-                                                className="flex items-center gap-1.5 text-sm hover:text-cta hover:underline"
-                                            >
-                                                <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                                <span className="truncate">{lead.email}</span>
-                                            </a>
+                                            <div className="flex flex-col gap-1">
+                                                <a
+                                                    href={`mailto:${lead.email}`}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    className="flex items-center gap-1.5 text-sm hover:text-cta hover:underline"
+                                                >
+                                                    <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                                    <span className="truncate">{lead.email}</span>
+                                                </a>
+                                                <EmailConsentBadge
+                                                    consent={lead.email_consent}
+                                                    className="w-fit text-[10px]"
+                                                />
+                                            </div>
                                         ) : (
                                             <span className="text-sm text-muted-foreground">—</span>
                                         )}

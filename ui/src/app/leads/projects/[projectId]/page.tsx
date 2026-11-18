@@ -10,6 +10,7 @@ import {
     Plus,
     RefreshCw,
     Search,
+    ShieldCheck,
     Tags,
     Trash2,
     Users,
@@ -39,6 +40,7 @@ import type {
 } from "@/client/types.gen";
 import { PageLayout, PageSection } from "@/components/layout/PageLayout";
 import { DispatchLeadsDialog } from "@/components/leads/DispatchLeadsDialog";
+import { EmailConsentDialog } from "@/components/leads/EmailConsentDialog";
 import { ExportLeadsButton } from "@/components/leads/ExportLeadsButton";
 import { LeadEditDialog } from "@/components/leads/LeadEditDialog";
 import { LeadTable } from "@/components/leads/LeadTable";
@@ -134,6 +136,7 @@ export default function LeadProjectPage() {
     const [editingLead, setEditingLead] = useState<LeadResponse | null>(null);
     const [editOpen, setEditOpen] = useState(false);
     const [dispatchOpen, setDispatchOpen] = useState(false);
+    const [consentOpen, setConsentOpen] = useState(false);
 
     useEffect(() => {
         if (!loading && !user) redirectToLogin();
@@ -666,6 +669,15 @@ export default function LeadProjectPage() {
                             <Button
                                 size="sm"
                                 variant="outline"
+                                disabled={bulkBusy}
+                                onClick={() => setConsentOpen(true)}
+                            >
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                                Email consent
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="outline"
                                 onClick={() => setTagsOpen(true)}
                             >
                                 <Tags className="h-3.5 w-3.5" />
@@ -931,6 +943,13 @@ export default function LeadProjectPage() {
                 open={dispatchOpen}
                 onOpenChange={setDispatchOpen}
                 onDispatched={() => setSelectedIds([])}
+            />
+
+            <EmailConsentDialog
+                leadIds={selectedIds}
+                open={consentOpen}
+                onOpenChange={setConsentOpen}
+                onSaved={() => refreshAll()}
             />
 
             <Dialog open={tagsOpen} onOpenChange={setTagsOpen}>
