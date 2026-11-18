@@ -24,6 +24,10 @@ from api.services.email.adapter import (
     OutboundEmail,
     ProviderSendResult,
 )
+from api.utils.url_security import (
+    validate_user_configured_service_host,
+    validate_user_configured_smtp_port,
+)
 
 HOSTINGER_SMTP_PRESET: dict[str, Any] = {
     "host": "smtp.hostinger.com",
@@ -37,6 +41,18 @@ DEFAULT_TIMEOUT_SECONDS = 15
 _RESERVED_HEADERS = {"from", "to", "subject", "reply-to", "message-id"}
 
 
+def _parse_port(value: Any) -> int:
+    if value is None or value == "":
+        return 465
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        raise EmailConfigurationError("SMTP port must be a whole number") from None
+    if not 1 <= port <= 65535:
+        raise EmailConfigurationError("SMTP port must be between 1 and 65535")
+    return port
+
+
 def _resolve_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     resolved: dict[str, Any] = {}
     if settings.get("preset") == "hostinger":
@@ -47,10 +63,22 @@ def _resolve_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     if not host:
         raise EmailConfigurationError("SMTP settings must include a host")
 
-    port = int(resolved.get("port") or 465)
-    security = str(resolved.get("security") or ("ssl" if port == 465 else "starttls"))
+    port = _parse_port(resolved.get("port"))
+    security = (
+        str(resolved.get("security") or ("ssl" if port == 465 else "starttls"))
+        .strip()
+        .lower()
+    )
     if security not in {"ssl", "starttls"}:
         raise EmailConfigurationError("SMTP security must be 'ssl' or 'starttls'")
+
+    # Same egress policy as every other user-configured outbound destination:
+    # in SaaS mode the server must be public, on a standard submission port.
+    try:
+        validate_user_configured_smtp_port(port, field_name="SMTP port")
+        validate_user_configured_service_host(host, port=port, field_name="SMTP host")
+    except ValueError as exc:
+        raise EmailConfigurationError(str(exc)) from exc
 
     resolved.update(host=host, port=port, security=security)
     return resolved
@@ -87,11 +115,10 @@ def _build_message(config: EmailSenderConfig, message: OutboundEmail) -> EmailMe
         _without_newlines(str(value), what=f"Header {name}")
         msg[name] = str(value)
 
-    message_id = str(message.headers.get("Message-ID") or "").strip()
-    if not message_id:
-        domain = config.from_email.rpartition("@")[2] or None
-        message_id = make_msgid(domain=domain)
-    msg["Message-ID"] = message_id
+    # Message-ID is reserved: the adapter owns it so every message has one and
+    # callers cannot smuggle an unvalidated value through ``headers``.
+    domain = config.from_email.rpartition("@")[2] or None
+    msg["Message-ID"] = make_msgid(domain=domain)
 
     if message.text_body:
         msg.set_content(message.text_body)
@@ -118,9 +145,16 @@ class SmtpEmailAdapter(EmailAdapter):
             )
         self._username = username
         self._password = password
-        self._timeout = float(
-            self._settings.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS
-        )
+        try:
+            self._timeout = float(
+                self._settings.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS
+            )
+        except (TypeError, ValueError):
+            raise EmailConfigurationError(
+                "SMTP timeout_seconds must be a number"
+            ) from None
+        if self._timeout <= 0:
+            raise EmailConfigurationError("SMTP timeout_seconds must be positive")
 
     @property
     def settings(self) -> Mapping[str, Any]:
@@ -134,6 +168,14 @@ class SmtpEmailAdapter(EmailAdapter):
     def _connection(self) -> smtplib.SMTP:
         host = self._settings["host"]
         port = self._settings["port"]
+        # DNS can be rebound between saving settings and connecting, so the
+        # egress check runs again immediately before smtplib resolves the host.
+        try:
+            validate_user_configured_service_host(
+                host, port=port, field_name="SMTP host"
+            )
+        except ValueError as exc:
+            raise EmailConfigurationError(str(exc)) from exc
         if self._settings["security"] == "ssl":
             return smtplib.SMTP_SSL(
                 host,
@@ -148,8 +190,8 @@ class SmtpEmailAdapter(EmailAdapter):
         return connection
 
     def _send_blocking(self, message: OutboundEmail) -> str:
-        msg = _build_message(self._config, message)
         try:
+            msg = _build_message(self._config, message)
             with self._connection() as connection:
                 connection.login(self._username, self._password)
                 connection.send_message(
@@ -160,6 +202,10 @@ class SmtpEmailAdapter(EmailAdapter):
         except smtplib.SMTPAuthenticationError as exc:
             raise EmailConfigurationError(
                 "SMTP authentication failed; check the username and password"
+            ) from exc
+        except smtplib.SMTPNotSupportedError as exc:
+            raise EmailConfigurationError(
+                "SMTP server does not support the requested security mode"
             ) from exc
         except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as exc:
             raise EmailDeliveryError(
@@ -172,6 +218,11 @@ class SmtpEmailAdapter(EmailAdapter):
             raise EmailDeliveryError(
                 f"SMTP delivery failed: {type(exc).__name__}"
             ) from exc
+        except ValueError as exc:
+            # Building the message must only surface typed adapter errors.
+            raise EmailConfigurationError(
+                f"Invalid email content: {type(exc).__name__}"
+            ) from exc
         return str(msg["Message-ID"])
 
     def _verify_blocking(self) -> None:
@@ -182,6 +233,10 @@ class SmtpEmailAdapter(EmailAdapter):
         except smtplib.SMTPAuthenticationError as exc:
             raise EmailConfigurationError(
                 "SMTP authentication failed; check the username and password"
+            ) from exc
+        except smtplib.SMTPNotSupportedError as exc:
+            raise EmailConfigurationError(
+                "SMTP server does not support the requested security mode"
             ) from exc
         except (smtplib.SMTPException, OSError) as exc:
             raise EmailDeliveryError(

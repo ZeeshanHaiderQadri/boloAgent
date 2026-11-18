@@ -4,6 +4,7 @@ import smtplib
 
 import pytest
 
+import api.utils.url_security as url_security
 from api.enums import EmailProvider
 from api.services.email import smtp as smtp_module
 from api.services.email.adapter import (
@@ -41,6 +42,8 @@ class FakeSMTPBase:
         pass
 
     def starttls(self, context=None):
+        if RECORDS.get("starttls_unsupported"):
+            raise smtplib.SMTPNotSupportedError("STARTTLS not supported")
         RECORDS["starttls"] = int(RECORDS["starttls"]) + 1
 
     def login(self, username, password):
@@ -236,3 +239,69 @@ async def test_reserved_headers_cannot_be_overridden(fake_smtplib):
 def test_timeout_is_configurable():
     adapter = _adapter({"preset": "hostinger", "timeout_seconds": 5})
     assert adapter._timeout == 5.0
+
+
+def test_non_numeric_timeout_is_a_configuration_error():
+    with pytest.raises(EmailConfigurationError, match="timeout_seconds"):
+        _adapter({"preset": "hostinger", "timeout_seconds": "soon"})
+
+
+def test_zero_port_is_rejected_instead_of_defaulting():
+    with pytest.raises(EmailConfigurationError, match="between 1 and 65535"):
+        _adapter({"host": "mail.example.test", "port": 0})
+
+
+def test_saas_mode_rejects_a_loopback_smtp_host(monkeypatch):
+    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+
+    with pytest.raises(EmailConfigurationError, match="public IP"):
+        _adapter({"host": "127.0.0.1", "port": 25})
+
+
+def test_saas_mode_rejects_localhost(monkeypatch):
+    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+
+    with pytest.raises(EmailConfigurationError, match="localhost"):
+        _adapter({"host": "localhost", "port": 25})
+
+
+def test_saas_mode_rejects_nonstandard_smtp_ports(monkeypatch):
+    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+
+    with pytest.raises(EmailConfigurationError, match="must be one of"):
+        _adapter({"host": "mail.example.test", "port": 2526})
+
+
+def test_oss_mode_allows_a_private_relay_on_a_custom_port():
+    adapter = _adapter({"host": "127.0.0.1", "port": 1025, "security": "starttls"})
+
+    assert adapter.settings["host"] == "127.0.0.1"
+    assert adapter.settings["port"] == 1025
+
+
+@pytest.mark.asyncio
+async def test_egress_check_runs_again_at_send_time(monkeypatch):
+    adapter = _adapter({"host": "127.0.0.1", "port": 2525, "security": "starttls"})
+    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+
+    with pytest.raises(EmailConfigurationError, match="public IP"):
+        await adapter.send(_message())
+
+
+@pytest.mark.asyncio
+async def test_missing_starttls_is_a_configuration_error(fake_smtplib):
+    fake_smtplib["starttls_unsupported"] = True
+
+    with pytest.raises(EmailConfigurationError, match="security mode"):
+        await _adapter({"host": "mail.example.test", "port": 587}).send(_message())
+
+    assert "sent" not in fake_smtplib
+
+
+@pytest.mark.asyncio
+async def test_caller_cannot_supply_the_message_id(fake_smtplib):
+    await _adapter().send(_message(headers={"Message-ID": "<forged@attacker.test>"}))
+
+    msg = fake_smtplib["sent"][0]
+    assert msg["Message-ID"] != "<forged@attacker.test>"
+    assert msg["Message-ID"].endswith("@example.test>")
