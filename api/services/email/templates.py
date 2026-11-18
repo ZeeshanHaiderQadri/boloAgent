@@ -657,6 +657,10 @@ def prepare_template(
         )
     except MjmlError as exc:
         raise TemplateValidationError(str(exc)) from exc
+    except RecursionError as exc:
+        raise TemplateValidationError(
+            "The template is nested too deeply to compile."
+        ) from exc
 
     sanitized = sanitize_html(compiled)
     if not html_to_text(sanitized):

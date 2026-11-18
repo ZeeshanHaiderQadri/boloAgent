@@ -53,6 +53,24 @@ const STARTER_HTML = `<div style="font-family: Arial, Helvetica, sans-serif; col
   </p>
 </div>`;
 
+// mj-head is deliberately absent: Bolo's compiler rejects it instead of
+// silently dropping mj-title and mj-preview.
+const STARTER_MJML = `<mjml>
+  <mj-body background-color="#ffffff" width="600px">
+    <mj-section padding="24px">
+      <mj-column width="100%">
+        <mj-text font-size="16px" color="#111827">Hi {{business_name}},</mj-text>
+        <mj-text>Write your message here.</mj-text>
+        <mj-button href="https://boloagent.com">Visit boloagent.com</mj-button>
+        <mj-text font-size="12px" color="#6b7280">
+          You are receiving this email because you are listed as a business contact.
+          <a href="{{unsubscribe_link}}">Unsubscribe</a>
+        </mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>`;
+
 const UNSUBSCRIBE_PATTERN = /\{\{\s*unsubscribe_link\s*\}\}/;
 
 type MergeField = {
@@ -409,6 +427,9 @@ export function TemplateEditorDialog({
                                         aria-pressed={format === "html"}
                                         onClick={() => {
                                             setFormat("html");
+                                            if (source === STARTER_MJML) {
+                                                setSource(STARTER_HTML);
+                                            }
                                             markEdited();
                                         }}
                                     >
@@ -422,6 +443,9 @@ export function TemplateEditorDialog({
                                         aria-pressed={format === "mjml"}
                                         onClick={() => {
                                             setFormat("mjml");
+                                            if (source === STARTER_HTML) {
+                                                setSource(STARTER_MJML);
+                                            }
                                             markEdited();
                                         }}
                                     >

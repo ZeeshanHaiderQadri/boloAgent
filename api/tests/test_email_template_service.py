@@ -213,7 +213,6 @@ def test_html_to_text_keeps_links_and_drops_script_text():
 def test_mjml_subset_compiles_to_tables_and_keeps_merge_fields():
     source = """
     <mjml>
-      <mj-head><mj-title>Hello</mj-title></mj-head>
       <mj-body background-color="#f4f4f4" width="600px">
         <mj-section padding="20px" background-color="#ffffff">
           <mj-column width="100%">
@@ -264,3 +263,38 @@ def test_preview_uses_sample_values_never_lead_data():
     assert "Acme Demo Co." in rendered.subject
     assert "+1 555 0100" in rendered.text
     assert "https://boloagent.com/unsubscribe/preview-sample" in rendered.html
+
+
+def test_mjml_rejects_more_than_one_hundred_nested_tags():
+    body = "<div>" * 500 + "x" + "</div>" * 500
+    source = f"<mjml><mj-body><mj-section><mj-column><mj-text>{body}</mj-text></mj-column></mj-section></mj-body></mjml>"
+    with pytest.raises(MjmlError, match="[Dd]epth"):
+        compile_mjml(source)
+    with pytest.raises(TemplateValidationError, match="[Dd]epth"):
+        prepare_template(subject="Hi", source_format="mjml", source=source)
+
+
+def test_mjml_head_elements_are_rejected_now_that_they_are_unsupported():
+    for tag in ("mj-title", "mj-preview"):
+        with pytest.raises(MjmlError, match=tag):
+            compile_mjml(
+                f"<mjml><mj-head><{tag}>Hello</{tag}></mj-head><mj-body /></mjml>"
+            )
+
+
+def test_mjml_attributes_need_values_but_optional_text_attributes_may_be_empty():
+    base = "<mjml><mj-body><mj-section><mj-column>{}</mj-column></mj-section></mj-body></mjml>"
+    with pytest.raises(MjmlError, match="magic"):
+        compile_mjml(base.format("<mj-text magic>Hi</mj-text>"))
+    with pytest.raises(MjmlError, match="value"):
+        compile_mjml(base.format('<mj-text color="">Hi</mj-text>'))
+    with pytest.raises(MjmlError, match="value"):
+        compile_mjml(base.format('<mj-image src="" />'))
+    # These empty values are meaningful and must keep working.
+    compiled = compile_mjml(
+        base.format(
+            '<mj-text css-class="">Hi</mj-text>'
+            '<mj-image src="https://apex-software-demo.com/logo.png" alt="" title="" />'
+        )
+    )
+    assert "Hi" in compiled

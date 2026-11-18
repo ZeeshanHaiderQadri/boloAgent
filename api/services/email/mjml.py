@@ -8,13 +8,25 @@ a template rendered correctly when it did not.
 
 Supported tags:
 
-``mjml``, ``mj-head``, ``mj-title``, ``mj-preview``, ``mj-body``,
-``mj-wrapper``, ``mj-section``, ``mj-column``, ``mj-text``, ``mj-button``,
-``mj-image``, ``mj-divider``, ``mj-spacer``.
+``mjml``, ``mj-body``, ``mj-wrapper``, ``mj-section``, ``mj-column``,
+``mj-text``, ``mj-button``, ``mj-image``, ``mj-divider``, ``mj-spacer``.
+
+``mj-head`` is not supported. Its only useful children for this compiler,
+``mj-title`` and ``mj-preview``, would be dropped from the output, so the
+compiler rejects them instead of silently discarding author intent. Email
+clients take the preheader from the message body, and the document title is
+not part of the HTML fragment Bolo stores.
 
 Supported attributes are listed per tag in ``_ALLOWED_ATTRIBUTES``. Unknown
-tags and attributes are errors. The result is a fragment; the caller sanitizes
-it before storing or serving it.
+tags and attributes are errors, as are valueless attributes (``<mj-text
+color>``) and empty values for attributes whose value is validated
+(``color=""``). ``css-class``, ``alt`` and ``title`` may be empty because an
+empty value means "none" for those attributes.
+
+Nesting is limited to :data:`MAX_DEPTH` tags, counting raw HTML inside
+``mj-text``, so a hostile source cannot exhaust the Python stack.
+
+The result is a fragment; the caller sanitizes it before storing or serving it.
 """
 
 from __future__ import annotations
@@ -62,9 +74,6 @@ _PRESENTATION_ATTRIBUTES = {
 
 _ALLOWED_ATTRIBUTES: dict[str, set[str]] = {
     "mjml": set(),
-    "mj-head": set(),
-    "mj-title": set(),
-    "mj-preview": set(),
     "mj-body": {"background-color", "width"},
     "mj-wrapper": _PRESENTATION_ATTRIBUTES,
     "mj-section": _PRESENTATION_ATTRIBUTES,
@@ -120,6 +129,14 @@ _ALLOWED_ATTRIBUTES: dict[str, set[str]] = {
 
 _LEAF_TAGS = {"mj-text", "mj-button", "mj-image", "mj-divider", "mj-spacer"}
 
+# Attributes whose empty value is meaningful ("no class", "no alt text").
+_EMPTY_VALUE_ATTRIBUTES = frozenset({"css-class", "alt", "title"})
+
+# Maximum tag nesting. Real templates use fewer than ten levels; the limit
+# exists so a hostile source cannot exhaust the Python stack. Raw HTML inside
+# mj-text counts too.
+MAX_DEPTH = 100
+
 _COLOR_PATTERN = re.compile(r"(#[0-9A-Fa-f]{3,8}|[A-Za-z]{1,32})")
 _LENGTH_PATTERN = re.compile(r"\d{1,4}(\.\d{1,2})?(px|%)?")
 _PADDING_TOKEN = re.compile(r"\d{1,3}(px|%)")
@@ -136,7 +153,8 @@ class MjmlError(ValueError):
 @dataclass
 class _Element:
     tag: str
-    attrs: dict[str, str]
+    # None means the attribute was written without a value (``<mj-text color>``).
+    attrs: dict[str, str | None]
     children: list["_Element | str"] = field(default_factory=list)
 
 
@@ -149,18 +167,24 @@ class _TreeParser(HTMLParser):
         self.stack: list[_Element] = [self.root]
         self.errors: list[str] = []
 
+    def _check_depth(self) -> None:
+        # ``stack`` already contains the root document, so its length is the
+        # depth the next element would have.
+        if len(self.stack) > MAX_DEPTH:
+            raise MjmlError(
+                f"The source exceeds the maximum nesting depth of {MAX_DEPTH} tags."
+            )
+
     def handle_starttag(self, tag: str, attrs) -> None:
-        node = _Element(
-            tag.lower(), {key.lower(): value for key, value in attrs if value}
-        )
+        self._check_depth()
+        node = _Element(tag.lower(), {key.lower(): value for key, value in attrs})
         self.stack[-1].children.append(node)
         if node.tag not in _VOID_TAGS:
             self.stack.append(node)
 
     def handle_startendtag(self, tag: str, attrs) -> None:
-        node = _Element(
-            tag.lower(), {key.lower(): value for key, value in attrs if value}
-        )
+        self._check_depth()
+        node = _Element(tag.lower(), {key.lower(): value for key, value in attrs})
         self.stack[-1].children.append(node)
 
     def handle_endtag(self, tag: str) -> None:
@@ -221,6 +245,15 @@ def _validate_attributes(node: _Element) -> None:
         raise MjmlError(
             f"Unsupported attribute(s) on <{node.tag}>: {', '.join(unknown)}."
         )
+    missing = sorted(
+        name
+        for name, value in node.attrs.items()
+        if value is None or (value == "" and name not in _EMPTY_VALUE_ATTRIBUTES)
+    )
+    if missing:
+        raise MjmlError(
+            f"Attribute(s) on <{node.tag}> need a value: {', '.join(missing)}."
+        )
 
 
 def _validate_tree(node: _Element) -> None:
@@ -232,37 +265,39 @@ def _validate_tree(node: _Element) -> None:
         _validate_tree(child)
 
 
-def _check_structure(root: _Element) -> tuple[_Element | None, _Element]:
+def _check_structure(root: _Element) -> _Element:
     roots = _elements(root)
     if len(roots) != 1 or roots[0].tag != "mjml":
         raise MjmlError("The source must contain exactly one <mjml> root element.")
     mjml = roots[0]
-    heads = [child for child in _elements(mjml) if child.tag == "mj-head"]
     bodies = [child for child in _elements(mjml) if child.tag == "mj-body"]
     if len(bodies) != 1:
         raise MjmlError("The source must contain exactly one <mj-body> element.")
-    if len(heads) > 1:
-        raise MjmlError("The source must contain at most one <mj-head> element.")
     for child in _elements(mjml):
-        if child.tag not in {"mj-head", "mj-body"}:
-            raise MjmlError(
-                f"<{child.tag}> is only allowed inside <mj-body> or <mj-head>."
-            )
-
-    head = heads[0] if heads else None
-    if head is not None:
-        _require_no_text(head)
-        for child in _elements(head):
-            if child.tag not in {"mj-title", "mj-preview"}:
-                raise MjmlError(
-                    f"<{child.tag}> is not supported inside <mj-head>; only "
-                    "<mj-title> and <mj-preview> are available."
-                )
+        if child.tag == "mj-head":
+            _reject_head(child)
+        elif child.tag != "mj-body":
+            raise MjmlError(f"<{child.tag}> is only allowed inside <mj-body>.")
 
     body = bodies[0]
     _require_no_text(body)
     _validate_body_children(body)
-    return head, body
+    return body
+
+
+def _reject_head(head: _Element) -> None:
+    """Fail on ``mj-head``, naming the child so the message is actionable."""
+    for child in _elements(head):
+        if child.tag in {"mj-title", "mj-preview"}:
+            raise MjmlError(
+                f"<{child.tag}> is not supported by Bolo's MJML compiler. "
+                "The document title and preheader are not part of the message "
+                "Bolo stores; remove <mj-head> from the template."
+            )
+    raise MjmlError(
+        "<mj-head> is not supported by Bolo's MJML compiler; remove it from "
+        "the template."
+    )
 
 
 def _validate_body_children(body: _Element) -> None:
@@ -427,7 +462,8 @@ def _serialize(node: _Element | str) -> str:
     if isinstance(node, str):
         return node
     attrs = "".join(
-        f' {key}="{escape(value, quote=True)}"' for key, value in node.attrs.items()
+        f' {key}="{escape(value, quote=True)}"' if value is not None else f" {key}"
+        for key, value in node.attrs.items()
     )
     if node.tag in _VOID_TAGS:
         return f"<{node.tag}{attrs}>"
@@ -665,10 +701,8 @@ def compile_mjml(source: str) -> str:
     if unclosed:
         raise MjmlError("Unclosed tag(s): " + ", ".join(unclosed))
 
-    head, body = _check_structure(parser.root)
-    _validate_tree(body)
-    if head is not None:
-        _validate_tree(head)
+    body = _check_structure(parser.root)
+    _validate_tree(parser.root)
 
     width = _length(body.attrs.get("width", "600px"), attribute="width")
     background = _color(
