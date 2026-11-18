@@ -53,9 +53,7 @@ async def ensure_mps_correlation_id(
 
 def _is_bolo_service(service: Any) -> bool:
     provider = getattr(service, "provider", None)
-    return (
-        provider == ServiceProviders.BOLO or provider == ServiceProviders.BOLO.value
-    )
+    return provider == ServiceProviders.BOLO or provider == ServiceProviders.BOLO.value
 
 
 def get_bolo_service_api_key(

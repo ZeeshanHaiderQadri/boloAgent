@@ -15,9 +15,9 @@ from loguru import logger
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from api.constants import (
-    DEPLOYMENT_MODE,
     BOLO_DEPLOYMENT_ID,
     BOLO_MPS_SECRET_KEY,
+    DEPLOYMENT_MODE,
     MPS_API_URL,
 )
 from api.db import db_client

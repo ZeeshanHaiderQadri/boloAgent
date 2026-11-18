@@ -21,9 +21,7 @@ def test_call_outcome_exposes_disposition_tags_and_conversation_notes():
     assert outcome["mapped_call_disposition"] == "XFER"
     assert outcome["call_status"] == "user_hangup"
     assert outcome["call_tags"] == ["pricing", "callback"]
-    assert outcome["summary"] == (
-        "Budget: 5000 · Callback time: Monday morning"
-    )
+    assert outcome["summary"] == ("Budget: 5000 · Callback time: Monday morning")
 
 
 def test_call_outcome_without_notes_uses_tags_then_none():

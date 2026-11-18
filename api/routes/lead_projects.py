@@ -8,9 +8,9 @@ creating a duplicate. Deleting a project only un-files its leads.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.exc import IntegrityError
 
 from api.db import db_client
+from api.db.lead_client import LeadProjectNameConflictError
 from api.db.models import LeadProjectModel, UserModel
 from api.schemas.leads import (
     LeadProjectAssignmentResponse,
@@ -96,7 +96,7 @@ async def create_lead_project(
         project = await db_client.create_lead_project(
             organization_id, request.name, created_by=user.id
         )
-    except IntegrityError as exc:
+    except LeadProjectNameConflictError as exc:
         raise HTTPException(
             status_code=409, detail="A project with that name already exists"
         ) from exc
@@ -139,7 +139,7 @@ async def update_lead_project(
         renamed = await db_client.rename_lead_project(
             project_id, organization_id, request.name
         )
-    except IntegrityError as exc:
+    except LeadProjectNameConflictError as exc:
         raise HTTPException(
             status_code=409, detail="A project with that name already exists"
         ) from exc
@@ -155,9 +155,7 @@ async def delete_lead_project(
     project_id: int,
     user: UserModel = Depends(get_user),
 ) -> dict[str, int | bool]:
-    unassigned = await db_client.delete_lead_project(
-        project_id, _organization_id(user)
-    )
+    unassigned = await db_client.delete_lead_project(project_id, _organization_id(user))
     if unassigned is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return {"deleted": True, "unassigned": unassigned}

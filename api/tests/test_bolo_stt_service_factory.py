@@ -9,8 +9,8 @@ from pipecat.transcriptions.language import Language
 from api.services.configuration.registry import BoloSTTService, ServiceProviders
 from api.services.pipecat.audio_config import AudioConfig
 from api.services.pipecat.service_factory import (
-    create_stt_service,
     bolo_stt_uses_flux_language,
+    create_stt_service,
     stt_uses_external_turns,
 )
 

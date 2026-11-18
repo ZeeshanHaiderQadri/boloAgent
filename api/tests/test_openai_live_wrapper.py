@@ -57,9 +57,7 @@ from api.services.workflow.pipecat_engine import PipecatEngine
 
 
 def make_service():
-    service = BoloOpenAILiveLLMService(
-        api_key="test-key", backend_model="gpt-5.4-mini"
-    )
+    service = BoloOpenAILiveLLMService(api_key="test-key", backend_model="gpt-5.4-mini")
     service.send_client_event = AsyncMock()
     service.push_frame = AsyncMock()
     return service
@@ -311,9 +309,7 @@ async def test_muted_startup_greeting_reaches_playback_and_releases_initial_mute
             pass
 
     socket = ClockedLiveSocket()
-    service = BoloOpenAILiveLLMService(
-        api_key="test-key", backend_model="gpt-5.4-mini"
-    )
+    service = BoloOpenAILiveLLMService(api_key="test-key", backend_model="gpt-5.4-mini")
     context = LLMContext()
     service._context = context  # Bolo's engine initializes this before greeting.
     turns, _ = _create_realtime_user_turn_config("openai_realtime", "gpt-live-1")
@@ -410,9 +406,7 @@ async def test_live_seconds_are_deduplicated_and_backend_tokens_keep_their_model
         value=LLMTokenUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
     )
     with patch.object(OpenAILiveLLMService, "push_frame", new_callable=AsyncMock):
-        await BoloOpenAILiveLLMService.push_frame(
-            service, MetricsFrame(data=[tokens])
-        )
+        await BoloOpenAILiveLLMService.push_frame(service, MetricsFrame(data=[tokens]))
     assert tokens.model == "gpt-5.4-mini"
     assert "live" not in tokens.processor.lower()
 

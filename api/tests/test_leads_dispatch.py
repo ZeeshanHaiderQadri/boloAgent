@@ -296,14 +296,22 @@ async def test_dispatch_reports_quota_exhaustion_as_quota_error():
     patches = _patched_dispatch([_lead()])
     contexts = patches[:-2]
 
-    with contexts[0], contexts[1], contexts[2], patch(
-        "api.services.leads.dispatch.authorize_workflow_run_start",
-        new=AsyncMock(
-            return_value=QuotaCheckResult(
-                has_quota=False, error_message="Quota exhausted"
-            )
+    with (
+        contexts[0],
+        contexts[1],
+        contexts[2],
+        patch(
+            "api.services.leads.dispatch.authorize_workflow_run_start",
+            new=AsyncMock(
+                return_value=QuotaCheckResult(
+                    has_quota=False, error_message="Quota exhausted"
+                )
+            ),
         ),
-    ), contexts[4], contexts[5], contexts[6]:
+        contexts[4],
+        contexts[5],
+        contexts[6],
+    ):
         with pytest.raises(DispatchQuotaError, match="Quota exhausted"):
             await _dispatch([1])
 

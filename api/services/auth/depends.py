@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, Query, WebSocket
 from loguru import logger
 
-from api.constants import AUTH_PROVIDER, DEPLOYMENT_MODE, BOLO_DEPLOYMENT_ID
+from api.constants import AUTH_PROVIDER, BOLO_DEPLOYMENT_ID, DEPLOYMENT_MODE
 from api.db import db_client
 from api.db.models import UserModel
 from api.enums import PostHogEvent

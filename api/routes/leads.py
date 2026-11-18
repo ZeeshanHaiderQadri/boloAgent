@@ -198,9 +198,7 @@ async def create_lead_search(
 
     await _enqueue_search(search.id, organization_id)
 
-    await db_client.update_lead_search(
-        search.id, organization_id, status="queued"
-    )
+    await db_client.update_lead_search(search.id, organization_id, status="queued")
     refreshed = await db_client.get_lead_search(search.id, organization_id)
     return LeadSearchResponse.model_validate(refreshed or search)
 
@@ -229,9 +227,7 @@ async def list_lead_searches(
 async def get_lead_search(
     search_id: int, user: UserModel = Depends(get_user)
 ) -> LeadSearchResponse:
-    search = await db_client.get_lead_search(
-        search_id, _organization_id(user)
-    )
+    search = await db_client.get_lead_search(search_id, _organization_id(user))
     if search is None:
         raise HTTPException(status_code=404, detail="Search not found")
     return LeadSearchResponse.model_validate(search)
@@ -361,9 +357,7 @@ async def update_lead_search(
                 has_phone=True,
                 limit=LEADS_DISPATCH_MAX_LEADS,
             )
-            lead_ids = [
-                lead.id for lead in leads if lead.crm_status != "do_not_call"
-            ]
+            lead_ids = [lead.id for lead in leads if lead.crm_status != "do_not_call"]
             if lead_ids:
                 try:
                     await add_leads_to_campaign(
@@ -408,9 +402,7 @@ async def update_lead_search(
     # auto_call_campaign_id is deliberately preserved: re-running a search
     # must not dial leads that a previous campaign already called.
 
-    updated = await db_client.update_lead_search(
-        search_id, organization_id, **values
-    )
+    updated = await db_client.update_lead_search(search_id, organization_id, **values)
     await _enqueue_search(search_id, organization_id)
     return LeadSearchResponse.model_validate(updated or search)
 
@@ -736,9 +728,7 @@ async def get_lead_detail(
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    activities, calls, searches = await _lead_relations(
-        lead_id, organization_id
-    )
+    activities, calls, searches = await _lead_relations(lead_id, organization_id)
     return LeadDetailResponse(
         lead=LeadResponse.model_validate(lead),
         activities=activities,
@@ -815,9 +805,7 @@ async def update_lead(
         if value is None:
             continue
         if field == "title" and not value:
-            raise HTTPException(
-                status_code=422, detail="Business name cannot be empty"
-            )
+            raise HTTPException(status_code=422, detail="Business name cannot be empty")
         values[field] = value or None
         changed_contact_fields.append(field)
     if request.phone is not None:

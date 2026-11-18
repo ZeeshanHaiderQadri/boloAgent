@@ -133,8 +133,7 @@ def test_gemini_live_service_classes_use_bolo_gemini_adapter_class():
     assert BoloGeminiLiveLLMService.adapter_class is BoloGeminiLiveJSONSchemaAdapter
     # Vertex Live inherits adapter_class from BoloGeminiLiveLLMService via MRO.
     assert (
-        BoloGeminiLiveVertexLLMService.adapter_class
-        is BoloGeminiLiveJSONSchemaAdapter
+        BoloGeminiLiveVertexLLMService.adapter_class is BoloGeminiLiveJSONSchemaAdapter
     )
     # The Live adapter must keep upstream's tool-call-to-text conversion for
     # seeded contexts (GeminiLiveLLMAdapter) alongside the JSON Schema fix.

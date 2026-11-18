@@ -271,9 +271,7 @@ async def test_runner_shutdown_reaches_inactive_child_during_setup(
     if call_ready:
         call_service.release.set()
     child_service = ConnectingService()
-    call = BoloPipelineWorker(
-        Pipeline([call_service]), name="call", enable_rtvi=False
-    )
+    call = BoloPipelineWorker(Pipeline([call_service]), name="call", enable_rtvi=False)
     child = AgentWorker(
         Pipeline([child_service]),
         name="agent",

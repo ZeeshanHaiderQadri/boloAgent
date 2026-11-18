@@ -70,8 +70,7 @@ def call_outcome(call: dict[str, Any]) -> dict[str, Any]:
         "call_status": gathered.get("call_status"),
         "call_disposition": gathered.get("call_disposition"),
         "mapped_call_disposition": (
-            gathered.get("mapped_call_disposition")
-            or gathered.get("call_disposition")
+            gathered.get("mapped_call_disposition") or gathered.get("call_disposition")
         ),
         "call_tags": tags,
         "summary": summary,

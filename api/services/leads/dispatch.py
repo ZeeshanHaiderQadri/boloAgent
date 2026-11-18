@@ -210,13 +210,9 @@ async def add_leads_to_campaign(
     already_dispatched = set(
         await db_client.list_dispatch_lead_ids(campaign_id, organization_id)
     )
-    dialable = [
-        lead for lead in dialable if lead.id not in already_dispatched
-    ]
+    dialable = [lead for lead in dialable if lead.id not in already_dispatched]
     if not dialable:
-        raise DispatchError(
-            "Every selected lead is already queued in that campaign"
-        )
+        raise DispatchError("Every selected lead is already queued in that campaign")
 
     csv_rows = await _read_source_csv(campaign.source_id)
     if not csv_rows:
@@ -244,9 +240,7 @@ async def add_leads_to_campaign(
     added_leads: list[Any] = []
     for lead in dialable:
         if lead.phone_e164 in existing_phones:
-            skipped.append(
-                {"lead_id": lead.id, "reason": "phone_already_in_campaign"}
-            )
+            skipped.append({"lead_id": lead.id, "reason": "phone_already_in_campaign"})
             continue
         row = _lead_row(lead, headers)
         new_rows.append(row)
@@ -254,9 +248,7 @@ async def add_leads_to_campaign(
         existing_phones.add(lead.phone_e164 or "")
 
     if not new_rows:
-        raise DispatchError(
-            "Every selected lead is already queued in that campaign"
-        )
+        raise DispatchError("Every selected lead is already queued in that campaign")
 
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=headers, extrasaction="ignore")
@@ -448,9 +440,7 @@ async def dispatch_leads_to_campaign(
     required_variables = await _required_template_variables(workflow)
     csv_content, _headers = _build_csv(dialable, required_variables)
 
-    file_key = (
-        f"campaigns/{organization_id}/{uuid.uuid4().hex}_leads_dispatch.csv"
-    )
+    file_key = f"campaigns/{organization_id}/{uuid.uuid4().hex}_leads_dispatch.csv"
     uploaded = await storage_fs.acreate_file_from_bytes(
         file_key, csv_content.encode("utf-8")
     )
@@ -512,8 +502,7 @@ async def dispatch_leads_to_campaign(
     if missing_variables:
         warnings.append(
             "Workflow template variables not present in lead data were added as "
-            "empty columns: "
-            + ", ".join(sorted(missing_variables))
+            "empty columns: " + ", ".join(sorted(missing_variables))
         )
     if skipped:
         warnings.append(
@@ -524,9 +513,7 @@ async def dispatch_leads_to_campaign(
         try:
             await campaign_runner_service.start_campaign(campaign.id)
         except ValueError as exc:
-            warnings.append(
-                f"The campaign was created but could not be started: {exc}"
-            )
+            warnings.append(f"The campaign was created but could not be started: {exc}")
 
     logger.info(
         "Dispatched {} leads to campaign {} (org {})",
