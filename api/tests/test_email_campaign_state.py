@@ -5,10 +5,15 @@ import pytest
 from api.enums import EmailCampaignStatus, EmailMessageStatus
 from api.services.email.campaign_state import (
     CAMPAIGN_TRANSITIONS,
+    DELETABLE_CAMPAIGN_STATUSES,
     MESSAGE_TRANSITIONS,
+    SENDER_IN_USE_CAMPAIGN_STATUSES,
     CampaignStateError,
+    assert_campaign_deletable,
     assert_campaign_transition,
     assert_message_transition,
+    campaign_blocks_sender_deletion,
+    can_delete_campaign,
     can_transition_campaign,
     can_transition_message,
 )
@@ -110,3 +115,43 @@ def test_unknown_states_are_a_bug_not_a_denial():
         can_transition_campaign("paused", "ready")
     with pytest.raises(CampaignStateError, match="Unknown target state"):
         can_transition_message("queued", "delivered")
+
+
+@pytest.mark.parametrize("status", ["draft", "ready"])
+def test_only_unlaunched_campaigns_can_be_deleted(status):
+    assert can_delete_campaign(status)
+    assert_campaign_deletable(status)
+
+
+@pytest.mark.parametrize(
+    "status", ["launching", "sending", "completed", "cancelled", "failed"]
+)
+def test_launched_campaigns_cannot_be_deleted(status):
+    assert not can_delete_campaign(status)
+    with pytest.raises(CampaignStateError, match="only draft or ready"):
+        assert_campaign_deletable(status)
+
+
+@pytest.mark.parametrize("status", ["draft", "ready", "launching", "sending"])
+def test_active_campaigns_block_sender_deletion(status):
+    assert campaign_blocks_sender_deletion(status)
+
+
+@pytest.mark.parametrize("status", ["completed", "cancelled", "failed"])
+def test_finished_campaigns_do_not_block_sender_deletion(status):
+    assert not campaign_blocks_sender_deletion(status)
+
+
+def test_deletion_rules_cover_every_state_and_raise_on_unknown():
+    all_states = {s.value for s in EmailCampaignStatus}
+    assert DELETABLE_CAMPAIGN_STATUSES <= all_states
+    assert SENDER_IN_USE_CAMPAIGN_STATUSES <= all_states
+    # Terminal states must never block a sender delete or invite a transition.
+    for terminal in ("completed", "cancelled", "failed"):
+        assert not campaign_blocks_sender_deletion(terminal)
+        assert CAMPAIGN_TRANSITIONS[terminal] == frozenset()
+
+    with pytest.raises(CampaignStateError, match="Unknown campaign state"):
+        can_delete_campaign("paused")
+    with pytest.raises(CampaignStateError, match="Unknown campaign state"):
+        campaign_blocks_sender_deletion("paused")
