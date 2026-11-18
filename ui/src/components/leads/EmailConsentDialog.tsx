@@ -43,11 +43,11 @@ interface EmailConsentDialogProps {
     onSaved: () => void | Promise<void>;
 }
 
-function bulkConsentMessage(changed: number, total: number): string {
-    if (changed === total) {
+function bulkConsentMessage(changed: number, matched: number): string {
+    if (changed === matched) {
         return `Email consent updated for ${changed} lead(s)`;
     }
-    return `Email consent updated for ${changed} of ${total} lead(s); the reason was saved for all`;
+    return `Email consent updated for ${changed} of ${matched} lead(s); the reason was saved for all`;
 }
 
 export function EmailConsentDialog({
@@ -104,7 +104,9 @@ export function EmailConsentDialog({
                           response.data && "changed" in response.data
                               ? response.data.changed
                               : leadIds.length,
-                          leadIds.length,
+                          response.data && "matched" in response.data
+                              ? response.data.matched
+                              : leadIds.length,
                       )
                     : "Email consent saved",
             );

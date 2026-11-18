@@ -90,7 +90,7 @@ describe("EmailConsentDialog", () => {
     });
 
     it("can opt out without a reason and bulk-updates the selection", async () => {
-        renderDialog({ leadIds: [1, 2] });
+        renderDialog({ leadIds: [1, 2, 3] });
 
         choose("Opted out");
         fireEvent.click(screen.getByRole("button", { name: "Save consent" }));
@@ -100,7 +100,7 @@ describe("EmailConsentDialog", () => {
                 bulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPost,
             ).toHaveBeenCalledWith({
                 body: {
-                    lead_ids: [1, 2],
+                    lead_ids: [1, 2, 3],
                     email_consent: "opted_out",
                     reason: null,
                 },
