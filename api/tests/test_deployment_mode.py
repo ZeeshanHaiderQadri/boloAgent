@@ -208,3 +208,9 @@ def test_helm_chart_defaults_egress_to_strict():
     assert "\n  outboundNetworkPolicy: strict\n" in values
     assert "OUTBOUND_NETWORK_POLICY" in template
     assert ".Values.config.outboundNetworkPolicy" in template
+
+
+def test_helm_aws_example_sets_the_required_deployment_mode():
+    values = (REPO_ROOT / "deploy/helm/bolo/examples/values-aws.yaml").read_text()
+    assert "\n  deploymentMode: oss\n" in values
+    assert "\n  outboundNetworkPolicy: strict\n" in values
