@@ -257,6 +257,14 @@ Controls concurrency for [Campaigns](/core-concepts/campaigns), Bolo's bulk outb
 |---|---|---|
 | `DEFAULT_ORG_CONCURRENCY_LIMIT` | `10` | Maximum concurrent active calls per organization (values below 1 are clamped to 1) |
 
+### Email campaigns
+
+| Variable | Default | Description |
+|---|---|---|
+| `EMAIL_CAMPAIGN_SENDING_ENABLED` | `false` | Turns on the campaign launch endpoint's precondition check. While `false`, `POST /api/v1/email/campaigns/{uuid}/launch` returns `403`. This release still sends nothing and queues no message rows even when it is `true`; the sending engine ships separately. Leave it off until sending is reviewed for anti-spam compliance |
+
+Launch also requires `PUBLIC_BASE_URL` to be an absolute public `http(s)` origin (not `localhost`) because unsubscribe links are built from it. Delivery records are retained as the audit trail; see [Campaigns](/email/campaigns) for the exclusion order, consent rules and the data-retention note.
+
 ---
 
 ## Further Customisation

@@ -17,6 +17,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from api import constants
 from api.constants import EMAIL_CONSENT_WARNING
 from api.db import db_client
 from api.db.email_campaign_client import EmailCampaignNameConflictError
@@ -41,7 +42,11 @@ from api.services.email.audience import (
     resolve_audience,
     validate_audience_rule,
 )
-from api.services.email.campaign_rate_limits import allow_campaign_preview
+from api.services.email.campaign_launch import check_launch_preconditions
+from api.services.email.campaign_rate_limits import (
+    allow_campaign_launch_attempt,
+    allow_campaign_preview,
+)
 from api.services.email.campaign_state import (
     CampaignStateError,
     assert_campaign_deletable,
@@ -177,6 +182,15 @@ class UpdateEmailCampaignRequest(BaseModel):
     template_uuid: Optional[str] = None
 
 
+class LaunchResponse(BaseModel):
+    # The campaign's current status; launch never changes it in this release.
+    status: str
+    ready: bool
+    # Plain-language reasons launch is blocked; empty when ready is true.
+    preconditions: list[str]
+    message: str
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -204,6 +218,29 @@ def _stored_audience(rule: AudienceRule) -> dict[str, Any]:
     if rule.audience_type == EmailCampaignAudienceType.TAG.value:
         return {"tag": rule.tag}
     return {"filters": dict(rule.filters), "all_matching": True}
+
+
+def _rule_from_stored(campaign: EmailCampaignModel) -> AudienceRule:
+    """Rebuild the resolver rule from what the campaign row stored."""
+    audience = campaign.audience or {}
+    if campaign.audience_type == EmailCampaignAudienceType.LEADS.value:
+        return AudienceRule(
+            audience_type=campaign.audience_type,
+            lead_ids=tuple(audience.get("lead_ids") or ()),
+        )
+    if campaign.audience_type == EmailCampaignAudienceType.PROJECT.value:
+        return AudienceRule(
+            audience_type=campaign.audience_type,
+            project_id=audience.get("project_id"),
+        )
+    if campaign.audience_type == EmailCampaignAudienceType.TAG.value:
+        return AudienceRule(
+            audience_type=campaign.audience_type, tag=audience.get("tag")
+        )
+    return AudienceRule(
+        audience_type=campaign.audience_type,
+        filters=dict(audience.get("filters") or {}),
+    )
 
 
 def _validated_rule(request: AudienceRuleRequest) -> AudienceRule:
@@ -625,3 +662,98 @@ async def delete_email_campaign(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await db_client.delete_email_campaign(organization_id, campaign_uuid)
     return {"status": "deleted", "uuid": campaign_uuid}
+
+
+@router.post("/{campaign_uuid}/launch")
+async def launch_email_campaign(
+    campaign_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> LaunchResponse:
+    """Check launch preconditions; never send or queue anything in this release.
+
+    ``EMAIL_CAMPAIGN_SENDING_ENABLED`` is off by default and the endpoint
+    answers 403. Even when it is on, this release only reports readiness: it
+    creates no recipient rows and sends no email.
+    """
+    organization_id = _require_organization(user)
+
+    if not constants.EMAIL_CAMPAIGN_SENDING_ENABLED:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Campaign sending is disabled on this deployment. "
+                "EMAIL_CAMPAIGN_SENDING_ENABLED is off; no email was sent and "
+                "nothing was queued."
+            ),
+        )
+
+    try:
+        allowed = await allow_campaign_launch_attempt(
+            user_id=user.id, organization_id=organization_id
+        )
+    except RateLimiterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Campaign launch is temporarily unavailable.",
+        ) from exc
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many launch attempts. Try again later.",
+        )
+
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    if campaign.status not in _EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A campaign in {campaign.status!r} can no longer be launched; "
+                "only draft or ready campaigns can be launched."
+            ),
+        )
+
+    rule = _rule_from_stored(campaign)
+    try:
+        resolution = await resolve_audience(
+            organization_id, rule, consent_policy=campaign.consent_policy
+        )
+    except AudienceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    sender = (
+        await db_client.get_email_sender_by_id(organization_id, campaign.sender_id)
+        if campaign.sender_id
+        else None
+    )
+    template = (
+        await db_client.get_email_template_by_id(organization_id, campaign.template_id)
+        if campaign.template_id
+        else None
+    )
+    readiness = check_launch_preconditions(
+        campaign=campaign,
+        sender=sender,
+        template=template,
+        resolution=resolution,
+        public_base_url=constants.PUBLIC_BASE_URL,
+    )
+    await db_client.update_email_campaign_counts(
+        organization_id, campaign_uuid, counts=resolution.counters()
+    )
+
+    if readiness.ready:
+        message = (
+            "All launch preconditions pass. Sending is not part of this "
+            "release, so no email was sent and nothing was queued."
+        )
+    else:
+        message = (
+            "Launch is blocked. Fix the listed items, preview again, then "
+            "retry. No email was sent and nothing was queued."
+        )
+    return LaunchResponse(
+        status=campaign.status,
+        ready=readiness.ready,
+        preconditions=list(readiness.failures),
+        message=message,
+    )

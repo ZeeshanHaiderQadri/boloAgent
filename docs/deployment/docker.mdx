@@ -209,6 +209,24 @@ You should be able to create and test a voice agent now.
   A customer-facing self-hosted install must use `DEPLOYMENT_MODE=oss` **and** `OUTBOUND_NETWORK_POLICY=strict`. Running it with the policy off lets a tenant point a model service or SMTP server at your internal network. Do not switch to `saas` just for egress blocking: that also enables Dograh's billing and verified-identity requirements. Verify both values in `bolo/.env` (or `config.deploymentMode` and `config.outboundNetworkPolicy` in Helm) before the first customer is onboarded.
 </Warning>
 
+### Email campaign sending
+
+Campaign email sending is **off** by default. `EMAIL_CAMPAIGN_SENDING_ENABLED=false`
+makes the campaign launch endpoint answer `403`; draft campaigns, audience
+previews and the sender/template APIs all work normally. Leave it off on any
+install that has not been reviewed for anti-spam compliance, because the same
+switch will enable real sending in a later release.
+
+Launching is also blocked until `PUBLIC_BASE_URL` is an absolute public
+`http(s)` origin (not `localhost`), because unsubscribe links are built from
+it. Set it on customer-facing installs even while sending is off.
+
+Campaign delivery records are kept, not purged: each `email_messages` row keeps
+the rendered subject and bodies, the recipient address and the delivery
+outcome as the audit trail for what was sent. Deleting a draft campaign does
+not create or remove delivery history; removing an organization removes its
+records with it. See [Campaigns](/email/campaigns) for the full behaviour.
+
 ### Files Created
 
 The setup script creates the following files in the `bolo/` directory:
