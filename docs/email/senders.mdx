@@ -1,0 +1,54 @@
+---
+title: "Email senders"
+description: "Connect the mailbox Bolo sends campaign email from"
+---
+
+An email sender is the mailbox Bolo uses to send from. You can add more than
+one sender; one is marked as the default for new campaigns.
+
+Open **Email → Senders** in the app, choose **Add sender**, and pick a provider.
+
+## SMTP
+
+SMTP works with Hostinger and any standard mail host. The sender dialog includes
+a Hostinger preset that fills in `smtp.hostinger.com`, port `465` and SSL.
+
+You need:
+
+- the SMTP host and port from your mail provider;
+- the mailbox username and password (or an app password, if your provider
+  requires one);
+- a From address on that mailbox, and optionally a Reply-to address.
+
+Use **Verify** to test the connection and **Send test** to send a test message.
+Test messages should go to a mailbox you control.
+
+<Note>
+  Plain SMTP does not report bounces or spam complaints back to Bolo. Monitor
+  the sending mailbox, remove bad addresses, and keep the list clean manually.
+  SES can report these events through AWS.
+</Note>
+
+### Use a separate domain for cold outreach
+
+Send cold outreach from a separate domain or mailbox, not your main business
+domain. Spam complaints and reputation damage follow the domain and IP that
+sent the mail. A dedicated outreach domain keeps a bad campaign from affecting
+the address your customers already know.
+
+## Amazon SES
+
+The SES adapter is implemented, but it has **not been tested against a live AWS
+account** in this build. Treat it as untested: use SMTP for production sending
+until an SES account has been connected and verified end to end.
+
+An SES sender needs an AWS access key, a region, and a verified From address or
+domain. A new SES account starts in the sandbox and can only send to verified
+addresses until AWS grants production access.
+
+## Limits
+
+Each sender has a conservative daily cap and per-second rate. You can lower
+them for a new mailbox; raising them beyond the provider's own limits will
+cause sends to fail. The campaign engine counts deliveries per sender and
+resets the daily count at midnight UTC.

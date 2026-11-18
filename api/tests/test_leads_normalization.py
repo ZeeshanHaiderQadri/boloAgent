@@ -54,7 +54,7 @@ def test_normalize_maps_business_fields_and_e164_phone():
             "category": "Software company",
             "address": "123 Market St, San Francisco, CA 94105, US",
             "phone": "(415) 555-0142",
-            "emails": '["hello@apex.example.com"]',
+            "emails": '["hello@apex-software.com"]',
             "website": "https://apex.example.com",
             "place_id": "abc123",
             "review_rating": "4.6",
@@ -74,7 +74,7 @@ def test_normalize_maps_business_fields_and_e164_phone():
     assert lead["dedupe_key"] == "place:abc123"
     assert lead["phone"] == "(415) 555-0142"
     assert lead["phone_e164"] == "+14155550142"
-    assert lead["email"] == "hello@apex.example.com"
+    assert lead["email"] == "hello@apex-software.com"
     assert (lead["city"], lead["state"], lead["country"]) == (
         "San Francisco",
         "CA",
@@ -170,3 +170,28 @@ def test_normalize_rows_skips_unusable_rows():
     normalized = normalize_rows(rows, country_hint="US", source="demo")
 
     assert [lead["title"] for lead in normalized] == ["Good Co", "Also Good"]
+
+
+def test_normalize_skips_image_filenames_and_placeholder_domains():
+    lead = normalize_lead_row(
+        {
+            "title": "Image Trap Co",
+            "emails": ["logo@2x.webp", "info@domain.com", "sales@image-trap.com"],
+        },
+        country_hint="US",
+        source="google_maps",
+    )
+
+    assert lead is not None
+    assert lead["email"] == "sales@image-trap.com"
+
+
+def test_normalize_returns_no_email_when_every_candidate_is_invalid():
+    lead = normalize_lead_row(
+        {"title": "No Real Email", "emails": ["logo@2x.webp", "info@domain.com"]},
+        country_hint="US",
+        source="google_maps",
+    )
+
+    assert lead is not None
+    assert lead["email"] is None

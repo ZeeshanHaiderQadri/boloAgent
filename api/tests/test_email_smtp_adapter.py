@@ -261,28 +261,28 @@ def test_zero_port_is_rejected_instead_of_defaulting():
 
 
 def test_saas_mode_rejects_a_loopback_smtp_host(monkeypatch):
-    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+    monkeypatch.setattr(url_security, "OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(EmailConfigurationError, match="public IP"):
         _adapter({"host": "127.0.0.1", "port": 25})
 
 
 def test_saas_mode_rejects_localhost(monkeypatch):
-    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+    monkeypatch.setattr(url_security, "OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(EmailConfigurationError, match="localhost"):
         _adapter({"host": "localhost", "port": 25})
 
 
 def test_saas_mode_rejects_nonstandard_smtp_ports(monkeypatch):
-    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+    monkeypatch.setattr(url_security, "OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(EmailConfigurationError, match="must be one of"):
         _adapter({"host": "mail.example.test", "port": 2526})
 
 
 def test_resolution_failure_is_retryable_but_policy_rejection_is_not(monkeypatch):
-    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+    monkeypatch.setattr(url_security, "OUTBOUND_NETWORK_POLICY", "strict")
 
     def unresolved(*args, **kwargs):
         raise socket.gaierror("nodename nor servname provided")
@@ -306,7 +306,7 @@ def test_oss_mode_allows_a_private_relay_on_a_custom_port():
 @pytest.mark.asyncio
 async def test_egress_check_runs_again_at_send_time(monkeypatch):
     adapter = _adapter({"host": "127.0.0.1", "port": 2525, "security": "starttls"})
-    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+    monkeypatch.setattr(url_security, "OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(EmailConfigurationError, match="public IP"):
         await adapter.send(_message())
@@ -314,7 +314,7 @@ async def test_egress_check_runs_again_at_send_time(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_saas_mode_connects_to_the_checked_address(fake_smtplib, monkeypatch):
-    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+    monkeypatch.setattr(url_security, "OUTBOUND_NETWORK_POLICY", "strict")
     monkeypatch.setattr(
         smtp_module,
         "resolve_user_configured_service_host",

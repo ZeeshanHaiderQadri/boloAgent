@@ -17,8 +17,8 @@ from api.services.pipecat.service_factory import (
 from api.utils.url_security import validate_user_configured_service_url
 
 
-def test_oss_allows_local_service_urls(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "oss")
+def test_off_policy_allows_local_service_urls(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "off")
 
     validate_user_configured_service_url(
         "http://localhost:11434/v1",
@@ -36,8 +36,8 @@ def test_oss_allows_local_service_urls(monkeypatch):
         "http://100.64.0.1/v1",
     ],
 )
-def test_saas_blocks_local_and_internal_service_urls(url, monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_strict_blocks_local_and_internal_service_urls(url, monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(ValueError):
         validate_user_configured_service_url(
@@ -46,8 +46,8 @@ def test_saas_blocks_local_and_internal_service_urls(url, monkeypatch):
         )
 
 
-def test_saas_rejects_unsupported_service_url_schemes(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_strict_rejects_unsupported_service_url_schemes(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(ValueError, match="http, https, ws, or wss"):
         validate_user_configured_service_url(
@@ -56,8 +56,8 @@ def test_saas_rejects_unsupported_service_url_schemes(monkeypatch):
         )
 
 
-def test_saas_checks_resolved_hostname_ips(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_strict_checks_resolved_hostname_ips(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     def fake_getaddrinfo(*_args, **_kwargs):
         return [(None, None, None, None, ("10.0.0.10", 443))]
@@ -71,8 +71,8 @@ def test_saas_checks_resolved_hostname_ips(monkeypatch):
         )
 
 
-def test_saas_allows_public_service_url(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_strict_allows_public_service_url(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     def fake_getaddrinfo(*_args, **_kwargs):
         return [(None, None, None, None, ("8.8.8.8", 443))]
@@ -85,8 +85,8 @@ def test_saas_allows_public_service_url(monkeypatch):
     )
 
 
-def test_saas_allows_public_websocket_service_url(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_strict_allows_public_websocket_service_url(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     def fake_getaddrinfo(*_args, **_kwargs):
         return [(None, None, None, None, ("8.8.8.8", 443))]
@@ -99,8 +99,8 @@ def test_saas_allows_public_websocket_service_url(monkeypatch):
     )
 
 
-def test_saas_blocks_local_websocket_service_url(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_strict_blocks_local_websocket_service_url(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(ValueError, match="localhost"):
         validate_user_configured_service_url(
@@ -109,8 +109,8 @@ def test_saas_blocks_local_websocket_service_url(monkeypatch):
         )
 
 
-def test_validator_blocks_speaches_local_base_url_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_validator_blocks_speaches_local_base_url_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
     validator = UserConfigurationValidator()
     config = SpeachesLLMConfiguration()
 
@@ -119,13 +119,13 @@ def test_validator_blocks_speaches_local_base_url_in_saas(monkeypatch):
     assert result == [
         {
             "model": "llm",
-            "message": "base_url cannot point to localhost in SaaS mode",
+            "message": "base_url cannot point to localhost when OUTBOUND_NETWORK_POLICY=strict",
         }
     ]
 
 
-def test_validator_blocks_azure_private_endpoint_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_validator_blocks_azure_private_endpoint_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
     validator = UserConfigurationValidator()
     config = SimpleNamespace(
         provider=ServiceProviders.AZURE.value,
@@ -138,21 +138,21 @@ def test_validator_blocks_azure_private_endpoint_in_saas(monkeypatch):
     assert result == [
         {
             "model": "llm",
-            "message": "endpoint must resolve to a public IP address in SaaS mode",
+            "message": "endpoint must resolve to a public IP address when OUTBOUND_NETWORK_POLICY=strict",
         }
     ]
 
 
-def test_validator_allows_speaches_local_base_url_in_oss(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "oss")
+def test_validator_allows_speaches_local_base_url_when_policy_is_off(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "off")
     validator = UserConfigurationValidator()
     config = SpeachesLLMConfiguration()
 
     assert validator._validate_service(config, "llm") == []
 
 
-def test_runtime_blocks_speaches_default_llm_base_url_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_runtime_blocks_speaches_default_llm_base_url_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(HTTPException) as exc_info:
         create_llm_service_from_provider(
@@ -165,8 +165,8 @@ def test_runtime_blocks_speaches_default_llm_base_url_in_saas(monkeypatch):
     assert "localhost" in exc_info.value.detail
 
 
-def test_runtime_blocks_openai_private_base_url_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_runtime_blocks_openai_private_base_url_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(HTTPException) as exc_info:
         create_llm_service_from_provider(
@@ -180,8 +180,8 @@ def test_runtime_blocks_openai_private_base_url_in_saas(monkeypatch):
     assert "public IP" in exc_info.value.detail
 
 
-def test_runtime_blocks_azure_private_endpoint_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_runtime_blocks_azure_private_endpoint_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(HTTPException) as exc_info:
         create_llm_service_from_provider(
@@ -198,8 +198,8 @@ def test_runtime_blocks_azure_private_endpoint_in_saas(monkeypatch):
 @pytest.mark.parametrize(
     "model", ["eleven_flash_v2_5", "eleven_v3_conversational", "eleven_v4_turbo"]
 )
-def test_runtime_blocks_elevenlabs_local_tts_base_url_in_saas(monkeypatch, model):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_runtime_blocks_elevenlabs_local_tts_base_url_when_strict(monkeypatch, model):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
     user_config = SimpleNamespace(
         tts=SimpleNamespace(
             provider=ServiceProviders.ELEVENLABS.value,
@@ -218,8 +218,8 @@ def test_runtime_blocks_elevenlabs_local_tts_base_url_in_saas(monkeypatch, model
     assert "localhost" in exc_info.value.detail
 
 
-def test_runtime_blocks_openai_stt_private_base_url_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_runtime_blocks_openai_stt_private_base_url_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
     user_config = SimpleNamespace(
         stt=SimpleNamespace(
             provider=ServiceProviders.OPENAI.value,
@@ -236,8 +236,8 @@ def test_runtime_blocks_openai_stt_private_base_url_in_saas(monkeypatch):
     assert "public IP" in exc_info.value.detail
 
 
-def test_runtime_blocks_openai_stt_localhost_base_url_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_runtime_blocks_openai_stt_localhost_base_url_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
     user_config = SimpleNamespace(
         stt=SimpleNamespace(
             provider=ServiceProviders.OPENAI.value,
@@ -254,8 +254,8 @@ def test_runtime_blocks_openai_stt_localhost_base_url_in_saas(monkeypatch):
     assert "localhost" in exc_info.value.detail
 
 
-def test_runtime_blocks_openai_tts_private_base_url_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_runtime_blocks_openai_tts_private_base_url_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
     user_config = SimpleNamespace(
         tts=SimpleNamespace(
             provider=ServiceProviders.OPENAI.value,
@@ -273,8 +273,8 @@ def test_runtime_blocks_openai_tts_private_base_url_in_saas(monkeypatch):
     assert "public IP" in exc_info.value.detail
 
 
-def test_runtime_blocks_openai_tts_localhost_base_url_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_runtime_blocks_openai_tts_localhost_base_url_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
     user_config = SimpleNamespace(
         tts=SimpleNamespace(
             provider=ServiceProviders.OPENAI.value,
@@ -292,8 +292,8 @@ def test_runtime_blocks_openai_tts_localhost_base_url_in_saas(monkeypatch):
     assert "localhost" in exc_info.value.detail
 
 
-def test_embedding_service_blocks_private_base_url_in_saas(monkeypatch):
-    monkeypatch.setattr("api.utils.url_security.DEPLOYMENT_MODE", "saas")
+def test_embedding_service_blocks_private_base_url_when_strict(monkeypatch):
+    monkeypatch.setattr("api.utils.url_security.OUTBOUND_NETWORK_POLICY", "strict")
 
     with pytest.raises(ValueError, match="public IP"):
         OpenAIEmbeddingService(

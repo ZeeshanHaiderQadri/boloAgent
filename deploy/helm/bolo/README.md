@@ -26,9 +26,15 @@ helm install bolo . \
   --set exposure.gatewayApi.gatewayClassName=istio
 ```
 
-`config.deploymentMode` is required: use `oss` for a self-hosted cluster or
-`saas` for a hosted, multi-tenant deployment. The chart refuses to render
+`config.deploymentMode` is required: use `oss` for a self-hosted cluster
+(including one that serves your own customers) or `saas` for the Dograh-hosted
+platform, which also enables its MPS billing paths. The chart refuses to render
 without it.
+
+`config.outboundNetworkPolicy` defaults to `strict`: user-configured model URLs
+and SMTP hosts must resolve to public addresses, and SMTP is limited to standard
+submission ports. Set it to `off` only when the cluster must reach a private
+model server or relay that you trust.
 
 See `examples/values-single-node.yaml`, `examples/values-managed.yaml`,
 and `examples/values-aws.yaml` for topology-specific overrides.

@@ -40,6 +40,10 @@ The platform provides Traefik, so you only deploy the app stack:
 
 1. Copy `.env.example` → `.env` and fill in `PUBLIC_HOST`, `TURN_HOST`, the
    secrets, and the three `TRAEFIK_*` values (matched to Hostinger's Traefik).
+   Keep `DEPLOYMENT_MODE=oss` for a self-hosted install (including one that
+   serves your own customers) and `OUTBOUND_NETWORK_POLICY=strict` so tenants
+   cannot point model URLs or SMTP at private addresses. `saas` is for the
+   Dograh-hosted platform and also enables its billing/MPS paths.
 2. Import / deploy `docker-compose.yaml`.
 3. Ensure the coturn UDP/TCP ports above are open in the firewall.
 

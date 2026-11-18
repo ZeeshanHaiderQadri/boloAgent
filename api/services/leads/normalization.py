@@ -10,9 +10,9 @@ import math
 import re
 from typing import Any
 
+from api.utils.email_validation import EMAIL_PATTERN, normalize_email
 from api.utils.telephony_address import normalize_telephony_address
 
-_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 _PHONE_SPLIT_RE = re.compile(r"\s*(?:[/;|,]|\bor\b)\s*", re.IGNORECASE)
 
 
@@ -104,9 +104,12 @@ def _first_email(*values: Any) -> str | None:
             else:
                 candidates = [str(value)]
         for candidate in candidates:
-            match = _EMAIL_RE.search(candidate)
-            if match:
-                return match.group(0).lower()[:320]
+            for match in EMAIL_PATTERN.finditer(candidate):
+                # Use the same validator as manual edits and campaign audiences:
+                # image filenames and placeholder domains are not addresses.
+                normalized = normalize_email(match.group(0))
+                if normalized:
+                    return normalized
     return None
 
 

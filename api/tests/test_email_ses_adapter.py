@@ -387,7 +387,7 @@ async def test_saas_egress_policy_rejection_is_a_configuration_error(
     def reject(host: str, **kwargs: Any) -> None:
         calls.append((host, kwargs))
         raise ValueError(
-            "SES endpoint must resolve to a public IP address in SaaS mode"
+            "SES endpoint must resolve to a public IP address when OUTBOUND_NETWORK_POLICY=strict"
         )
 
     monkeypatch.setattr(ses_module, "resolve_user_configured_service_host", reject)

@@ -29,6 +29,7 @@ exposure:
 config:
   environment: production
   deploymentMode: oss
+  outboundNetworkPolicy: strict
   logLevel: INFO
   backendApiEndpoint: https://aicalling.yourdomain.com   # kills the CF-tunnel fallback
   minioPublicEndpoint: https://aicalling.yourdomain.com  # browser fetches /voice-audio/ via Traefik
