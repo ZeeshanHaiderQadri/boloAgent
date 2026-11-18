@@ -41,13 +41,9 @@ suppression list is loaded once as a set of normalized addresses.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping
-
-from sqlalchemy import select
+from typing import Any, Mapping
 
 from api.db import db_client
-from api.db.lead_client import lead_filter_clauses
-from api.db.models import EmailSuppressionModel, LeadModel
 from api.enums import EmailCampaignAudienceType, EmailCampaignConsentPolicy
 from api.utils.email_validation import classify_email
 
@@ -199,19 +195,7 @@ async def _validated_explicit_ids(
     ids = sorted({int(lead_id) for lead_id in rule.lead_ids})
     if not ids:
         return []
-    async with db_client.async_session() as session:
-        found = set(
-            (
-                await session.execute(
-                    select(LeadModel.id).where(
-                        LeadModel.organization_id == organization_id,
-                        LeadModel.id.in_(ids),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
+    found = await db_client.audience_lead_ids(organization_id, ids)
     missing = [lead_id for lead_id in ids if lead_id not in found]
     if missing:
         # Do not say whether the ids exist elsewhere: another organization's
@@ -224,13 +208,7 @@ async def _validated_explicit_ids(
 
 
 async def _suppressed_addresses(organization_id: int) -> set[str]:
-    async with db_client.async_session() as session:
-        rows = await session.execute(
-            select(EmailSuppressionModel.email).where(
-                EmailSuppressionModel.organization_id == organization_id
-            )
-        )
-        return {str(value).strip().lower() for value in rows.scalars().all()}
+    return await db_client.suppressed_audience_addresses(organization_id)
 
 
 def _iter_lead_rows(
@@ -242,18 +220,13 @@ def _iter_lead_rows(
     """Return the streaming select for the audience.
 
     ``stream`` keeps one batch of rows on the server side; a preview over a
-    large filter never builds a list of every lead.
+    large filter never loads every lead into memory.
     """
-    clauses = lead_filter_clauses(organization_id, **filter_kwargs)
-    statement = select(
-        LeadModel.id,
-        LeadModel.email,
-        LeadModel.email_consent,
-        LeadModel.updated_at,
-    ).where(*clauses)
-    if lead_ids is not None:
-        statement = statement.where(LeadModel.id.in_(list(lead_ids)))
-    return statement.execution_options(yield_per=500)
+    return db_client.iter_audience_leads(
+        organization_id,
+        lead_ids=lead_ids,
+        filter_kwargs=filter_kwargs,
+    )
 
 
 async def resolve_audience(
@@ -288,50 +261,44 @@ async def resolve_audience(
     # Lower priority wins; then newest timestamp; then highest id.
     recipients: dict[str, tuple[int, float, int]] = {}
 
-    async with db_client.async_session() as session:
-        result = await session.stream(
-            _iter_lead_rows(
-                organization_id,
-                lead_ids=explicit_ids,
-                filter_kwargs=_filter_kwargs(rule),
-            )
-        )
-        async for row in result:
-            recipient_count += 1
-            raw_email = row.email
-            if not (raw_email or "").strip():
-                no_email += 1
+    async for lead_id, raw_email, consent_value, updated_at in _iter_lead_rows(
+        organization_id,
+        lead_ids=explicit_ids,
+        filter_kwargs=_filter_kwargs(rule),
+    ):
+        recipient_count += 1
+        if not (raw_email or "").strip():
+            no_email += 1
+            continue
+        address, reason = classify_email(raw_email)
+        if reason is not None or address is None:
+            invalid += 1
+            continue
+        if address in suppressed:
+            suppressed_count += 1
+            continue
+        consent = consent_value or "unknown"
+        if consent == "opted_out":
+            opted_out += 1
+            continue
+        if consent == "unknown":
+            unknown_leads += 1
+            if not include_unknown:
+                unknown_excluded += 1
                 continue
-            address, reason = classify_email(raw_email)
-            if reason is not None or address is None:
-                invalid += 1
-                continue
-            if address in suppressed:
-                suppressed_count += 1
-                continue
-            consent = row.email_consent or "unknown"
-            if consent == "opted_out":
-                opted_out += 1
-                continue
-            if consent == "unknown":
-                unknown_leads += 1
-                if not include_unknown:
-                    unknown_excluded += 1
-                    continue
-                priority = 1
-            else:  # opted_in
-                priority = 0
+            priority = 1
+        else:  # opted_in
+            priority = 0
 
-            eligible_leads += 1
-            updated_at = row.updated_at
-            stamp = updated_at.timestamp() if updated_at is not None else 0.0
-            current = recipients.get(address)
-            if current is None or (priority, -stamp, -row.id) < (
-                current[0],
-                -current[1],
-                -current[2],
-            ):
-                recipients[address] = (priority, stamp, row.id)
+        eligible_leads += 1
+        stamp = updated_at.timestamp() if updated_at is not None else 0.0
+        current = recipients.get(address)
+        if current is None or (priority, -stamp, -lead_id) < (
+            current[0],
+            -current[1],
+            -current[2],
+        ):
+            recipients[address] = (priority, stamp, lead_id)
 
     sample = [
         mask_address(address) for address in sorted(recipients)[: max(0, sample_size)]
