@@ -2160,8 +2160,20 @@ class EmailTemplateModel(Base):
 
     name = Column(String(255), nullable=False)
     subject = Column(String(998), nullable=False)
+    # The author's source (HTML, or the MJML subset Bolo compiles) and the
+    # sanitized result. Keeping both means an edit is never lossy and a message
+    # can snapshot exactly what it sent.
+    source_format = Column(
+        String(8), nullable=False, default="html", server_default=text("'html'")
+    )
+    source_body = Column(Text, nullable=False)
     html_body = Column(Text, nullable=False)
     text_body = Column(Text, nullable=True)
+    # True only when the source contains the {{unsubscribe_link}} placeholder.
+    # Campaign launch checks this flag instead of re-parsing HTML.
+    has_unsubscribe_placeholder = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
     created_by = Column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -2175,6 +2187,10 @@ class EmailTemplateModel(Base):
 
     __table_args__ = (
         UniqueConstraint("organization_id", "name", name="uq_email_templates_org_name"),
+        CheckConstraint(
+            "source_format IN ('html', 'mjml')",
+            name="ck_email_templates_source_format",
+        ),
         Index("ix_email_templates_organization_id", "organization_id"),
     )
 

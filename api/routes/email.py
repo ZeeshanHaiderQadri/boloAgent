@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from api.db import db_client
 from api.db.email_sender_client import (
@@ -24,11 +24,18 @@ from api.db.email_sender_client import (
     EmailResourceConflictError,
     EmailSenderInUseError,
 )
-from api.db.models import EmailDomainModel, EmailSenderModel, UserModel
+from api.db.email_template_client import EmailTemplateNameConflictError
+from api.db.models import (
+    EmailDomainModel,
+    EmailSenderModel,
+    EmailTemplateModel,
+    UserModel,
+)
 from api.enums import (
     EmailDomainStatus,
     EmailProvider,
     EmailSenderStatus,
+    EmailTemplateFormat,
     WebhookCredentialType,
 )
 from api.sdk_expose import sdk_expose
@@ -43,6 +50,16 @@ from api.services.email.adapter import (
 from api.services.email.limits import effective_limits, provider_limits
 from api.services.email.ses import SesEmailAdapter
 from api.services.email.smtp import SmtpEmailAdapter
+from api.services.email.templates import (
+    MERGE_FIELDS,
+    PreparedTemplate,
+    TemplateValidationError,
+    extract_merge_fields,
+    prepare_template,
+    render_prepared,
+    sample_values,
+)
+from api.utils.email_validation import classify_email
 
 router = APIRouter(prefix="/email")
 
@@ -135,6 +152,66 @@ class TestSendRequest(BaseModel):
 
 class TestSendResponse(BaseModel):
     provider_message_id: str
+    message: str
+
+
+class CreateEmailTemplateRequest(BaseModel):
+    name: str
+    subject: str
+    source_format: EmailTemplateFormat = EmailTemplateFormat.HTML
+    source: str
+
+
+class UpdateEmailTemplateRequest(BaseModel):
+    name: Optional[str] = None
+    subject: Optional[str] = None
+    source_format: Optional[EmailTemplateFormat] = None
+    source: Optional[str] = None
+
+
+class PreviewEmailTemplateRequest(BaseModel):
+    subject: str
+    source_format: EmailTemplateFormat = EmailTemplateFormat.HTML
+    source: str
+
+
+class EmailTemplateSummary(BaseModel):
+    uuid: str
+    name: str
+    subject: str
+    source_format: str
+    has_unsubscribe_placeholder: bool
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+
+class EmailTemplateResponse(EmailTemplateSummary):
+    source: str
+    html_body: str
+    text_body: str
+    merge_fields: list[str]
+    warnings: list[str]
+
+
+class PreviewEmailTemplateResponse(BaseModel):
+    subject: str
+    html: str
+    text: str
+    has_unsubscribe_placeholder: bool
+    warnings: list[str]
+
+
+class TestSendEmailTemplateRequest(BaseModel):
+    # Optional: the organization's default sender is used when omitted.
+    # Unknown fields are rejected so a client cannot smuggle in a recipient.
+    model_config = ConfigDict(extra="forbid")
+
+    sender_uuid: Optional[str] = None
+
+
+class TestSendEmailTemplateResponse(BaseModel):
+    provider_message_id: str
+    to_email: str
     message: str
 
 
@@ -865,3 +942,316 @@ async def list_email_providers() -> list[dict]:
         }
         for provider in EmailProvider
     ]
+
+
+# ----------------------------------------------------------------------
+# Template routes
+# ----------------------------------------------------------------------
+
+
+def _template_warnings(has_unsubscribe_placeholder: bool) -> list[str]:
+    if has_unsubscribe_placeholder:
+        return []
+    return [
+        "This template has no {{unsubscribe_link}} placeholder. Add one before "
+        "using it in a campaign."
+    ]
+
+
+def _template_summary(template: EmailTemplateModel) -> EmailTemplateSummary:
+    return EmailTemplateSummary(
+        uuid=template.template_uuid,
+        name=template.name,
+        subject=template.subject,
+        source_format=template.source_format,
+        has_unsubscribe_placeholder=template.has_unsubscribe_placeholder,
+        created_at=template.created_at,
+        updated_at=template.updated_at,
+    )
+
+
+def _template_response(template: EmailTemplateModel) -> EmailTemplateResponse:
+    return EmailTemplateResponse(
+        **_template_summary(template).model_dump(),
+        source=template.source_body,
+        html_body=template.html_body,
+        text_body=template.text_body or "",
+        merge_fields=extract_merge_fields(template.subject, template.source_body),
+        warnings=_template_warnings(template.has_unsubscribe_placeholder),
+    )
+
+
+def _prepared_from_model(template: EmailTemplateModel) -> PreparedTemplate:
+    return PreparedTemplate(
+        subject=template.subject,
+        source_format=template.source_format,
+        source=template.source_body,
+        html_body=template.html_body,
+        text_body=template.text_body or "",
+        has_unsubscribe_placeholder=template.has_unsubscribe_placeholder,
+        warnings=_template_warnings(template.has_unsubscribe_placeholder),
+    )
+
+
+async def _template_or_404(
+    organization_id: int, template_uuid: str
+) -> EmailTemplateModel:
+    template = await db_client.get_email_template(organization_id, template_uuid)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Email template not found")
+    return template
+
+
+def _compile_or_422(
+    *, subject: str, source_format: str, source: str
+) -> PreparedTemplate:
+    try:
+        return prepare_template(
+            subject=subject, source_format=source_format, source=source
+        )
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _copy_name(name: str, existing: set[str]) -> str:
+    """Return a unique "<name> (copy)" variant, keeping the 255 char limit."""
+    candidate = f"{name} (copy)"[:255]
+    counter = 2
+    while candidate in existing:
+        suffix = f" (copy {counter})"
+        candidate = f"{name[: 255 - len(suffix)]}{suffix}"
+        counter += 1
+    return candidate
+
+
+@router.get("/templates")
+async def list_email_templates(
+    user: UserModel = Depends(get_user),
+) -> list[EmailTemplateSummary]:
+    organization_id = _require_organization(user)
+    templates = await db_client.list_email_templates(organization_id)
+    return [_template_summary(template) for template in templates]
+
+
+@router.get("/templates/merge-fields")
+async def list_email_template_merge_fields(
+    user: UserModel = Depends(get_user),
+) -> list[dict]:
+    """Describe the merge fields the editor may use, with sample values."""
+    return [field.as_dict() for field in MERGE_FIELDS.values()]
+
+
+@router.post("/templates", status_code=201)
+async def create_email_template(
+    request: CreateEmailTemplateRequest,
+    user: UserModel = Depends(get_user),
+) -> EmailTemplateResponse:
+    organization_id = _require_organization(user)
+    name = _clean_text(request.name, field="Name", max_length=255)
+    prepared = _compile_or_422(
+        subject=request.subject,
+        source_format=request.source_format.value,
+        source=request.source,
+    )
+    try:
+        template = await db_client.create_email_template(
+            organization_id=organization_id,
+            user_id=user.id,
+            name=name,
+            subject=prepared.subject,
+            source_format=prepared.source_format,
+            source_body=prepared.source,
+            html_body=prepared.html_body,
+            text_body=prepared.text_body,
+            has_unsubscribe_placeholder=prepared.has_unsubscribe_placeholder,
+        )
+    except EmailTemplateNameConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _template_response(template)
+
+
+@router.post("/templates/preview")
+async def preview_email_template(
+    request: PreviewEmailTemplateRequest,
+    user: UserModel = Depends(get_user),
+) -> PreviewEmailTemplateResponse:
+    """Compile unsaved source and fill merge fields with fake sample values."""
+    prepared = _compile_or_422(
+        subject=request.subject,
+        source_format=request.source_format.value,
+        source=request.source,
+    )
+    rendered = render_prepared(prepared, sample_values())
+    return PreviewEmailTemplateResponse(
+        subject=rendered.subject,
+        html=rendered.html,
+        text=rendered.text,
+        has_unsubscribe_placeholder=rendered.has_unsubscribe_placeholder,
+        warnings=rendered.warnings,
+    )
+
+
+@router.get("/templates/{template_uuid}")
+async def get_email_template(
+    template_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> EmailTemplateResponse:
+    organization_id = _require_organization(user)
+    template = await _template_or_404(organization_id, template_uuid)
+    return _template_response(template)
+
+
+@router.patch("/templates/{template_uuid}")
+async def update_email_template(
+    template_uuid: str,
+    request: UpdateEmailTemplateRequest,
+    user: UserModel = Depends(get_user),
+) -> EmailTemplateResponse:
+    organization_id = _require_organization(user)
+    template = await _template_or_404(organization_id, template_uuid)
+
+    fields_set = request.model_fields_set
+    name = (
+        _clean_text(request.name, field="Name", max_length=255)
+        if "name" in fields_set and request.name is not None
+        else template.name
+    )
+    subject = (
+        request.subject
+        if "subject" in fields_set and request.subject is not None
+        else template.subject
+    )
+    source_format = (
+        request.source_format.value
+        if "source_format" in fields_set and request.source_format is not None
+        else template.source_format
+    )
+    source = (
+        request.source
+        if "source" in fields_set and request.source is not None
+        else template.source_body
+    )
+
+    prepared = _compile_or_422(
+        subject=subject, source_format=source_format, source=source
+    )
+    try:
+        updated = await db_client.update_email_template(
+            organization_id,
+            template_uuid,
+            name=name,
+            subject=prepared.subject,
+            source_format=prepared.source_format,
+            source_body=prepared.source,
+            html_body=prepared.html_body,
+            text_body=prepared.text_body,
+            has_unsubscribe_placeholder=prepared.has_unsubscribe_placeholder,
+        )
+    except EmailTemplateNameConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Email template not found")
+    return _template_response(updated)
+
+
+@router.post("/templates/{template_uuid}/duplicate", status_code=201)
+async def duplicate_email_template(
+    template_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> EmailTemplateResponse:
+    organization_id = _require_organization(user)
+    template = await _template_or_404(organization_id, template_uuid)
+    existing = {
+        item.name for item in await db_client.list_email_templates(organization_id)
+    }
+    try:
+        copy = await db_client.create_email_template(
+            organization_id=organization_id,
+            user_id=user.id,
+            name=_copy_name(template.name, existing),
+            subject=template.subject,
+            source_format=template.source_format,
+            source_body=template.source_body,
+            html_body=template.html_body,
+            text_body=template.text_body,
+            has_unsubscribe_placeholder=template.has_unsubscribe_placeholder,
+        )
+    except EmailTemplateNameConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _template_response(copy)
+
+
+@router.delete("/templates/{template_uuid}")
+async def delete_email_template(
+    template_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> dict:
+    organization_id = _require_organization(user)
+    deleted = await db_client.delete_email_template(organization_id, template_uuid)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Email template not found")
+    return {"status": "deleted", "uuid": template_uuid}
+
+
+@router.post("/templates/{template_uuid}/test-send")
+async def test_send_email_template(
+    template_uuid: str,
+    request: TestSendEmailTemplateRequest,
+    user: UserModel = Depends(get_user),
+) -> TestSendEmailTemplateResponse:
+    """Send one rendered copy to the signed-in user's own address.
+
+    There is deliberately no recipient field: a template test can never be
+    addressed to a lead, and sample merge values are fake.
+    """
+    organization_id = _require_organization(user)
+    template = await _template_or_404(organization_id, template_uuid)
+
+    normalized, reason = classify_email(user.email)
+    if normalized is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Add a valid email address to your account before sending a "
+                f"template test (the address was rejected: {reason})."
+            ),
+        )
+
+    if request.sender_uuid:
+        sender = await _sender_or_404(organization_id, request.sender_uuid)
+    else:
+        senders = await db_client.list_email_senders(organization_id)
+        if not senders:
+            raise HTTPException(
+                status_code=400,
+                detail="Add an email sender before sending a template test.",
+            )
+        sender = senders[0]
+
+    rendered = render_prepared(_prepared_from_model(template), sample_values())
+    message = OutboundEmail(
+        to_email=normalized,
+        subject=rendered.subject[:998],
+        html_body=rendered.html,
+        text_body=rendered.text,
+        headers={"X-Bolo-Test-Send": "email-template"},
+    )
+    adapter = await _adapter_for_sender(organization_id, sender)
+    try:
+        result = await adapter.send(message)
+    except EmailConfigurationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"The test message was rejected: {exc}",
+        ) from exc
+    except EmailDeliveryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return TestSendEmailTemplateResponse(
+        provider_message_id=result.provider_message_id,
+        to_email=normalized,
+        message=(
+            f"Test message accepted by {sender.provider} and sent to your own "
+            "account address. No lead was contacted."
+        ),
+    )
