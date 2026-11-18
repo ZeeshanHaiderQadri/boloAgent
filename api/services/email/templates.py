@@ -9,31 +9,39 @@ Merge fields use ``{{field_name}}``. Unknown fields are rejected when the
 template is saved, not when a campaign sends it, so a typo cannot silently ship
 as literal braces to a recipient.
 
-The sanitizer is an allowlist. It removes, rather than escapes:
+Sanitizing is delegated to `nh3`_ (a Rust binding to Ammonia), which parses the
+fragment once and works in linear time. Only these survive:
 
-* ``<script>``, ``<style>``, ``<iframe>``, ``<object>``, ``<embed>``,
-  ``<form>``, ``<input>``, ``<button>``, ``<textarea>``, ``<select>``,
-  ``<meta>``, ``<link>``, ``<base>`` and every other tag outside the list below;
-* every ``on*`` event handler attribute (``onclick``, ``onerror``, ...);
-* ``javascript:`` and ``vbscript:`` URLs in ``href``/``src``, and every scheme
-  other than http, https and mailto;
-* ``expression(...)``, ``javascript:``, ``vbscript:``, ``behavior:``,
-  ``-moz-binding`` and ``@import`` inside ``style`` attributes.
+* ordinary formatting, table and image tags (see ``_ALLOWED_TAGS``);
+* allowlisted attributes; every ``on*`` handler is removed because it is not
+  on the list;
+* ``href``/``src`` values whose scheme is http, https or mailto, or that are
+  relative (this is where ``{{unsubscribe_link}}`` lives). Invisible Unicode
+  characters are stripped before the scheme check, so ``javascript\\u200b:``
+  is rejected;
+* inline ``style`` declarations only for allowlisted properties, parsed with
+  tinycss2. Declarations containing ``url()``, ``expression()``, a dangerous
+  scheme or braces are dropped.
 
-Comments are removed too. Kept tags are ordinary formatting, tables, images,
-links, headings and lists — the markup email clients actually render.
+``script``, ``style``, ``iframe``, ``object``, ``embed``, ``noscript``,
+``template``, ``svg``, ``math``, ``title``, ``textarea``, ``xmp`` and
+``noframes`` are removed together with their contents, so a stripped block
+never leaks its text. Comments are removed too.
+
+.. _nh3: https://pypi.org/project/nh3/
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from html import escape as html_escape
 from html.parser import HTMLParser
 from typing import Mapping
 
-import bleach
-from bleach.css_sanitizer import CSSSanitizer
+import nh3
+import tinycss2
 
 from api.services.email.mjml import MjmlError, compile_mjml
 
@@ -46,7 +54,7 @@ UNSUBSCRIBE_FIELD = "unsubscribe_link"
 # real lead's unsubscribe page.
 UNSUBSCRIBE_SAMPLE_URL = "https://boloagent.com/unsubscribe/preview-sample"
 
-_ALLOWED_TAGS = [
+_ALLOWED_TAGS = {
     "a",
     "abbr",
     "b",
@@ -88,10 +96,10 @@ _ALLOWED_TAGS = [
     "tr",
     "u",
     "ul",
-]
+}
 
 _ALLOWED_ATTRIBUTES = {
-    "*": [
+    "*": {
         "style",
         "class",
         "title",
@@ -103,18 +111,38 @@ _ALLOWED_ATTRIBUTES = {
         "dir",
         "lang",
         "role",
-    ],
-    "a": ["href", "name", "target", "rel"],
-    "img": ["src", "alt", "border", "hspace", "vspace"],
-    "table": ["border", "cellpadding", "cellspacing"],
-    "td": ["colspan", "rowspan"],
-    "th": ["colspan", "rowspan", "scope"],
-    "font": ["color", "face", "size"],
-    "col": ["span"],
-    "ol": ["start", "type"],
+    },
+    "a": {"href", "name", "target", "rel"},
+    "img": {"src", "alt", "border", "hspace", "vspace"},
+    "table": {"border", "cellpadding", "cellspacing"},
+    "td": {"colspan", "rowspan"},
+    "th": {"colspan", "rowspan", "scope"},
+    "font": {"color", "face", "size"},
+    "col": {"span"},
+    "ol": {"start", "type"},
 }
 
-_ALLOWED_PROTOCOLS = ["http", "https", "mailto"]
+_ALLOWED_PROTOCOLS = {"http", "https", "mailto"}
+_URL_ATTRIBUTES = frozenset({"href", "src"})
+
+# Content-bearing elements whose text must not leak into the message once the
+# tag itself is dropped.
+_CLEAN_CONTENT_TAGS = {
+    "script",
+    "style",
+    "iframe",
+    "object",
+    "embed",
+    "noscript",
+    "template",
+    "svg",
+    "math",
+    "title",
+    "textarea",
+    "xmp",
+    "noframes",
+}
+
 
 # Inline styles are how email markup works. tinycss2 parses each declaration;
 # anything not listed here is dropped, which also rejects at-rules and
@@ -185,39 +213,22 @@ _ALLOWED_CSS_PROPERTIES = [
     "word-wrap",
 ]
 
-_CSS_SANITIZER = CSSSanitizer(allowed_css_properties=_ALLOWED_CSS_PROPERTIES)
+_ALLOWED_CSS_PROPERTY_SET = frozenset(_ALLOWED_CSS_PROPERTIES)
 
-_CLEANER = bleach.sanitizer.Cleaner(
-    tags=_ALLOWED_TAGS,
-    attributes=_ALLOWED_ATTRIBUTES,
-    protocols=_ALLOWED_PROTOCOLS,
-    css_sanitizer=_CSS_SANITIZER,
-    strip=True,
-    strip_comments=True,
+# A CSS declaration is dropped whole if it mentions any of these after
+# invisible characters are removed and letters are lower-cased.
+_UNSAFE_CSS_SUBSTRINGS = (
+    "expression",
+    "javascript:",
+    "vbscript:",
+    "behavior:",
+    "-moz-binding",
+    "@import",
 )
-
-_STYLE_ATTRIBUTE = re.compile(
-    r"""style\s*=\s*(?P<quote>["'])(?P<value>.*?)(?P=quote)""",
-    re.IGNORECASE | re.DOTALL,
-)
-_UNSAFE_CSS = re.compile(
-    r"expression\s*\(|javascript\s*:|vbscript\s*:|behavior\s*:|-moz-binding|@import",
-    re.IGNORECASE,
-)
-
-# Bleach removes a disallowed tag but keeps its text content, which would turn
-# ``<script>alert(1)</script>`` into the visible text ``alert(1)``. These blocks
-# are removed with their contents before the allowlist runs.
-_CONTENT_BLOCK_TAGS = (
-    "script",
-    "style",
-    "iframe",
-    "object",
-    "embed",
-    "noscript",
-    "template",
-    "svg",
-    "math",
+# Functions that can fetch a resource, read attributes or run script in
+# legacy clients. Plain value functions such as calc() are allowed.
+_UNSAFE_CSS_FUNCTIONS = frozenset(
+    {"url", "expression", "image-set", "element", "-moz-binding", "attr"}
 )
 
 _MERGE_PATTERN = re.compile(r"\{\{\s*([A-Za-z0-9_]+)\s*\}\}")
@@ -393,39 +404,96 @@ def normalize_subject(subject: str) -> str:
     return cleaned
 
 
-def _scrub_style_attributes(html: str) -> str:
-    def replace(match: re.Match[str]) -> str:
-        cleaned = _UNSAFE_CSS.sub("", match.group("value"))
-        return f'style="{cleaned}"'
+def _canonical_url(value: str) -> str:
+    """Drop control, format and whitespace characters before checking a scheme."""
+    return "".join(
+        character
+        for character in value
+        if ord(character) > 0x20
+        and not 0x7F <= ord(character) <= 0x9F
+        and unicodedata.category(character) not in {"Cc", "Cf", "Zl", "Zp", "Zs"}
+    )
 
-    return _STYLE_ATTRIBUTE.sub(replace, html)
+
+def _is_safe_url(value: str) -> bool:
+    canonical = _canonical_url(value)
+    authority = canonical.split("/", 1)[0]
+    authority = authority.split("?", 1)[0].split("#", 1)[0]
+    if ":" not in authority:
+        # Relative URL, including a merge-field placeholder such as
+        # {{unsubscribe_link}} and paths such as /unsubscribe.
+        return True
+    scheme = authority.split(":", 1)[0].strip().lower()
+    return scheme in _ALLOWED_PROTOCOLS
 
 
-def _remove_content_blocks(html: str) -> str:
-    cleaned = html
-    for tag in _CONTENT_BLOCK_TAGS:
-        paired = re.compile(
-            rf"<\s*{tag}\b[^>]*>.*?<\s*/\s*{tag}\s*>",
-            re.IGNORECASE | re.DOTALL,
-        )
-        previous = None
-        while previous != cleaned:
-            previous = cleaned
-            cleaned = paired.sub("", cleaned)
-        # An unclosed block would otherwise leak its contents past the tag.
-        cleaned = re.sub(
-            rf"<\s*{tag}\b[^>]*>.*\Z",
-            "",
-            cleaned,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-    return cleaned
+def _style_tokens_are_safe(tokens) -> bool:
+    for token in tokens:
+        if token.type in {"url", "bad-url", "error"}:
+            return False
+        if token.type == "function":
+            if token.lower_name in _UNSAFE_CSS_FUNCTIONS:
+                return False
+            if not _style_tokens_are_safe(token.arguments):
+                return False
+        elif token.type == "block":
+            if not _style_tokens_are_safe(token.content):
+                return False
+
+    serialized = tinycss2.serialize(tokens).lower()
+    canonical = _canonical_url(serialized)
+    if any(fragment in canonical for fragment in _UNSAFE_CSS_SUBSTRINGS):
+        return False
+    return not any(character in canonical for character in "<>{}")
+
+
+def _sanitize_style(value: str) -> str:
+    """Keep allowlisted declarations with safe values, dropping the rest."""
+    declarations: list[str] = []
+    for declaration in tinycss2.parse_declaration_list(
+        value, skip_comments=True, skip_whitespace=True
+    ):
+        if declaration.type != "declaration":
+            continue
+        if declaration.lower_name not in _ALLOWED_CSS_PROPERTY_SET:
+            continue
+        if not _style_tokens_are_safe(declaration.value):
+            continue
+        rendered = tinycss2.serialize(declaration.value).strip()
+        if not rendered:
+            continue
+        declarations.append(f"{declaration.lower_name}:{rendered}")
+    return ";".join(declarations) + (";" if declarations else "")
+
+
+def _filter_attribute(tag: str, attribute: str, value: str) -> str | None:
+    """nh3 callback: drop unsafe URLs and scrub inline styles in place."""
+    if attribute in _URL_ATTRIBUTES:
+        return value if _is_safe_url(value) else None
+    if attribute == "style":
+        return _sanitize_style(value)
+    return value
+
+
+_CLEANER = nh3.Cleaner(
+    tags=_ALLOWED_TAGS,
+    clean_content_tags=_CLEAN_CONTENT_TAGS,
+    attributes=_ALLOWED_ATTRIBUTES,
+    attribute_filter=_filter_attribute,
+    strip_comments=True,
+    # The allowlist keeps an author-supplied rel, so nh3 must not inject one.
+    link_rel=None,
+    url_schemes=_ALLOWED_PROTOCOLS,
+    filter_style_properties=_ALLOWED_CSS_PROPERTY_SET,
+)
 
 
 def sanitize_html(html: str) -> str:
-    """Return allowlisted HTML safe to store, preview and send."""
-    without_blocks = _remove_content_blocks(html)
-    return _scrub_style_attributes(_CLEANER.clean(without_blocks))
+    """Return allowlisted HTML safe to store, preview and send.
+
+    Idempotent: sanitizing the output again returns the same string.
+    """
+    return _CLEANER.clean(html)
 
 
 class _TextExtractor(HTMLParser):

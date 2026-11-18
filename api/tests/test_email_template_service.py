@@ -1,5 +1,8 @@
 """Template authoring primitives: sanitizing, merge fields, MJML, text fallback."""
 
+import time
+from html.parser import HTMLParser
+
 import pytest
 
 from api.services.email.mjml import MjmlError, compile_mjml
@@ -56,9 +59,9 @@ def test_sanitizer_strips_active_content_and_keeps_email_markup():
     assert "expression(" not in cleaned
     assert "background-image" not in cleaned
     assert "<!--" not in cleaned
-    # Ordinary content survives.
-    assert 'style="color:#333;"' in cleaned
-    assert '<p style="color:#333;">Hello</p>' in cleaned
+    # Ordinary content survives (nh3 normalizes away the trailing semicolon).
+    assert 'style="color:#333"' in cleaned
+    assert '<p style="color:#333">Hello</p>' in cleaned
     assert "<table><tbody><tr><td>kept</td></tr></tbody></table>" in cleaned
     assert 'href="{{unsubscribe_link}}"' in cleaned
 
@@ -66,6 +69,75 @@ def test_sanitizer_strips_active_content_and_keeps_email_markup():
 def test_sanitizer_removes_unclosed_script_even_without_a_closing_tag():
     cleaned = sanitize_html("<p>before</p><script>alert(1)")
     assert cleaned == "<p>before</p>"
+
+
+class _AttributeCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.attributes: list[tuple[str, str | None]] = []
+
+    def handle_starttag(self, tag, attrs):
+        self.attributes.extend(attrs)
+
+    handle_startendtag = handle_starttag
+
+
+def _attributes(html: str) -> dict[str, list[str | None]]:
+    collector = _AttributeCollector()
+    collector.feed(html)
+    return {
+        name: [value for other, value in collector.attributes if other == name]
+        for name, _ in collector.attributes
+    }
+
+
+def test_style_quote_payload_never_becomes_an_event_attribute():
+    cleaned = sanitize_html(
+        "<div style='font-family:\" onmouseover=\"alert(1)'>x</div>"
+    )
+    names = _attributes(cleaned)
+    assert "onmouseover" not in names
+    assert "style" in names
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '<a href="javascript\u200b:alert(1)">x</a>',
+        "\u200bjavascript:alert(1)",
+        '<a href="\u200bjavascript:alert(1)">x</a>',
+        '<a href="java\tscript:alert(1)">x</a>',
+        '<a href="&#106;avascript:alert(1)">x</a>',
+    ],
+)
+def test_invisible_and_encoded_javascript_urls_lose_the_href(payload):
+    cleaned = sanitize_html(payload)
+    assert "href" not in _attributes(cleaned)
+
+
+def test_many_repetitions_of_an_unclosed_script_are_linear_time():
+    source = "<script>" * 30_000
+    assert len(source.encode("utf-8")) < MAX_SOURCE_BYTES
+    started = time.perf_counter()
+    cleaned = sanitize_html(source)
+    elapsed = time.perf_counter() - started
+    assert cleaned == ""
+    assert elapsed < 1.0
+
+
+def test_script_tag_mentioned_as_text_removes_the_tag_and_its_content():
+    # Defined behaviour: the tag and everything it swallows are removed, so the
+    # visible sentence is truncated instead of leaking script source.
+    assert sanitize_html("<p>Use the <script> tag</p>") == "<p>Use the </p>"
+
+
+def test_sanitizing_is_idempotent():
+    source = (
+        '<div style="color:#333;background-image:url(https://tracker.example/x);'
+        'expression(alert(1))"><a href="{{unsubscribe_link}}">Unsubscribe</a></div>'
+    )
+    once = sanitize_html(source)
+    assert sanitize_html(once) == once
 
 
 def test_merge_fields_render_sample_values_and_fall_back_when_empty():
