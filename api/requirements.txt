@@ -42,3 +42,7 @@ langgraph-checkpoint==4.2.0
 openpyxl==3.1.5
 reportlab==5.1.0
 Pillow==13.0.0
+
+# Email template sanitizing. Bleach is Apache-2.0; tinycss2 is BSD-3-Clause.
+bleach[css]==6.3.0
+tinycss2==1.4.0
