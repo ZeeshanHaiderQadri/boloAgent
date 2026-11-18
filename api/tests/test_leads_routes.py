@@ -853,6 +853,7 @@ def test_recording_email_consent_stores_source_time_and_warning():
     assert activity["extra_metadata"]["to"] == "opted_in"
     assert activity["extra_metadata"]["source"] == "manual"
     assert activity["extra_metadata"]["bulk"] is False
+    assert activity["extra_metadata"]["changed"] is True
     assert "anti-spam" in activity["extra_metadata"]["warning"]
     # The audit row is committed with the consent change, not afterwards.
     db.add_lead_activity.assert_not_called()
@@ -879,6 +880,40 @@ def test_recording_email_consent_can_opt_out_without_a_reason():
     assert response.json()["email_consent"] == "opted_out"
     activities = db.update_lead.await_args.kwargs["activities"]
     assert activities[0]["body"] is None
+
+
+def test_reconfirming_the_same_consent_keeps_the_original_source_and_time():
+    db = MagicMock()
+    db.get_lead = AsyncMock(
+        return_value=_lead(
+            email_consent="opted_in",
+            email_consent_source="manual",
+            email_consent_at=NOW,
+        )
+    )
+    db.update_lead = AsyncMock()
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1/email-consent",
+            json={
+                "email_consent": "opted_in",
+                "reason": "Customer confirmed again by phone on 18 Nov.",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["email_consent"] == "opted_in"
+    assert response.json()["email_consent_source"] == "manual"
+    # Nothing changed, so the lead row and its original decision timestamp stay.
+    db.update_lead.assert_not_called()
+    activity = db.add_lead_activity.await_args.kwargs
+    assert activity["title"] == "Email consent confirmed: Opted in"
+    assert activity["body"] == "Customer confirmed again by phone on 18 Nov."
+    assert activity["metadata"]["changed"] is False
+    assert activity["metadata"]["from"] == "opted_in"
+    assert activity["metadata"]["to"] == "opted_in"
 
 
 def test_clearing_email_consent_removes_source_and_timestamp():

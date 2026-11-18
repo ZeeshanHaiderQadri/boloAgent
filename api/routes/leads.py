@@ -851,6 +851,7 @@ async def update_lead_email_consent(
         raise HTTPException(status_code=404, detail="Lead not found")
 
     now = datetime.now(UTC)
+    changed = lead.email_consent != request.email_consent
     activity = _email_consent_activity(
         lead,
         organization_id=organization_id,
@@ -859,15 +860,23 @@ async def update_lead_email_consent(
         source="manual",
         reason=request.reason,
         bulk=False,
+        changed=changed,
     )
-    updated = await db_client.update_lead(
-        lead_id,
-        organization_id,
-        activities=[activity],
-        **_email_consent_values(request.email_consent, source="manual", now=now),
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Lead not found")
+    if changed:
+        updated = await db_client.update_lead(
+            lead_id,
+            organization_id,
+            activities=[activity],
+            **_email_consent_values(request.email_consent, source="manual", now=now),
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Lead not found")
+    else:
+        # Re-confirming the same decision keeps the original source and
+        # timestamp: they describe when the decision was actually made.
+        activity["metadata"] = activity.pop("extra_metadata")
+        await db_client.add_lead_activity(**activity)
+        updated = lead
 
     return LeadResponse.model_validate(updated)
 
