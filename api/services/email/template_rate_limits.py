@@ -1,9 +1,10 @@
 """Abuse limits for email-template preview and test sends.
 
 These buckets are isolated from voice-call admission. Limits are hourly and
-fail closed: if Redis is unavailable every check returns ``False`` and the
-route answers 429. A test send reaches a real inbox, so an unavailable limiter
-must not become an open door.
+fail closed: if Redis is unavailable the check raises
+:class:`~api.services.call_concurrency.rate_limiter.RateLimiterUnavailable`,
+the route answers 503 instead of 429, and nothing is sent. A test send reaches
+a real inbox, so an unavailable limiter must not become an open door.
 
 There are no campaign-level caps here. Campaign sending has its own admission
 and sender limits.

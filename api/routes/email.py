@@ -40,6 +40,7 @@ from api.enums import (
 )
 from api.sdk_expose import sdk_expose
 from api.services.auth.depends import get_user
+from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
 from api.services.email.adapter import (
     EmailAdapter,
     EmailConfigurationError,
@@ -1088,7 +1089,14 @@ async def preview_email_template(
     user: UserModel = Depends(get_user),
 ) -> PreviewEmailTemplateResponse:
     """Compile unsaved source and fill merge fields with fake sample values."""
-    if not await allow_template_preview(user_id=user.id):
+    try:
+        allowed = await allow_template_preview(user_id=user.id)
+    except RateLimiterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Template preview is temporarily unavailable.",
+        ) from exc
+    if not allowed:
         raise HTTPException(
             status_code=429,
             detail=(
@@ -1225,9 +1233,16 @@ async def test_send_email_template(
     addressed to a lead, and sample merge values are fake.
     """
     organization_id = _require_organization(user)
-    if not await allow_template_test_send(
-        user_id=user.id, organization_id=organization_id
-    ):
+    try:
+        allowed = await allow_template_test_send(
+            user_id=user.id, organization_id=organization_id
+        )
+    except RateLimiterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=("Template test send is temporarily unavailable. Nothing was sent."),
+        ) from exc
+    if not allowed:
         raise HTTPException(
             status_code=429,
             detail=(

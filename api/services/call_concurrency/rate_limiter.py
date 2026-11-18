@@ -22,6 +22,14 @@ class ConcurrentSlotAcquisition:
     active_count: int
 
 
+class RateLimiterUnavailable(Exception):
+    """Redis could not answer an admission check.
+
+    Callers must not treat this as admission: a route that reaches a human
+    inbox should fail closed and answer 503 rather than 429.
+    """
+
+
 class RateLimiter:
     """Sliding window rate limiter to enforce strict per-second limits and concurrent call limits"""
 
@@ -103,8 +111,10 @@ class RateLimiter:
         The bucket must not collide with call admission; use a descriptive
         prefix such as ``email_template:test_send:user:<id>``.
 
-        Errors are logged and denied. A caller that reaches a real inbox must
-        treat Redis being unavailable as "no", not as "allow".
+        Raises :class:`RateLimiterUnavailable` when Redis cannot answer. No
+        token is consumed in that case; a caller that reaches a real inbox
+        must fail closed and report the limiter as unavailable, not as a
+        quota the user exhausted.
         """
         redis_client = await self._get_redis()
 
@@ -144,7 +154,7 @@ class RateLimiter:
             return bool(result)
         except Exception as e:
             logger.error(f"Rate limiter error for {bucket}: {e}")
-            return False
+            raise RateLimiterUnavailable(bucket) from e
 
     async def get_next_available_slot(
         self, organization_id: int, rate_limit: int = 1, *, scope_key: str | None = None

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from api.db.models import UserModel
+from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
 from api.services.email.adapter import ProviderSendResult
 
 UNSUBSCRIBE = '<p><a href="{{unsubscribe_link}}">Unsubscribe</a></p>'
@@ -541,3 +542,62 @@ async def test_test_send_refuses_an_unverified_sender(
 
     assert accepted.status_code == 200, accepted.text
     assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_preview_returns_503_when_the_limiter_is_unavailable(
+    db_session, test_client_factory, monkeypatch
+):
+    user, _ = await _make_user_and_org(db_session, "template_preview_down")
+
+    async def unavailable(**kwargs):
+        raise RateLimiterUnavailable("redis down")
+
+    monkeypatch.setattr("api.routes.email.allow_template_preview", unavailable)
+
+    async with test_client_factory(user) as client:
+        response = await client.post(
+            "/api/v1/email/templates/preview",
+            json={
+                "subject": "Hi",
+                "source_format": "html",
+                "source": "<p>Hello</p>",
+            },
+        )
+
+    assert response.status_code == 503
+    assert "Template preview is temporarily unavailable" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_test_send_returns_503_and_sends_nothing_when_the_limiter_is_down(
+    db_session, test_client_factory, monkeypatch
+):
+    user, org_id = await _make_user_and_org(
+        db_session, "template_send_down", email="owner@apex-software-demo.com"
+    )
+    sent: list = []
+
+    async def fake_adapter(organization_id, sender):
+        return _RecordingAdapter(sent)
+
+    async def unavailable(**kwargs):
+        raise RateLimiterUnavailable("redis down")
+
+    monkeypatch.setattr("api.routes.email._adapter_for_sender", fake_adapter)
+    monkeypatch.setattr("api.routes.email.allow_template_test_send", unavailable)
+
+    async with test_client_factory(user) as client:
+        sender = await client.post("/api/v1/email/senders", json=SMTP_SENDER)
+        assert sender.status_code == 201, sender.text
+        await db_session.mark_email_sender_verified(org_id, sender.json()["uuid"])
+        created = await _create(client)
+        uuid = created.json()["uuid"]
+        response = await client.post(
+            f"/api/v1/email/templates/{uuid}/test-send", json={}
+        )
+
+    assert response.status_code == 503
+    assert "temporarily unavailable" in response.json()["detail"]
+    assert "Nothing was sent" in response.json()["detail"]
+    assert sent == []

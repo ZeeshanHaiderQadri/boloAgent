@@ -4,7 +4,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from api.services.call_concurrency.rate_limiter import RateLimiter
+from api.services.call_concurrency.rate_limiter import (
+    RateLimiter,
+    RateLimiterUnavailable,
+)
 from api.services.email import template_rate_limits as limits
 
 
@@ -90,13 +93,11 @@ async def test_window_limiter_passes_limit_window_and_ttl():
 
 
 @pytest.mark.asyncio
-async def test_window_limiter_fails_closed_on_redis_errors():
+async def test_window_limiter_reports_unavailable_on_redis_errors():
     limiter = RateLimiter()
     limiter.redis_client = _BrokenRedis()
 
-    assert (
+    with pytest.raises(RateLimiterUnavailable):
         await limiter.acquire_token_in_window(
             "email_template:test_send:user:7", limit=10, window_seconds=3600
         )
-        is False
-    )
