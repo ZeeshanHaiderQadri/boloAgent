@@ -440,8 +440,18 @@ class LeadClient(BaseDBClient):
             return list(result.scalars().all())
 
     async def update_lead(
-        self, lead_id: int, organization_id: int, **values: Any
+        self,
+        lead_id: int,
+        organization_id: int,
+        *,
+        activities: list[dict[str, Any]] | None = None,
+        **values: Any,
     ) -> LeadModel | None:
+        """Update one lead and optionally append audit rows atomically.
+
+        ``activities`` are committed in the same transaction as the update, so
+        a consent change can never be persisted without its audit record.
+        """
         values["updated_at"] = datetime.now(UTC)
         async with self.async_session() as session:
             result = await session.execute(
@@ -454,13 +464,20 @@ class LeadClient(BaseDBClient):
                 .returning(LeadModel)
             )
             row = result.scalar_one_or_none()
+            if row is not None and activities:
+                session.add_all([LeadActivityModel(**item) for item in activities])
             await session.commit()
             if row is not None:
                 await session.refresh(row)
             return row
 
     async def bulk_update_leads(
-        self, organization_id: int, lead_ids: list[int], **values: Any
+        self,
+        organization_id: int,
+        lead_ids: list[int],
+        *,
+        activities: list[dict[str, Any]] | None = None,
+        **values: Any,
     ) -> int:
         if not lead_ids:
             return 0
@@ -476,6 +493,8 @@ class LeadClient(BaseDBClient):
                 .returning(LeadModel.id)
             )
             ids = list(result.scalars().all())
+            if ids and activities:
+                session.add_all([LeadActivityModel(**item) for item in activities])
             await session.commit()
             return len(ids)
 

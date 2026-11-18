@@ -845,15 +845,17 @@ def test_recording_email_consent_stores_source_time_and_warning():
     assert values["email_consent"] == "opted_in"
     assert values["email_consent_source"] == "manual"
     assert values["email_consent_at"] is not None
-    activity = db.add_lead_activity.await_args.kwargs
+    activity = values["activities"][0]
     assert activity["activity_type"] == "email_consent"
     assert activity["user_id"] == USER.id
     assert activity["body"] == "Customer asked to receive seasonal offers on 17 Nov."
-    assert activity["metadata"]["from"] == "unknown"
-    assert activity["metadata"]["to"] == "opted_in"
-    assert activity["metadata"]["source"] == "manual"
-    assert activity["metadata"]["bulk"] is False
-    assert "anti-spam" in activity["metadata"]["warning"]
+    assert activity["extra_metadata"]["from"] == "unknown"
+    assert activity["extra_metadata"]["to"] == "opted_in"
+    assert activity["extra_metadata"]["source"] == "manual"
+    assert activity["extra_metadata"]["bulk"] is False
+    assert "anti-spam" in activity["extra_metadata"]["warning"]
+    # The audit row is committed with the consent change, not afterwards.
+    db.add_lead_activity.assert_not_called()
 
 
 def test_recording_email_consent_can_opt_out_without_a_reason():
@@ -875,7 +877,8 @@ def test_recording_email_consent_can_opt_out_without_a_reason():
 
     assert response.status_code == 200, response.text
     assert response.json()["email_consent"] == "opted_out"
-    assert db.add_lead_activity.await_args.kwargs["body"] is None
+    activities = db.update_lead.await_args.kwargs["activities"]
+    assert activities[0]["body"] is None
 
 
 def test_clearing_email_consent_removes_source_and_timestamp():
@@ -930,12 +933,13 @@ def test_bulk_email_consent_updates_leads_and_logs_changed_rows():
     assert values["email_consent"] == "opted_in"
     assert values["email_consent_source"] == "bulk"
     assert values["email_consent_at"] is not None
-    activities = db.add_lead_activities_bulk.await_args.args[0]
-    # Only the rows whose consent actually changed get an activity entry.
+    activities = values["activities"]
     assert [item["lead_id"] for item in activities] == [1, 2]
     assert activities[0]["extra_metadata"]["source"] == "bulk"
     assert activities[0]["extra_metadata"]["bulk"] is True
     assert activities[0]["body"] == "All three signed up at the trade show booth."
+    # The audit rows are committed with the consent changes.
+    db.add_lead_activities_bulk.assert_not_called()
 
 
 def test_bulk_email_consent_requires_a_reason_for_opt_in():

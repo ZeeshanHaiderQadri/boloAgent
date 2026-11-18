@@ -771,11 +771,6 @@ async def bulk_update_lead_email_consent(
         raise HTTPException(status_code=404, detail="No matching leads")
 
     now = datetime.now(UTC)
-    updated = await db_client.bulk_update_leads(
-        organization_id,
-        [lead.id for lead in existing],
-        **_email_consent_values(request.email_consent, source="bulk", now=now),
-    )
     activities = [
         _email_consent_activity(
             lead,
@@ -789,7 +784,12 @@ async def bulk_update_lead_email_consent(
         for lead in existing
         if lead.email_consent != request.email_consent
     ]
-    await db_client.add_lead_activities_bulk(activities)
+    updated = await db_client.bulk_update_leads(
+        organization_id,
+        [lead.id for lead in existing],
+        activities=activities,
+        **_email_consent_values(request.email_consent, source="bulk", now=now),
+    )
     return BulkLeadEmailConsentResponse(updated=updated)
 
 
@@ -834,14 +834,6 @@ async def update_lead_email_consent(
         raise HTTPException(status_code=404, detail="Lead not found")
 
     now = datetime.now(UTC)
-    updated = await db_client.update_lead(
-        lead_id,
-        organization_id,
-        **_email_consent_values(request.email_consent, source="manual", now=now),
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
     activity = _email_consent_activity(
         lead,
         organization_id=organization_id,
@@ -851,8 +843,15 @@ async def update_lead_email_consent(
         reason=request.reason,
         bulk=False,
     )
-    activity["metadata"] = activity.pop("extra_metadata")
-    await db_client.add_lead_activity(**activity)
+    updated = await db_client.update_lead(
+        lead_id,
+        organization_id,
+        activities=[activity],
+        **_email_consent_values(request.email_consent, source="manual", now=now),
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
     return LeadResponse.model_validate(updated)
 
 
