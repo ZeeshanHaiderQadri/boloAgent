@@ -22,6 +22,17 @@ SMTP_SENDER = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _allow_template_limits(monkeypatch):
+    """Keep Redis out of the template API tests; limits have their own tests."""
+
+    async def allow(**kwargs):
+        return True
+
+    monkeypatch.setattr("api.routes.email.allow_template_preview", allow)
+    monkeypatch.setattr("api.routes.email.allow_template_test_send", allow)
+
+
 async def _make_user_and_org(db_session, slug: str, email: str | None = None):
     user, _ = await db_session.get_or_create_user_by_provider_id(f"{slug}_user")
     user_id = user.id
@@ -348,7 +359,7 @@ class _RecordingAdapter:
 async def test_test_send_goes_only_to_the_signed_in_user(
     db_session, test_client_factory, monkeypatch
 ):
-    user, _ = await _make_user_and_org(
+    user, org_id = await _make_user_and_org(
         db_session, "template_send", email="Owner@Apex-Software-Demo.com"
     )
     sent: list = []
@@ -361,6 +372,7 @@ async def test_test_send_goes_only_to_the_signed_in_user(
     async with test_client_factory(user) as client:
         sender = await client.post("/api/v1/email/senders", json=SMTP_SENDER)
         assert sender.status_code == 201, sender.text
+        await db_session.mark_email_sender_verified(org_id, sender.json()["uuid"])
         created = await _create(client)
         uuid = created.json()["uuid"]
         response = await client.post(
@@ -434,3 +446,98 @@ async def test_test_send_requires_an_account_address_and_a_sender(
         )
     assert missing_sender.status_code == 400
     assert "sender" in missing_sender.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_preview_returns_429_when_the_limit_is_exhausted(
+    db_session, test_client_factory, monkeypatch
+):
+    user, _ = await _make_user_and_org(db_session, "template_preview_limit")
+
+    async def deny(**kwargs):
+        return False
+
+    monkeypatch.setattr("api.routes.email.allow_template_preview", deny)
+
+    async with test_client_factory(user) as client:
+        response = await client.post(
+            "/api/v1/email/templates/preview",
+            json={
+                "subject": "Hi",
+                "source_format": "html",
+                "source": "<p>Hello</p>",
+            },
+        )
+
+    assert response.status_code == 429
+    assert "60" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_test_send_returns_429_and_sends_nothing_when_limited(
+    db_session, test_client_factory, monkeypatch
+):
+    user, org_id = await _make_user_and_org(
+        db_session, "template_send_limit", email="owner@apex-software-demo.com"
+    )
+    sent: list = []
+
+    async def fake_adapter(organization_id, sender):
+        return _RecordingAdapter(sent)
+
+    async def deny(**kwargs):
+        return False
+
+    monkeypatch.setattr("api.routes.email._adapter_for_sender", fake_adapter)
+    monkeypatch.setattr("api.routes.email.allow_template_test_send", deny)
+
+    async with test_client_factory(user) as client:
+        sender = await client.post("/api/v1/email/senders", json=SMTP_SENDER)
+        assert sender.status_code == 201, sender.text
+        await db_session.mark_email_sender_verified(org_id, sender.json()["uuid"])
+        created = await _create(client)
+        uuid = created.json()["uuid"]
+        response = await client.post(
+            f"/api/v1/email/templates/{uuid}/test-send", json={}
+        )
+
+    assert response.status_code == 429
+    assert "10" in response.json()["detail"]
+    assert "Nothing was sent" in response.json()["detail"]
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_test_send_refuses_an_unverified_sender(
+    db_session, test_client_factory, monkeypatch
+):
+    user, org_id = await _make_user_and_org(
+        db_session, "template_send_unverified", email="owner@apex-software-demo.com"
+    )
+    sent: list = []
+
+    async def fake_adapter(organization_id, sender):
+        return _RecordingAdapter(sent)
+
+    monkeypatch.setattr("api.routes.email._adapter_for_sender", fake_adapter)
+
+    async with test_client_factory(user) as client:
+        sender = await client.post("/api/v1/email/senders", json=SMTP_SENDER)
+        assert sender.status_code == 201, sender.text
+        sender_uuid = sender.json()["uuid"]
+        created = await _create(client)
+        uuid = created.json()["uuid"]
+        refused = await client.post(
+            f"/api/v1/email/templates/{uuid}/test-send", json={}
+        )
+        assert refused.status_code == 400
+        assert "Verify the sender" in refused.json()["detail"]
+        assert sent == []
+
+        await db_session.mark_email_sender_verified(org_id, sender_uuid)
+        accepted = await client.post(
+            f"/api/v1/email/templates/{uuid}/test-send", json={}
+        )
+
+    assert accepted.status_code == 200, accepted.text
+    assert len(sent) == 1

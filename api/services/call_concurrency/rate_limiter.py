@@ -90,6 +90,62 @@ class RateLimiter:
             # On error, be conservative and deny
             return False
 
+    async def acquire_token_in_window(
+        self,
+        bucket: str,
+        *,
+        limit: int,
+        window_seconds: float,
+    ) -> bool:
+        """Generic sliding-window admission for limits measured in hours.
+
+        Unlike :meth:`acquire_token`, callers name their own bucket and window.
+        The bucket must not collide with call admission; use a descriptive
+        prefix such as ``email_template:test_send:user:<id>``.
+
+        Errors are logged and denied. A caller that reaches a real inbox must
+        treat Redis being unavailable as "no", not as "allow".
+        """
+        redis_client = await self._get_redis()
+
+        key = f"rate_limit:{bucket}"
+        now = time.time()
+        window_start = now - window_seconds
+        lua_script = """
+        local key = KEYS[1]
+        local now = tonumber(ARGV[1])
+        local window_start = tonumber(ARGV[2])
+        local max_requests = tonumber(ARGV[3])
+        local ttl = tonumber(ARGV[4])
+
+        redis.call('ZREMRANGEBYSCORE', key, 0, window_start)
+
+        if redis.call('ZCARD', key) < max_requests then
+            redis.call('ZADD', key, now, ARGV[5])
+            redis.call('EXPIRE', key, ttl)
+            return 1
+        end
+        return 0
+        """
+
+        try:
+            result = await redis_client.eval(
+                lua_script,
+                1,
+                key,
+                now,
+                window_start,
+                limit,
+                # Keep the key a little past the window so the last token still
+                # expires naturally after the oldest entry ages out.
+                int(window_seconds) + 60,
+                uuid.uuid4().hex,
+            )
+            return bool(result)
+        except Exception as e:
+            logger.error(f"Rate limiter error for {bucket}: {e}")
+            return False
+
     async def get_next_available_slot(
         self, organization_id: int, rate_limit: int = 1, *, scope_key: str | None = None
     ) -> float:

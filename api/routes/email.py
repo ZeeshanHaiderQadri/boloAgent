@@ -50,6 +50,10 @@ from api.services.email.adapter import (
 from api.services.email.limits import effective_limits, provider_limits
 from api.services.email.ses import SesEmailAdapter
 from api.services.email.smtp import SmtpEmailAdapter
+from api.services.email.template_rate_limits import (
+    allow_template_preview,
+    allow_template_test_send,
+)
 from api.services.email.templates import (
     MERGE_FIELDS,
     PreparedTemplate,
@@ -1076,6 +1080,14 @@ async def preview_email_template(
     user: UserModel = Depends(get_user),
 ) -> PreviewEmailTemplateResponse:
     """Compile unsaved source and fill merge fields with fake sample values."""
+    if not await allow_template_preview(user_id=user.id):
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Too many template previews (limit 60 per hour). Try again in "
+                "about an hour."
+            ),
+        )
     prepared = _compile_or_422(
         subject=request.subject,
         source_format=request.source_format.value,
@@ -1205,6 +1217,16 @@ async def test_send_email_template(
     addressed to a lead, and sample merge values are fake.
     """
     organization_id = _require_organization(user)
+    if not await allow_template_test_send(
+        user_id=user.id, organization_id=organization_id
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Too many template test sends (limit 10 per hour per user and "
+                "organization). Nothing was sent. Try again in about an hour."
+            ),
+        )
     template = await _template_or_404(organization_id, template_uuid)
 
     normalized, reason = classify_email(user.email)
@@ -1227,6 +1249,15 @@ async def test_send_email_template(
                 detail="Add an email sender before sending a template test.",
             )
         sender = senders[0]
+
+    if sender.status != EmailSenderStatus.VERIFIED.value:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Verify the sender before sending a template test. A template "
+                "test must not be the first message from an unverified sender."
+            ),
+        )
 
     rendered = render_prepared(_prepared_from_model(template), sample_values())
     message = OutboundEmail(
