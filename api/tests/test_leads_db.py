@@ -334,7 +334,7 @@ async def test_scraper_email_change_resets_consent_and_records_why(db_session):
     await db_session.upsert_leads_for_search(
         search_id=search.id,
         organization_id=org.id,
-        leads=[_row("Apex Labs", "p1", email="old@apex.example.com")],
+        leads=[_row("Apex Labs", "p1", email="old@apex-software-demo.com")],
     )
     lead = (await db_session.list_leads(org.id))[0][0]
     await db_session.update_lead(
@@ -350,7 +350,7 @@ async def test_scraper_email_change_resets_consent_and_records_why(db_session):
     await db_session.upsert_leads_for_search(
         search_id=search.id,
         organization_id=org.id,
-        leads=[_row("Apex Labs", "p1", email="new@apex.example.com")],
+        leads=[_row("Apex Labs", "p1", email="new@apex-software-demo.com")],
     )
 
     lead_id = lead.id
@@ -360,7 +360,7 @@ async def test_scraper_email_change_resets_consent_and_records_why(db_session):
     # checking what actually landed in the database.
     inspect(refreshed).session.expire_all()
     refreshed = await db_session.get_lead(lead_id, org_id)
-    assert refreshed.email == "new@apex.example.com"
+    assert refreshed.email == "new@apex-software-demo.com"
     assert refreshed.email_consent == "unknown"
     assert refreshed.email_consent_source is None
     assert refreshed.email_consent_at is None
@@ -374,6 +374,6 @@ async def test_scraper_email_change_resets_consent_and_records_why(db_session):
     assert len(reset) == 1
     assert reset[0].extra_metadata["source"] == "scraper"
     assert reset[0].extra_metadata["from"] == "opted_in"
-    assert reset[0].extra_metadata["previous_email"] == "old@apex.example.com"
-    assert reset[0].extra_metadata["new_email"] == "new@apex.example.com"
-    assert "old@apex.example.com" in reset[0].body
+    assert reset[0].extra_metadata["previous_email"] == "old@apex-software-demo.com"
+    assert reset[0].extra_metadata["new_email"] == "new@apex-software-demo.com"
+    assert "old@apex-software-demo.com" in reset[0].body
