@@ -645,9 +645,13 @@ export type BulkLeadEmailConsentRequest = {
  */
 export type BulkLeadEmailConsentResponse = {
     /**
-     * Updated
+     * Matched
      */
-    updated: number;
+    matched: number;
+    /**
+     * Changed
+     */
+    changed: number;
 };
 
 /**

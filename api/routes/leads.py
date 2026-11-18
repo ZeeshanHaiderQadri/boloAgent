@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from loguru import logger
 
 from api.constants import (
+    EMAIL_CONSENT_WARNING,
     LEADS_DEFAULT_PROVIDER,
     LEADS_DISPATCH_MAX_LEADS,
     LEADS_ENABLE_DEMO_PROVIDER,
@@ -47,6 +48,12 @@ from api.schemas.leads import (
 )
 from api.services.auth.depends import get_user
 from api.services.leads.call_outcomes import call_outcome
+from api.services.leads.consent import (
+    consent_reset_values,
+    email_address_changed,
+    email_change_activity,
+    has_address_bound_decision,
+)
 from api.services.leads.dispatch import (
     DispatchError,
     DispatchQuotaError,
@@ -92,13 +99,6 @@ EMAIL_CONSENT_LABELS = {
     "opted_out": "Opted out",
 }
 
-# Stored with every consent activity so the audit trail shows exactly what the
-# operator was warned about when they made the decision.
-EMAIL_CONSENT_WARNING = (
-    "Only record consent you can prove. Marketing email without permission can "
-    "breach anti-spam law and damage your sending domain."
-)
-
 
 def _email_consent_values(
     consent: str, *, source: str, now: datetime
@@ -130,23 +130,29 @@ def _email_consent_activity(
     source: str,
     reason: str | None,
     bulk: bool,
+    changed: bool = True,
 ) -> dict:
+    before = EMAIL_CONSENT_LABELS.get(lead.email_consent, lead.email_consent)
+    after = EMAIL_CONSENT_LABELS.get(consent, consent)
+    if changed:
+        title = f"Email consent: {before} → {after}"
+    else:
+        # The lead already had this decision. The operator still supplied a
+        # reason, so keep it on the timeline instead of silently dropping it.
+        title = f"Email consent confirmed: {after}"
     return {
         "organization_id": organization_id,
         "lead_id": lead.id,
         "user_id": user_id,
         "activity_type": "email_consent",
-        "title": (
-            "Email consent: "
-            f"{EMAIL_CONSENT_LABELS.get(lead.email_consent, lead.email_consent)} → "
-            f"{EMAIL_CONSENT_LABELS.get(consent, consent)}"
-        ),
+        "title": title,
         "body": reason,
         "extra_metadata": {
             "from": lead.email_consent,
             "to": consent,
             "source": source,
             "bulk": bulk,
+            "changed": changed,
             "warning": EMAIL_CONSENT_WARNING,
         },
     }
@@ -777,11 +783,12 @@ async def bulk_update_lead_email_consent(
         raise HTTPException(status_code=404, detail="No matching leads")
 
     now = datetime.now(UTC)
-    updated = await db_client.bulk_update_leads(
-        organization_id,
-        [lead.id for lead in existing],
-        **_email_consent_values(request.email_consent, source="bulk", now=now),
-    )
+    changed_ids = [
+        lead.id for lead in existing if lead.email_consent != request.email_consent
+    ]
+    # Record the reason for every matched lead, including those already in the
+    # chosen state: the operator's explanation is part of the audit trail even
+    # when no column changes.
     activities = [
         _email_consent_activity(
             lead,
@@ -791,12 +798,17 @@ async def bulk_update_lead_email_consent(
             source="bulk",
             reason=request.reason,
             bulk=True,
+            changed=lead.email_consent != request.email_consent,
         )
         for lead in existing
-        if lead.email_consent != request.email_consent
     ]
-    await db_client.add_lead_activities_bulk(activities)
-    return BulkLeadEmailConsentResponse(updated=updated)
+    changed = await db_client.bulk_update_leads(
+        organization_id,
+        changed_ids,
+        activities=activities,
+        **_email_consent_values(request.email_consent, source="bulk", now=now),
+    )
+    return BulkLeadEmailConsentResponse(matched=len(existing), changed=changed)
 
 
 @router.post("/dispatch-campaign", response_model=LeadDispatchResponse)
@@ -840,14 +852,7 @@ async def update_lead_email_consent(
         raise HTTPException(status_code=404, detail="Lead not found")
 
     now = datetime.now(UTC)
-    updated = await db_client.update_lead(
-        lead_id,
-        organization_id,
-        **_email_consent_values(request.email_consent, source="manual", now=now),
-    )
-    if updated is None:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
+    changed = lead.email_consent != request.email_consent
     activity = _email_consent_activity(
         lead,
         organization_id=organization_id,
@@ -856,9 +861,24 @@ async def update_lead_email_consent(
         source="manual",
         reason=request.reason,
         bulk=False,
+        changed=changed,
     )
-    activity["metadata"] = activity.pop("extra_metadata")
-    await db_client.add_lead_activity(**activity)
+    if changed:
+        updated = await db_client.update_lead(
+            lead_id,
+            organization_id,
+            activities=[activity],
+            **_email_consent_values(request.email_consent, source="manual", now=now),
+        )
+        if updated is None:
+            raise HTTPException(status_code=404, detail="Lead not found")
+    else:
+        # Re-confirming the same decision keeps the original source and
+        # timestamp: they describe when the decision was actually made.
+        activity["metadata"] = activity.pop("extra_metadata")
+        await db_client.add_lead_activity(**activity)
+        updated = lead
+
     return LeadResponse.model_validate(updated)
 
 
@@ -956,7 +976,35 @@ async def update_lead(
             request.phone or None, request.country or lead.country
         )
 
-    updated = await db_client.update_lead(lead_id, organization_id, **values)
+    # Consent belongs to the address it was recorded for. If the operator
+    # changes the address, the old decision no longer covers this mailbox.
+    # Only a decision tied to an old address can be described as a reset; the
+    # lead_edit activity below still records the changed field.
+    consent_activities: list[dict] = []
+    if request.email is not None and email_address_changed(
+        lead.email, request.email or None
+    ):
+        if lead.email_consent != "unknown":
+            values.update(consent_reset_values())
+        if has_address_bound_decision(lead.email, lead.email_consent):
+            consent_activities.append(
+                email_change_activity(
+                    organization_id=organization_id,
+                    lead_id=lead_id,
+                    user_id=user.id,
+                    previous_email=lead.email,
+                    new_email=request.email or None,
+                    previous_consent=lead.email_consent,
+                    source="manual",
+                )
+            )
+
+    updated = await db_client.update_lead(
+        lead_id,
+        organization_id,
+        activities=consent_activities or None,
+        **values,
+    )
     if updated is None:
         raise HTTPException(status_code=404, detail="Lead not found")
 

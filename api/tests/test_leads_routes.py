@@ -60,8 +60,8 @@ def _lead(**overrides):
         "postal_code": "94105",
         "phone": "(415) 555-0142",
         "phone_e164": "+14155550142",
-        "email": "hello@apex.example.com",
-        "website": "https://apex.example.com",
+        "email": "hello@apex-software-demo.com",
+        "website": "https://apex-software-demo.com",
         "place_id": "abc123",
         "cid": None,
         "rating": 4.6,
@@ -845,15 +845,18 @@ def test_recording_email_consent_stores_source_time_and_warning():
     assert values["email_consent"] == "opted_in"
     assert values["email_consent_source"] == "manual"
     assert values["email_consent_at"] is not None
-    activity = db.add_lead_activity.await_args.kwargs
+    activity = values["activities"][0]
     assert activity["activity_type"] == "email_consent"
     assert activity["user_id"] == USER.id
     assert activity["body"] == "Customer asked to receive seasonal offers on 17 Nov."
-    assert activity["metadata"]["from"] == "unknown"
-    assert activity["metadata"]["to"] == "opted_in"
-    assert activity["metadata"]["source"] == "manual"
-    assert activity["metadata"]["bulk"] is False
-    assert "anti-spam" in activity["metadata"]["warning"]
+    assert activity["extra_metadata"]["from"] == "unknown"
+    assert activity["extra_metadata"]["to"] == "opted_in"
+    assert activity["extra_metadata"]["source"] == "manual"
+    assert activity["extra_metadata"]["bulk"] is False
+    assert activity["extra_metadata"]["changed"] is True
+    assert "anti-spam" in activity["extra_metadata"]["warning"]
+    # The audit row is committed with the consent change, not afterwards.
+    db.add_lead_activity.assert_not_called()
 
 
 def test_recording_email_consent_can_opt_out_without_a_reason():
@@ -875,7 +878,42 @@ def test_recording_email_consent_can_opt_out_without_a_reason():
 
     assert response.status_code == 200, response.text
     assert response.json()["email_consent"] == "opted_out"
-    assert db.add_lead_activity.await_args.kwargs["body"] is None
+    activities = db.update_lead.await_args.kwargs["activities"]
+    assert activities[0]["body"] is None
+
+
+def test_reconfirming_the_same_consent_keeps_the_original_source_and_time():
+    db = MagicMock()
+    db.get_lead = AsyncMock(
+        return_value=_lead(
+            email_consent="opted_in",
+            email_consent_source="manual",
+            email_consent_at=NOW,
+        )
+    )
+    db.update_lead = AsyncMock()
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1/email-consent",
+            json={
+                "email_consent": "opted_in",
+                "reason": "Customer confirmed again by phone on 18 Nov.",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["email_consent"] == "opted_in"
+    assert response.json()["email_consent_source"] == "manual"
+    # Nothing changed, so the lead row and its original decision timestamp stay.
+    db.update_lead.assert_not_called()
+    activity = db.add_lead_activity.await_args.kwargs
+    assert activity["title"] == "Email consent confirmed: Opted in"
+    assert activity["body"] == "Customer confirmed again by phone on 18 Nov."
+    assert activity["metadata"]["changed"] is False
+    assert activity["metadata"]["from"] == "opted_in"
+    assert activity["metadata"]["to"] == "opted_in"
 
 
 def test_clearing_email_consent_removes_source_and_timestamp():
@@ -902,7 +940,7 @@ def test_clearing_email_consent_removes_source_and_timestamp():
     assert values["email_consent_at"] is None
 
 
-def test_bulk_email_consent_updates_leads_and_logs_changed_rows():
+def test_bulk_email_consent_updates_leads_and_logs_every_matched_row():
     db = MagicMock()
     db.get_leads_by_ids = AsyncMock(
         return_value=[
@@ -911,7 +949,7 @@ def test_bulk_email_consent_updates_leads_and_logs_changed_rows():
             _lead(id=3, email_consent="opted_in"),
         ]
     )
-    db.bulk_update_leads = AsyncMock(return_value=3)
+    db.bulk_update_leads = AsyncMock(return_value=2)
     db.add_lead_activities_bulk = AsyncMock()
 
     with patch("api.routes.leads.db_client", db):
@@ -925,17 +963,50 @@ def test_bulk_email_consent_updates_leads_and_logs_changed_rows():
         )
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"updated": 3}
+    assert response.json() == {"matched": 3, "changed": 2}
+    # Only rows whose decision actually changed are written.
+    assert db.bulk_update_leads.await_args.args[1] == [1, 2]
     values = db.bulk_update_leads.await_args.kwargs
     assert values["email_consent"] == "opted_in"
     assert values["email_consent_source"] == "bulk"
     assert values["email_consent_at"] is not None
-    activities = db.add_lead_activities_bulk.await_args.args[0]
-    # Only the rows whose consent actually changed get an activity entry.
-    assert [item["lead_id"] for item in activities] == [1, 2]
+    activities = values["activities"]
+    assert [item["lead_id"] for item in activities] == [1, 2, 3]
     assert activities[0]["extra_metadata"]["source"] == "bulk"
     assert activities[0]["extra_metadata"]["bulk"] is True
+    assert activities[0]["extra_metadata"]["changed"] is True
     assert activities[0]["body"] == "All three signed up at the trade show booth."
+    # The third lead was already opted in. Its reason is still recorded.
+    assert activities[2]["extra_metadata"]["changed"] is False
+    assert activities[2]["title"] == "Email consent confirmed: Opted in"
+    assert activities[2]["body"] == "All three signed up at the trade show booth."
+    # The audit rows are committed with the consent changes.
+    db.add_lead_activities_bulk.assert_not_called()
+
+
+def test_bulk_email_consent_records_a_reason_when_nothing_changes():
+    db = MagicMock()
+    db.get_leads_by_ids = AsyncMock(
+        return_value=[_lead(id=1, email_consent="opted_in")]
+    )
+    db.bulk_update_leads = AsyncMock(return_value=0)
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().post(
+            "/leads/email-consent/bulk",
+            json={
+                "lead_ids": [1],
+                "email_consent": "opted_in",
+                "reason": "Signed the form again at the follow-up meeting.",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"matched": 1, "changed": 0}
+    assert db.bulk_update_leads.await_args.args[1] == []
+    activities = db.bulk_update_leads.await_args.kwargs["activities"]
+    assert len(activities) == 1
+    assert activities[0]["body"] == "Signed the form again at the follow-up meeting."
 
 
 def test_bulk_email_consent_requires_a_reason_for_opt_in():
@@ -946,3 +1017,108 @@ def test_bulk_email_consent_requires_a_reason_for_opt_in():
         )
 
     assert response.status_code == 422
+
+
+def test_editing_the_email_resets_consent_in_the_same_update():
+    db = MagicMock()
+    db.get_lead = AsyncMock(
+        return_value=_lead(
+            email="old@apex-software-demo.com",
+            email_consent="opted_in",
+            email_consent_source="manual",
+            email_consent_at=NOW,
+        )
+    )
+    db.update_lead = AsyncMock(
+        return_value=_lead(email="new@apex-software-demo.com", email_consent="unknown")
+    )
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1", json={"email": "new@apex-software-demo.com"}
+        )
+
+    assert response.status_code == 200, response.text
+    values = db.update_lead.await_args.kwargs
+    assert values["email"] == "new@apex-software-demo.com"
+    assert values["email_consent"] == "unknown"
+    assert values["email_consent_source"] is None
+    assert values["email_consent_at"] is None
+    activity = values["activities"][0]
+    assert activity["extra_metadata"]["reason"] == "email_changed"
+    assert activity["extra_metadata"]["from"] == "opted_in"
+    assert activity["extra_metadata"]["source"] == "manual"
+    assert "old@apex-software-demo.com" in activity["body"]
+    assert "new@apex-software-demo.com" in activity["body"]
+
+
+def test_editing_the_email_without_consent_does_not_log_a_reset():
+    db = MagicMock()
+    db.get_lead = AsyncMock(
+        return_value=_lead(email="old@apex-software-demo.com", email_consent="unknown")
+    )
+    db.update_lead = AsyncMock(
+        return_value=_lead(email="new@apex-software-demo.com", email_consent="unknown")
+    )
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1", json={"email": "new@apex-software-demo.com"}
+        )
+
+    assert response.status_code == 200, response.text
+    values = db.update_lead.await_args.kwargs
+    assert "email_consent" not in values
+    assert values["activities"] is None
+    # The ordinary edit activity already records that the email changed.
+    activity = db.add_lead_activity.await_args.kwargs
+    assert activity["activity_type"] == "lead_edit"
+    assert "email" in activity["metadata"]["fields"]
+
+
+def test_adding_an_address_clears_consent_that_had_no_address():
+    db = MagicMock()
+    db.get_lead = AsyncMock(
+        return_value=_lead(
+            email=None,
+            email_consent="opted_in",
+            email_consent_source="bulk",
+            email_consent_at=NOW,
+        )
+    )
+    db.update_lead = AsyncMock(
+        return_value=_lead(
+            email="hello@apex-software-demo.com", email_consent="unknown"
+        )
+    )
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1", json={"email": "hello@apex-software-demo.com"}
+        )
+
+    assert response.status_code == 200, response.text
+    values = db.update_lead.await_args.kwargs
+    assert values["email_consent"] == "unknown"
+    # Nothing was tied to an old address, so this is not called a reset.
+    assert values["activities"] is None
+
+
+def test_editing_only_the_email_case_keeps_consent():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead(email="Hello@Apex-Software-Demo.com"))
+    db.update_lead = AsyncMock(return_value=_lead(email="hello@apex-software-demo.com"))
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch(
+            "/leads/1", json={"email": "hello@apex-software-demo.com"}
+        )
+
+    assert response.status_code == 200, response.text
+    values = db.update_lead.await_args.kwargs
+    assert "email_consent" not in values
+    assert values["activities"] is None
