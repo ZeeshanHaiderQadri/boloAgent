@@ -244,6 +244,23 @@ async def test_mjml_is_compiled_on_the_server(db_session, test_client_factory):
 
 
 @pytest.mark.asyncio
+async def test_comment_only_unsubscribe_placeholder_is_not_a_link(
+    db_session, test_client_factory
+):
+    """Only a sanitized anchor href counts; a comment is stripped and ignored."""
+    user, _ = await _make_user_and_org(db_session, "template_unsub_comment")
+    source = "<p>Hello {{business_name}}</p><!-- {{unsubscribe_link}} -->"
+    async with test_client_factory(user) as client:
+        response = await _create(client, _payload(source=source))
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["has_unsubscribe_placeholder"] is False
+    assert "unsubscribe_link" in body["warnings"][0]
+    assert "<!--" not in body["html_body"]
+
+
+@pytest.mark.asyncio
 async def test_names_are_unique_per_organization_and_every_lookup_is_scoped(
     db_session, test_client_factory
 ):

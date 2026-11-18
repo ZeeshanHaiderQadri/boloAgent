@@ -348,8 +348,38 @@ def validate_merge_fields(*texts: str) -> list[str]:
     return used
 
 
-def has_unsubscribe_placeholder(subject: str, source: str) -> bool:
-    return UNSUBSCRIBE_FIELD in extract_merge_fields(subject, source)
+_UNSUBSCRIBE_IN_HREF = re.compile(r"\{\{\s*unsubscribe_link\s*\}\}")
+
+
+class _AnchorHrefCollector(HTMLParser):
+    """Find an unsubscribe placeholder in a real anchor href."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.found = False
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.lower() != "a":
+            return
+        for name, value in attrs:
+            if name.lower() == "href" and value:
+                if _UNSUBSCRIBE_IN_HREF.search(value):
+                    self.found = True
+                    return
+
+
+def has_unsubscribe_placeholder(html: str) -> bool:
+    """Whether *sanitized* HTML has an anchor whose href contains the placeholder.
+
+    Only a real ``<a href="...">`` counts, with optional spaces inside the
+    braces. A mention in text, a comment, a script, a title attribute, the
+    subject or an ``mj-title`` does not. Campaign launch can call this on the
+    compiled message before sending.
+    """
+    collector = _AnchorHrefCollector()
+    collector.feed(html)
+    collector.close()
+    return collector.found
 
 
 def _subject_value(value: str) -> str:
@@ -383,8 +413,18 @@ def render_subject(subject: str, values: Mapping[str, str]) -> str:
     return _subject_value(_render(subject, values, escape_values=False, subject=True))
 
 
-def render_html(html: str, values: Mapping[str, str]) -> str:
+def _substitute_html(html: str, values: Mapping[str, str]) -> str:
+    """Substitute escaped merge values into compiled HTML. Private and raw."""
     return _render(html, values, escape_values=True)
+
+
+def render_html(html: str, values: Mapping[str, str]) -> str:
+    """Substitute merge values and sanitize the result.
+
+    This is the function production sends must use. ``_substitute_html`` is
+    private because a lead value can arrive after the template was sanitized.
+    """
+    return sanitize_html(_substitute_html(html, values))
 
 
 def render_text(text: str, values: Mapping[str, str]) -> str:
@@ -630,7 +670,9 @@ def prepare_template(
             f"{MAX_COMPILED_BYTES} bytes."
         )
 
-    unsubscribe = has_unsubscribe_placeholder(cleaned_subject, cleaned_source)
+    # Only a real anchor href counts, and only after sanitizing: a placeholder
+    # in a comment, script, title or plain text must not satisfy the check.
+    unsubscribe = has_unsubscribe_placeholder(sanitized)
     warnings: list[str] = []
     if not unsubscribe:
         warnings.append(
@@ -675,8 +717,15 @@ def render_preview(
 def render_prepared(
     prepared: PreparedTemplate, values: Mapping[str, str] | None = None
 ) -> RenderedTemplate:
+    """Render for preview or a test send.
+
+    The unsubscribe flag comes from ``prepared``, which checked the sanitized
+    source before substitution. It is deliberately not recomputed on the
+    rendered output: substitution replaces the placeholder with a real URL, so
+    a recomputed check would always report ``False``.
+    """
     chosen = values or sample_values()
-    rendered_html = sanitize_html(render_html(prepared.html_body, chosen))
+    rendered_html = render_html(prepared.html_body, chosen)
     return RenderedTemplate(
         subject=render_subject(prepared.subject, chosen),
         html=rendered_html,

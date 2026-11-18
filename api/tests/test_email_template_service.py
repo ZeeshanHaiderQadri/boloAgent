@@ -10,7 +10,6 @@ from api.services.email.templates import (
     MAX_SOURCE_BYTES,
     TemplateValidationError,
     extract_merge_fields,
-    has_unsubscribe_placeholder,
     html_to_text,
     prepare_template,
     render_html,
@@ -158,12 +157,6 @@ def test_merge_fields_render_sample_values_and_fall_back_when_empty():
 def test_subject_merge_values_cannot_inject_newlines():
     subject = render_subject("Hi {{business_name}}", {"business_name": "A\nB"})
     assert subject == "Hi A B"
-
-
-def test_unsubscribe_placeholder_detection_covers_subject_and_body():
-    assert has_unsubscribe_placeholder("Hello", UNSUBSCRIBE)
-    assert has_unsubscribe_placeholder("{{unsubscribe_link}}", "<p>Hello</p>")
-    assert not has_unsubscribe_placeholder("Hello", "<p>No link</p>")
 
 
 def test_prepare_template_sanitizes_compiles_and_flags_a_missing_unsubscribe():

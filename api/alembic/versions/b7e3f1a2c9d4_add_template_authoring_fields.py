@@ -24,6 +24,16 @@ down_revision: Union[str, None] = "a4c9d2e17f60"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+# Mirrors ``services.email.templates.has_unsubscribe_placeholder``: only an
+# anchor whose href contains the placeholder counts, with optional spaces
+# inside the braces. Everything else (text, comments, scripts, title
+# attributes, the subject) is ignored.
+_UNSUBSCRIBE_BACKFILL_SQL = r"""
+UPDATE email_templates
+SET has_unsubscribe_placeholder = true
+WHERE html_body ~* '<a[[:space:]][^>]*href[[:space:]]*=[[:space:]]*["'']?[^>]*\{\{[[:space:]]*unsubscribe_link[[:space:]]*\}\}'
+"""
+
 
 def upgrade() -> None:
     op.add_column(
@@ -52,11 +62,7 @@ def upgrade() -> None:
     op.execute(
         "UPDATE email_templates SET source_body = html_body WHERE source_body IS NULL"
     )
-    op.execute(
-        "UPDATE email_templates SET has_unsubscribe_placeholder = true "
-        "WHERE position('{{unsubscribe_link}}' in html_body) > 0 "
-        "OR position('{{unsubscribe_link}}' in subject) > 0"
-    )
+    op.execute(_UNSUBSCRIBE_BACKFILL_SQL)
     op.alter_column(
         "email_templates",
         "source_body",

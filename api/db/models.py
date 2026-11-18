@@ -2166,13 +2166,27 @@ class EmailTemplateModel(Base):
     source_format = Column(
         String(8), nullable=False, default="html", server_default=text("'html'")
     )
-    source_body = Column(Text, nullable=False)
+    source_body = Column(
+        Text,
+        nullable=False,
+        comment="Raw, untrusted author source; never render it as HTML directly.",
+    )
     html_body = Column(Text, nullable=False)
     text_body = Column(Text, nullable=True)
-    # True only when the source contains the {{unsubscribe_link}} placeholder.
-    # Campaign launch checks this flag instead of re-parsing HTML.
+    # True only when the sanitized html_body contains an <a href> with the
+    # {{unsubscribe_link}} placeholder (spaces inside the braces allowed). A
+    # mention in text, a comment, a script, a title attribute or the subject
+    # does not count. Campaign launch checks this flag instead of re-parsing
+    # HTML, and the campaign engine re-checks the rendered message at send time.
     has_unsubscribe_placeholder = Column(
-        Boolean, nullable=False, default=False, server_default=text("false")
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+        comment=(
+            "Set only when sanitized html_body has an <a href> containing "
+            "{{unsubscribe_link}}."
+        ),
     )
 
     created_by = Column(
