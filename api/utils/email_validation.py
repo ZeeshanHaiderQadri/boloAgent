@@ -20,7 +20,12 @@ MAX_DOMAIN_LENGTH = 253
 MAX_DOMAIN_LABEL_LENGTH = 63
 
 # The same shape used to pull candidates out of scraped text and CSV cells.
-EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+# The trailing boundary keeps a punycode TLD such as ``xn--p1ai`` intact instead
+# of letting the ASCII branch stop at ``xn``.
+EMAIL_PATTERN = re.compile(
+    r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\."
+    r"(?:[A-Za-z]{2,}|xn--[A-Za-z0-9\-]+)(?![A-Za-z0-9\-])"
+)
 
 _LOCAL_PART_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.\-]+$")
 
@@ -171,7 +176,7 @@ def classify_email(value: object) -> tuple[str | None, str | None]:
     tld = labels[-1]
     if tld in _FILE_EXTENSION_TLDS:
         return None, "file_extension"
-    if len(tld) < 2 or not tld.isalpha():
+    if len(tld) < 2 or not (tld.isalpha() or tld.startswith("xn--")):
         return None, "invalid_domain"
 
     return f"{local.lower()}@{domain}", None

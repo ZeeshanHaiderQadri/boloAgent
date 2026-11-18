@@ -19,6 +19,8 @@ from api.utils.email_validation import (
         ("mailto:hello@apex-software.com", "hello@apex-software.com"),
         ("first.last@sub.apex-software.com", "first.last@sub.apex-software.com"),
         ("o'brien@apex-software.com", "o'brien@apex-software.com"),
+        ("user@example.xn--p1ai", "user@example.xn--p1ai"),
+        ("User@Sub.Example.XN--P1AI", "user@sub.example.xn--p1ai"),
     ],
 )
 def test_valid_addresses_are_normalized(raw, expected):
@@ -57,6 +59,14 @@ def test_invalid_addresses_report_a_reason(raw, reason):
     assert actual_reason == reason
     assert normalize_email(raw) is None
     assert not is_valid_email(raw)
+
+
+def test_scraped_punycode_tld_is_not_truncated():
+    from api.utils.email_validation import EMAIL_PATTERN
+
+    assert EMAIL_PATTERN.findall("Write to sales@example.xn--p1ai today") == [
+        "sales@example.xn--p1ai"
+    ]
 
 
 def test_too_long_address_is_rejected_before_parsing():
