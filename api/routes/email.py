@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import re
 from datetime import UTC, datetime
 from typing import Any, Dict, Optional
 
@@ -23,8 +24,9 @@ from api.db.email_sender_client import (
     EmailResourceConflictError,
     EmailSenderInUseError,
 )
-from api.db.models import EmailSenderModel, UserModel
+from api.db.models import EmailDomainModel, EmailSenderModel, UserModel
 from api.enums import (
+    EmailDomainStatus,
     EmailProvider,
     EmailSenderStatus,
     WebhookCredentialType,
@@ -45,6 +47,9 @@ from api.services.email.smtp import SmtpEmailAdapter
 router = APIRouter(prefix="/email")
 
 SUPPORTED_PROVIDERS = {EmailProvider.SMTP, EmailProvider.SES}
+
+_DOMAIN_LABEL = re.compile(r"(?!-)[a-z0-9-]{1,63}(?<!-)")
+
 
 # ----------------------------------------------------------------------
 # Request / response schemas
@@ -133,6 +138,28 @@ class TestSendResponse(BaseModel):
     message: str
 
 
+class CreateEmailDomainRequest(BaseModel):
+    domain: str
+    sender_uuid: str
+
+
+class UpdateEmailDomainRequest(BaseModel):
+    domain: Optional[str] = None
+    sender_uuid: Optional[str] = None
+
+
+class EmailDomainResponse(BaseModel):
+    uuid: str
+    domain: str
+    provider: str
+    sender_uuid: Optional[str]
+    status: str
+    verification: Dict[str, Any]
+    last_checked_at: Optional[datetime]
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+
 # ----------------------------------------------------------------------
 # Validation helpers
 # ----------------------------------------------------------------------
@@ -170,6 +197,35 @@ def _clean_email(value: str, *, field: str) -> str:
     if len(cleaned) > 320:
         raise HTTPException(status_code=400, detail=f"{field} is too long")
     return cleaned
+
+
+def _normalize_domain(value: str) -> str:
+    """Lowercase, strip a trailing dot, and reject URLs or email addresses."""
+    domain = value.strip().lower().rstrip(".")
+    if not domain:
+        raise HTTPException(status_code=400, detail="Domain cannot be empty")
+    if (
+        "://" in domain
+        or "/" in domain
+        or "@" in domain
+        or any(character.isspace() for character in domain)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Enter a bare domain name such as example.com, not a URL or address",
+        )
+    if len(domain) > 253:
+        raise HTTPException(status_code=400, detail="Domain name is too long")
+    labels = domain.split(".")
+    if len(labels) < 2 or any(
+        not label or not _DOMAIN_LABEL.fullmatch(label) for label in labels
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Domain must look like example.com; each part may contain "
+            "letters, digits and inner hyphens",
+        )
+    return domain
 
 
 def _validate_limits(
@@ -334,6 +390,20 @@ def _sender_response(
     )
 
 
+def _domain_response(domain: EmailDomainModel) -> EmailDomainResponse:
+    return EmailDomainResponse(
+        uuid=domain.domain_uuid,
+        domain=domain.domain,
+        provider=domain.provider,
+        sender_uuid=domain.sender.sender_uuid if domain.sender else None,
+        status=domain.status,
+        verification=domain.verification or {},
+        last_checked_at=domain.last_checked_at,
+        created_at=domain.created_at,
+        updated_at=domain.updated_at,
+    )
+
+
 async def _credentials_map(organization_id: int) -> Dict[int, Dict[str, Any]]:
     return await db_client.get_email_sender_credentials(organization_id)
 
@@ -343,6 +413,13 @@ async def _sender_or_404(organization_id: int, sender_uuid: str) -> EmailSenderM
     if sender is None:
         raise HTTPException(status_code=404, detail="Email sender not found")
     return sender
+
+
+async def _domain_or_404(organization_id: int, domain_uuid: str) -> EmailDomainModel:
+    domain = await db_client.get_email_domain(organization_id, domain_uuid)
+    if domain is None:
+        raise HTTPException(status_code=404, detail="Email domain not found")
+    return domain
 
 
 async def _adapter_for_sender(
@@ -629,6 +706,149 @@ async def test_send_email(
         provider_message_id=result.provider_message_id,
         message=f"Test message accepted by {sender.provider}.",
     )
+
+
+# ----------------------------------------------------------------------
+# Sending-domain routes
+# ----------------------------------------------------------------------
+
+
+@router.get("/domains")
+async def list_email_domains(
+    user: UserModel = Depends(get_user),
+) -> list[EmailDomainResponse]:
+    organization_id = _require_organization(user)
+    domains = await db_client.list_email_domains(organization_id)
+    return [_domain_response(domain) for domain in domains]
+
+
+@router.post("/domains", status_code=201)
+async def create_email_domain(
+    request: CreateEmailDomainRequest,
+    user: UserModel = Depends(get_user),
+) -> EmailDomainResponse:
+    organization_id = _require_organization(user)
+    domain = _normalize_domain(request.domain)
+    sender = await _sender_or_404(organization_id, request.sender_uuid)
+    try:
+        row = await db_client.create_email_domain(
+            organization_id=organization_id,
+            user_id=user.id,
+            domain=domain,
+            provider=EmailProvider(sender.provider),
+            sender_id=sender.id,
+        )
+    except EmailResourceConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _domain_response(row)
+
+
+@router.get("/domains/{domain_uuid}")
+async def get_email_domain(
+    domain_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> EmailDomainResponse:
+    organization_id = _require_organization(user)
+    return _domain_response(await _domain_or_404(organization_id, domain_uuid))
+
+
+@router.patch("/domains/{domain_uuid}")
+async def update_email_domain(
+    domain_uuid: str,
+    request: UpdateEmailDomainRequest,
+    user: UserModel = Depends(get_user),
+) -> EmailDomainResponse:
+    organization_id = _require_organization(user)
+    await _domain_or_404(organization_id, domain_uuid)
+
+    domain = _normalize_domain(request.domain) if request.domain is not None else None
+    sender_id: Optional[int] = None
+    provider: Optional[EmailProvider] = None
+    if request.sender_uuid is not None:
+        sender = await _sender_or_404(organization_id, request.sender_uuid)
+        sender_id = sender.id
+        provider = EmailProvider(sender.provider)
+
+    try:
+        updated = await db_client.update_email_domain(
+            organization_id=organization_id,
+            domain_uuid=domain_uuid,
+            domain=domain,
+            provider=provider,
+            sender_id=sender_id,
+        )
+    except EmailResourceConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Email domain not found")
+    return _domain_response(updated)
+
+
+@router.delete("/domains/{domain_uuid}")
+async def delete_email_domain(
+    domain_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> dict:
+    organization_id = _require_organization(user)
+    deleted = await db_client.delete_email_domain(organization_id, domain_uuid)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Email domain not found")
+    return {"status": "deleted", "uuid": domain_uuid}
+
+
+@router.post("/domains/{domain_uuid}/verify")
+async def verify_email_domain(
+    domain_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> EmailDomainResponse:
+    """Ask the provider whether the domain's DNS records are in place."""
+    organization_id = _require_organization(user)
+    domain = await _domain_or_404(organization_id, domain_uuid)
+    if domain.sender is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Link a sender before verifying this domain",
+        )
+    if domain.provider != EmailProvider.SES.value:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Automatic domain verification is only available for Amazon SES. "
+                "SMTP hosts verify domains in their own dashboard."
+            ),
+        )
+
+    adapter = await _adapter_for_sender(organization_id, domain.sender)
+    if not isinstance(adapter, SesEmailAdapter):
+        raise HTTPException(
+            status_code=400,
+            detail="Automatic domain verification is only available for Amazon SES",
+        )
+    try:
+        result = await adapter.get_domain_verification(domain.domain)
+    except EmailConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except EmailDeliveryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    status = (
+        EmailDomainStatus.VERIFIED
+        if result["verified"]
+        else (
+            EmailDomainStatus.FAILED
+            if result["verification_status"] == "Failed"
+            else EmailDomainStatus.PENDING
+        )
+    )
+    updated = await db_client.record_email_domain_verification(
+        organization_id=organization_id,
+        domain_uuid=domain_uuid,
+        status=status,
+        verification=result["details"],
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Email domain not found")
+    return _domain_response(updated)
 
 
 # Keep the provider-default limits visible to the UI through one call.
