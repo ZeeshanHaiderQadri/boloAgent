@@ -15,6 +15,7 @@ exposure:
 
 config:
   environment: production
+  deploymentMode: oss
   logLevel: DEBUG
 
 web:

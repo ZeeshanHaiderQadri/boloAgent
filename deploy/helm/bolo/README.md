@@ -20,10 +20,15 @@ cd deploy/helm/bolo
 # Redis images, bolo's MinIO build) — no `helm dependency` / subchart pull step
 # needed.
 helm install bolo . \
+  --set config.deploymentMode=oss \
   --set secrets.ossJwtSecret="$(openssl rand -hex 32)" \
   --set secrets.turnSecret="$(openssl rand -hex 32)" \
   --set exposure.gatewayApi.gatewayClassName=istio
 ```
+
+`config.deploymentMode` is required: use `oss` for a self-hosted cluster or
+`saas` for a hosted, multi-tenant deployment. The chart refuses to render
+without it.
 
 See `examples/values-single-node.yaml`, `examples/values-managed.yaml`,
 and `examples/values-aws.yaml` for topology-specific overrides.

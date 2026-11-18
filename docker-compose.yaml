@@ -101,10 +101,10 @@ services:
     profiles: ["remote", "local-turn"]
     environment:
       ENVIRONMENT: "${ENVIRONMENT:-local}"
-      # "oss" keeps private-address outbound destinations allowed (self-hosted).
-      # Set DEPLOYMENT_MODE=saas in .env for a hosted deployment; production
-      # refuses to start if the value is missing entirely.
-      DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-oss}"
+      # Passed through untouched: empty when unset. Local development keeps the
+      # "oss" default, while ENVIRONMENT=production then hits the API's guard
+      # and refuses to start without an explicit oss/saas choice.
+      DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-}"
       SERVER_IP: "${SERVER_IP:-}"
       PUBLIC_HOST: "${PUBLIC_HOST:-}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
@@ -167,11 +167,10 @@ services:
     environment:
       # Core application config
       ENVIRONMENT: "${ENVIRONMENT:-local}"
-      # Egress policy: "oss" (default) allows private-address outbound
-      # destinations and any SMTP port, which is correct for a self-hosted
-      # install. Set DEPLOYMENT_MODE=saas in .env for a hosted deployment.
-      # Production refuses to start when this is unset.
-      DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-oss}"
+      # Empty when unset: local development falls back to "oss", but
+      # ENVIRONMENT=production then fails the API's startup guard until an
+      # explicit oss/saas choice is made. A default here would defeat it.
+      DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-}"
       LOG_LEVEL: "INFO"
 
       # Set to "false" in .env to disable public signup (invite-only installs).

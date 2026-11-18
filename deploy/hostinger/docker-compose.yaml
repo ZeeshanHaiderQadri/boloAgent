@@ -144,12 +144,13 @@ services:
       # production => drop private-IP host ICE candidates on a public VPS and
       # order TURN URIs UDP-first. Required for correct remote WebRTC.
       ENVIRONMENT: "production"
-      # This compose file is the self-hosted install, so "oss" is correct:
-      # private-address outbound destinations and non-standard SMTP ports stay
-      # allowed. Change to "saas" if this host serves other organizations —
-      # SaaS mode rejects private addresses and restricts SMTP ports.
-      # Production refuses to start without an explicit value.
-      DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-oss}"
+      # This compose file is the self-hosted install, so "oss" is the usual
+      # value: private-address outbound destinations and non-standard SMTP
+      # ports stay allowed. Use "saas" if this host serves other organizations
+      # — SaaS mode rejects private addresses and restricts SMTP ports.
+      # Required here (the ":?" form stops Compose with a readable message) so
+      # a hosted deployment cannot silently inherit the permissive default.
+      DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:?Set DEPLOYMENT_MODE to oss or saas in .env}"
       LOG_LEVEL: "INFO"
 
       # Public HTTPS origin (Traefik-terminated). Used for absolute URLs and
