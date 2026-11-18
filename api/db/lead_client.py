@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import String, and_, cast, delete, func, or_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 
 from api.db.base_client import BaseDBClient
@@ -96,21 +97,13 @@ def _lead_filters(
     elif has_phone is False:
         filters.append(LeadModel.phone_e164.is_(None))
     if has_website is True:
-        filters.append(
-            and_(LeadModel.website.is_not(None), LeadModel.website != "")
-        )
+        filters.append(and_(LeadModel.website.is_not(None), LeadModel.website != ""))
     elif has_website is False:
-        filters.append(
-            or_(LeadModel.website.is_(None), LeadModel.website == "")
-        )
+        filters.append(or_(LeadModel.website.is_(None), LeadModel.website == ""))
     if has_email is True:
-        filters.append(
-            and_(LeadModel.email.is_not(None), LeadModel.email != "")
-        )
+        filters.append(and_(LeadModel.email.is_not(None), LeadModel.email != ""))
     elif has_email is False:
-        filters.append(
-            or_(LeadModel.email.is_(None), LeadModel.email == "")
-        )
+        filters.append(or_(LeadModel.email.is_(None), LeadModel.email == ""))
     if country:
         filters.append(func.lower(LeadModel.country) == country.strip().lower())
     if state:
@@ -134,6 +127,10 @@ def _lead_filters(
     if tag:
         filters.append(cast(LeadModel.tags, String).ilike(f'%"{tag}"%'))
     return filters
+
+
+class LeadProjectNameConflictError(Exception):
+    """Raised when a lead project name already exists in the organization."""
 
 
 class LeadClient(BaseDBClient):
@@ -188,9 +185,7 @@ class LeadClient(BaseDBClient):
             )
             return result.scalar_one_or_none()
 
-    async def get_lead_search_unscoped(
-        self, search_id: int
-    ) -> LeadSearchModel | None:
+    async def get_lead_search_unscoped(self, search_id: int) -> LeadSearchModel | None:
         """Worker-only lookup. Callers must derive tenancy from the row itself."""
         async with self.async_session() as session:
             result = await session.execute(
@@ -293,13 +288,10 @@ class LeadClient(BaseDBClient):
                     if field in row
                 }
                 refresh["updated_at"] = datetime.now(UTC)
-                statement = (
-                    insert_stmt.on_conflict_do_update(
-                        constraint="uq_leads_organization_dedupe_key",
-                        set_=refresh,
-                    )
-                    .returning(LeadModel.id)
-                )
+                statement = insert_stmt.on_conflict_do_update(
+                    constraint="uq_leads_organization_dedupe_key",
+                    set_=refresh,
+                ).returning(LeadModel.id)
                 lead_id = await session.scalar(statement)
                 if lead_id is None:
                     continue
@@ -307,9 +299,7 @@ class LeadClient(BaseDBClient):
                 link_stmt = (
                     pg_insert(LeadSearchResultModel)
                     .values(search_id=search_id, lead_id=lead_id)
-                    .on_conflict_do_nothing(
-                        constraint="uq_lead_search_results_pair"
-                    )
+                    .on_conflict_do_nothing(constraint="uq_lead_search_results_pair")
                 )
                 await session.execute(link_stmt)
 
@@ -327,9 +317,7 @@ class LeadClient(BaseDBClient):
             "updated_leads_count": updated_leads,
         }
 
-    async def clear_search_results(
-        self, search_id: int, organization_id: int
-    ) -> None:
+    async def clear_search_results(self, search_id: int, organization_id: int) -> None:
         """Unlink every business from a search, keeping the org-wide leads.
 
         Used when an operator edits a search enough that the previously
@@ -579,7 +567,13 @@ class LeadClient(BaseDBClient):
                 created_by=created_by,
             )
             session.add(project)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                raise LeadProjectNameConflictError(
+                    f"A project named '{name.strip()}' already exists."
+                )
             await session.refresh(project)
             return project
 
@@ -597,7 +591,13 @@ class LeadClient(BaseDBClient):
                 .returning(LeadProjectModel)
             )
             project = result.scalar_one_or_none()
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                raise LeadProjectNameConflictError(
+                    f"A project named '{name.strip()}' already exists."
+                )
             if project is not None:
                 await session.refresh(project)
             return project
@@ -815,24 +815,26 @@ class LeadClient(BaseDBClient):
 
         async with self.async_session() as session:
             countries = (
-                await session.execute(
-                    _values(LeadModel.country, [])
-                )
-            ).scalars().all()
+                (await session.execute(_values(LeadModel.country, []))).scalars().all()
+            )
             # States are scoped by country, cities by both country and state.
             states = (
-                await session.execute(
-                    _values(LeadModel.state, country_scope)
-                )
-            ).scalars().all()
+                (await session.execute(_values(LeadModel.state, country_scope)))
+                .scalars()
+                .all()
+            )
             cities = (
-                await session.execute(
-                    _values(LeadModel.city, [*country_scope, *state_scope])
+                (
+                    await session.execute(
+                        _values(LeadModel.city, [*country_scope, *state_scope])
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             categories = (
-                await session.execute(_values(LeadModel.category, []))
-            ).scalars().all()
+                (await session.execute(_values(LeadModel.category, []))).scalars().all()
+            )
 
         return {
             "countries": [str(value) for value in countries],
@@ -888,9 +890,7 @@ class LeadClient(BaseDBClient):
             await session.refresh(activity)
             return activity
 
-    async def add_lead_activities_bulk(
-        self, activities: list[dict[str, Any]]
-    ) -> None:
+    async def add_lead_activities_bulk(self, activities: list[dict[str, Any]]) -> None:
         if not activities:
             return
         async with self.async_session() as session:
@@ -915,18 +915,14 @@ class LeadClient(BaseDBClient):
     # ------------------------------------------------------------------
     # Outbound campaign dispatches / call history
     # ------------------------------------------------------------------
-    async def create_lead_dispatches(
-        self, dispatches: list[dict[str, Any]]
-    ) -> None:
+    async def create_lead_dispatches(self, dispatches: list[dict[str, Any]]) -> None:
         if not dispatches:
             return
         async with self.async_session() as session:
             await session.execute(
                 pg_insert(LeadCampaignDispatchModel)
                 .values(dispatches)
-                .on_conflict_do_nothing(
-                    constraint="uq_lead_dispatch_campaign_source"
-                )
+                .on_conflict_do_nothing(constraint="uq_lead_dispatch_campaign_source")
             )
             await session.commit()
 
