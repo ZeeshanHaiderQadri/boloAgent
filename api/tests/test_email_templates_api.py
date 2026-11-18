@@ -1,6 +1,7 @@
 """API behaviour for email templates: CRUD, scoping, preview and test sends."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -601,3 +602,23 @@ async def test_test_send_returns_503_and_sends_nothing_when_the_limiter_is_down(
     assert "temporarily unavailable" in response.json()["detail"]
     assert "Nothing was sent" in response.json()["detail"]
     assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_template_does_not_consume_a_test_send_slot(
+    db_session, test_client_factory, monkeypatch
+):
+    user, _ = await _make_user_and_org(
+        db_session, "template_send_unknown", email="owner@apex-software-demo.com"
+    )
+    limiter = AsyncMock(return_value=True)
+    monkeypatch.setattr("api.routes.email.allow_template_test_send", limiter)
+
+    async with test_client_factory(user) as client:
+        response = await client.post(
+            "/api/v1/email/templates/00000000-0000-0000-0000-000000000000/test-send",
+            json={},
+        )
+
+    assert response.status_code == 404
+    assert limiter.await_count == 0

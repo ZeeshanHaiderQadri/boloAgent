@@ -1233,23 +1233,6 @@ async def test_send_email_template(
     addressed to a lead, and sample merge values are fake.
     """
     organization_id = _require_organization(user)
-    try:
-        allowed = await allow_template_test_send(
-            user_id=user.id, organization_id=organization_id
-        )
-    except RateLimiterUnavailable as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=("Template test send is temporarily unavailable. Nothing was sent."),
-        ) from exc
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=(
-                "Too many template test sends (limit 10 per hour per user and "
-                "organization). Nothing was sent. Try again in about an hour."
-            ),
-        )
     template = await _template_or_404(organization_id, template_uuid)
 
     normalized, reason = classify_email(user.email)
@@ -1279,6 +1262,26 @@ async def test_send_email_template(
             detail=(
                 "Verify the sender before sending a template test. A template "
                 "test must not be the first message from an unverified sender."
+            ),
+        )
+
+    # Charge the hourly quota only once the request is otherwise sendable, so
+    # a mistyped template id or an unverified sender cannot burn the allowance.
+    try:
+        allowed = await allow_template_test_send(
+            user_id=user.id, organization_id=organization_id
+        )
+    except RateLimiterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=("Template test send is temporarily unavailable. Nothing was sent."),
+        ) from exc
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Too many template test sends (limit 10 per hour per user and "
+                "organization). Nothing was sent. Try again in about an hour."
             ),
         )
 
