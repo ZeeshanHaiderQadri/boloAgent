@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from api.constants import EMAIL_CONSENT_WARNING
 from api.db import db_client
+from api.db.email_campaign_client import EmailCampaignNameConflictError
 from api.db.models import (
     EmailCampaignModel,
     EmailSenderModel,
@@ -30,7 +31,7 @@ from api.enums import (
     EmailCampaignConsentPolicy,
     EmailCampaignStatus,
 )
-from api.routes.email import _require_organization
+from api.routes.email import _clean_text, _require_organization
 from api.schemas.leads import LeadProjectFilters
 from api.services.auth.depends import get_user
 from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
@@ -41,6 +42,10 @@ from api.services.email.audience import (
     validate_audience_rule,
 )
 from api.services.email.campaign_rate_limits import allow_campaign_preview
+from api.services.email.campaign_state import (
+    CampaignStateError,
+    assert_campaign_deletable,
+)
 from api.services.email.limits import effective_limits
 
 router = APIRouter(prefix="/email/campaigns")
@@ -428,3 +433,195 @@ async def preview_campaign_audience(
         unknown_lead_count=resolution.unknown_lead_count,
         warnings=warnings,
     )
+
+
+# ----------------------------------------------------------------------
+# Draft campaign CRUD
+# ----------------------------------------------------------------------
+
+
+@router.get("")
+async def list_email_campaigns(
+    user: UserModel = Depends(get_user),
+) -> list[EmailCampaignResponse]:
+    organization_id = _require_organization(user)
+    campaigns = await db_client.list_email_campaigns(organization_id)
+    return [
+        await _campaign_response(campaign, sender=None, template=None)
+        for campaign in campaigns
+    ]
+
+
+@router.post("", status_code=201)
+async def create_email_campaign(
+    request: CreateEmailCampaignRequest,
+    user: UserModel = Depends(get_user),
+) -> EmailCampaignResponse:
+    organization_id = _require_organization(user)
+    name = _clean_text(request.name, field="Name", max_length=255)
+    rule = _validated_rule(request.audience)
+    policy, reason, warning = _consent_values(
+        request.consent_policy, request.consent_override_reason
+    )
+
+    sender = (
+        await _sender_or_404(organization_id, request.sender_uuid)
+        if request.sender_uuid
+        else None
+    )
+    template = (
+        await _template_or_404(organization_id, request.template_uuid)
+        if request.template_uuid
+        else None
+    )
+
+    try:
+        campaign = await db_client.create_email_campaign(
+            organization_id=organization_id,
+            user_id=user.id,
+            name=name,
+            sender_id=sender.id if sender else None,
+            template_id=template.id if template else None,
+            audience_type=rule.audience_type,
+            audience=_stored_audience(rule),
+            consent_policy=policy,
+            consent_override_reason=reason,
+            consent_override_warning=warning,
+        )
+    except EmailCampaignNameConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return await _campaign_response(campaign, sender=sender, template=template)
+
+
+@router.get("/{campaign_uuid}")
+async def get_email_campaign(
+    campaign_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> EmailCampaignResponse:
+    organization_id = _require_organization(user)
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    return await _campaign_response(campaign, sender=None, template=None)
+
+
+@router.patch("/{campaign_uuid}")
+async def update_email_campaign(
+    campaign_uuid: str,
+    request: UpdateEmailCampaignRequest,
+    user: UserModel = Depends(get_user),
+) -> EmailCampaignResponse:
+    organization_id = _require_organization(user)
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    if campaign.status not in _EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A campaign in {campaign.status!r} can no longer be edited; "
+                "only draft or ready campaigns are editable."
+            ),
+        )
+
+    fields_set = request.model_fields_set
+    name = (
+        _clean_text(request.name, field="Name", max_length=255)
+        if request.name is not None
+        else None
+    )
+
+    audience_type = None
+    audience = None
+    audience_changed = False
+    if request.audience is not None:
+        rule = _validated_rule(request.audience)
+        audience_type = rule.audience_type
+        audience = _stored_audience(rule)
+        audience_changed = True
+
+    sender_id: Any = ...
+    if "sender_uuid" in fields_set:
+        sender_id = (
+            (await _sender_or_404(organization_id, request.sender_uuid)).id
+            if request.sender_uuid
+            else None
+        )
+    template_id: Any = ...
+    if "template_uuid" in fields_set:
+        template_id = (
+            (await _template_or_404(organization_id, request.template_uuid)).id
+            if request.template_uuid
+            else None
+        )
+
+    consent_kwargs: dict[str, Any] = {}
+    if request.consent_policy is not None:
+        policy, reason, warning = _consent_values(
+            request.consent_policy, request.consent_override_reason
+        )
+        if request.consent_policy == EmailCampaignConsentPolicy.INCLUDE_UNKNOWN:
+            # Reuse the stored reason when the operator only re-asserts include.
+            reason = reason or (campaign.consent_override_reason or "").strip()
+            if not reason:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Including unknown-consent leads requires a written reason.",
+                )
+        consent_kwargs = {
+            "consent_policy": policy,
+            "consent_override_reason": reason,
+            "consent_override_warning": warning,
+            "consent_override_user_id": user.id if reason else None,
+        }
+
+    try:
+        updated = await db_client.update_email_campaign(
+            organization_id,
+            campaign_uuid,
+            name=name,
+            sender_id=sender_id,
+            template_id=template_id,
+            audience_type=audience_type,
+            audience=audience,
+            **consent_kwargs,
+        )
+    except EmailCampaignNameConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Email campaign not found")
+
+    if audience_changed or consent_kwargs:
+        await db_client.update_email_campaign_counts(
+            organization_id,
+            campaign_uuid,
+            counts={
+                "recipient_count": 0,
+                "eligible_count": 0,
+                "excluded_no_email_count": 0,
+                "excluded_invalid_email_count": 0,
+                "excluded_suppressed_count": 0,
+                "excluded_opted_out_count": 0,
+                "excluded_unknown_count": 0,
+                "duplicates_collapsed_count": 0,
+            },
+        )
+        refreshed = await db_client.get_email_campaign(organization_id, campaign_uuid)
+        if refreshed is None:
+            raise HTTPException(status_code=404, detail="Email campaign not found")
+        updated = refreshed
+
+    return await _campaign_response(updated, sender=None, template=None)
+
+
+@router.delete("/{campaign_uuid}")
+async def delete_email_campaign(
+    campaign_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> dict:
+    organization_id = _require_organization(user)
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    try:
+        assert_campaign_deletable(campaign.status)
+    except CampaignStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await db_client.delete_email_campaign(organization_id, campaign_uuid)
+    return {"status": "deleted", "uuid": campaign_uuid}
