@@ -291,6 +291,19 @@ class EmailSenderStatus(Enum):
     DISABLED = "disabled"  # Kept for history, never used for sending
 
 
+class EmailDomainStatus(Enum):
+    """Verification state of a sending domain.
+
+    SMTP hosts verify domains in their own dashboard and expose no status API,
+    so a domain attached to an SMTP sender stays ``pending`` until the operator
+    handles it there. Amazon SES domains are checked through the API.
+    """
+
+    PENDING = "pending"  # DNS records not published, or not checked yet
+    VERIFIED = "verified"  # Provider confirms the domain may send
+    FAILED = "failed"  # Provider rejected the domain
+
+
 class EmailMessageStatus(Enum):
     """Lifecycle of one outbound message."""
 
