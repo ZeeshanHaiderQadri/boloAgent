@@ -22,6 +22,7 @@ from api.db import db_client
 from api.db.email_sender_client import (
     UNSET,
     EmailResourceConflictError,
+    EmailSenderCampaignInUseError,
     EmailSenderInUseError,
 )
 from api.db.email_template_client import EmailTemplateNameConflictError
@@ -709,7 +710,7 @@ async def delete_email_sender(
     organization_id = _require_organization(user)
     try:
         deleted = await db_client.delete_email_sender(organization_id, sender_uuid)
-    except EmailSenderInUseError as exc:
+    except (EmailSenderCampaignInUseError, EmailSenderInUseError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=404, detail="Email sender not found")
