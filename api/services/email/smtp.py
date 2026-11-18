@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import smtplib
+import socket
 import ssl
 from collections.abc import Mapping
 from email.message import EmailMessage
@@ -26,7 +27,7 @@ from api.services.email.adapter import (
 )
 from api.utils.url_security import (
     ServiceHostResolutionError,
-    validate_user_configured_service_host,
+    resolve_user_configured_service_host,
     validate_user_configured_smtp_port,
 )
 
@@ -77,7 +78,7 @@ def _resolve_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     # in SaaS mode the server must be public, on a standard submission port.
     try:
         validate_user_configured_smtp_port(port, field_name="SMTP port")
-        validate_user_configured_service_host(host, port=port, field_name="SMTP host")
+        resolve_user_configured_service_host(host, port=port, field_name="SMTP host")
     except ServiceHostResolutionError as exc:
         # A DNS outage is transient; retrying is the correct response. Only a
         # policy rejection (private address, bad port) is a configuration error.
@@ -133,6 +134,49 @@ def _build_message(config: EmailSenderConfig, message: OutboundEmail) -> EmailMe
     return msg
 
 
+class _PinnedSMTP(smtplib.SMTP):
+    """SMTP client that dials an address the egress policy already checked.
+
+    The hostname is still handed to smtplib so EHLO and STARTTLS certificate
+    verification use the name the user configured, while the TCP connection
+    goes to the validated address. A fresh DNS lookup here would reopen the
+    rebinding window the check exists to close.
+    """
+
+    def __init__(
+        self, hostname: str, port: int, *, pinned_ip: str, timeout: float
+    ) -> None:
+        self._pinned_ip = pinned_ip
+        super().__init__(hostname, port, timeout=timeout)
+
+    def _get_socket(self, host, port, timeout):
+        return socket.create_connection(
+            (self._pinned_ip, port), timeout, self.source_address
+        )
+
+
+class _PinnedSMTPSSL(smtplib.SMTP_SSL):
+    """Implicit-TLS variant of :class:`_PinnedSMTP`."""
+
+    def __init__(
+        self,
+        hostname: str,
+        port: int,
+        *,
+        pinned_ip: str,
+        timeout: float,
+        context: ssl.SSLContext,
+    ) -> None:
+        self._pinned_ip = pinned_ip
+        super().__init__(hostname, port, timeout=timeout, context=context)
+
+    def _get_socket(self, host, port, timeout):
+        sock = socket.create_connection(
+            (self._pinned_ip, port), timeout, self.source_address
+        )
+        return self.context.wrap_socket(sock, server_hostname=self._host)
+
+
 class SmtpEmailAdapter(EmailAdapter):
     """Universal SMTP sender. Blocking I/O runs in a worker thread."""
 
@@ -174,25 +218,40 @@ class SmtpEmailAdapter(EmailAdapter):
         host = self._settings["host"]
         port = self._settings["port"]
         # DNS can be rebound between saving settings and connecting, so the
-        # egress check runs again immediately before smtplib resolves the host.
+        # policy runs again here and the checked address is the one dialed.
         try:
-            validate_user_configured_service_host(
+            pinned_ip = resolve_user_configured_service_host(
                 host, port=port, field_name="SMTP host"
             )
         except ServiceHostResolutionError as exc:
             raise EmailDeliveryError("SMTP host could not be resolved") from exc
         except ValueError as exc:
             raise EmailConfigurationError(str(exc)) from exc
+
+        context = ssl.create_default_context()
         if self._settings["security"] == "ssl":
+            if pinned_ip is not None:
+                return _PinnedSMTPSSL(
+                    host,
+                    port,
+                    pinned_ip=pinned_ip,
+                    timeout=self._timeout,
+                    context=context,
+                )
             return smtplib.SMTP_SSL(
                 host,
                 port,
                 timeout=self._timeout,
-                context=ssl.create_default_context(),
+                context=context,
             )
-        connection = smtplib.SMTP(host, port, timeout=self._timeout)
+        if pinned_ip is not None:
+            connection: smtplib.SMTP = _PinnedSMTP(
+                host, port, pinned_ip=pinned_ip, timeout=self._timeout
+            )
+        else:
+            connection = smtplib.SMTP(host, port, timeout=self._timeout)
         connection.ehlo()
-        connection.starttls(context=ssl.create_default_context())
+        connection.starttls(context=context)
         connection.ehlo()
         return connection
 

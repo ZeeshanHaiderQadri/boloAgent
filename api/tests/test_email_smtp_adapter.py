@@ -70,6 +70,14 @@ class FakeSMTPSSL(FakeSMTPBase):
     use_ssl = True
 
 
+class RecordingPinnedSSL(FakeSMTPSSL):
+    """Captures the arguments the adapter hands to the pinned TLS client."""
+
+    def __init__(self, hostname, port, *, pinned_ip, timeout, context=None):
+        RECORDS["pinned"] = {"hostname": hostname, "pinned_ip": pinned_ip}
+        super().__init__(hostname, port, timeout=timeout, context=context)
+
+
 @pytest.fixture(autouse=True)
 def fake_smtplib(monkeypatch):
     RECORDS.clear()
@@ -302,6 +310,52 @@ async def test_egress_check_runs_again_at_send_time(monkeypatch):
 
     with pytest.raises(EmailConfigurationError, match="public IP"):
         await adapter.send(_message())
+
+
+@pytest.mark.asyncio
+async def test_saas_mode_connects_to_the_checked_address(fake_smtplib, monkeypatch):
+    monkeypatch.setattr(url_security, "DEPLOYMENT_MODE", "saas")
+    monkeypatch.setattr(
+        smtp_module,
+        "resolve_user_configured_service_host",
+        lambda *args, **kwargs: "93.184.216.34",
+    )
+    monkeypatch.setattr(smtp_module, "_PinnedSMTPSSL", RecordingPinnedSSL)
+
+    await _adapter({"host": "smtp.example.test", "port": 465}).send(_message())
+
+    assert fake_smtplib["pinned"] == {
+        "hostname": "smtp.example.test",
+        "pinned_ip": "93.184.216.34",
+    }
+    assert fake_smtplib["opened"]["port"] == 465
+
+
+def test_pinned_tls_keeps_the_hostname_for_certificate_checks(monkeypatch):
+    created = {}
+
+    def fake_create_connection(address, timeout, source_address=None):
+        created["address"] = address
+        return object()
+
+    class FakeContext:
+        def wrap_socket(self, sock, server_hostname=None):
+            created["server_hostname"] = server_hostname
+            return sock
+
+    monkeypatch.setattr(smtp_module.socket, "create_connection", fake_create_connection)
+    connection = object.__new__(smtp_module._PinnedSMTPSSL)
+    connection._pinned_ip = "93.184.216.34"
+    connection._host = "smtp.example.test"
+    connection.context = FakeContext()
+    connection.source_address = None
+
+    connection._get_socket("smtp.example.test", 465, 15)
+
+    assert created == {
+        "address": ("93.184.216.34", 465),
+        "server_hostname": "smtp.example.test",
+    }
 
 
 @pytest.mark.asyncio

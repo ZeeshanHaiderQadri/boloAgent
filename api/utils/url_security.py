@@ -58,12 +58,26 @@ def validate_user_configured_service_host(
 
     SMTP settings carry no scheme, so the URL variant cannot be reused. The
     policy is identical: in SaaS mode the host must not be localhost and must
-    resolve to public addresses only. DNS can change between a settings check
-    and a connection, so callers should re-run this immediately before
-    connecting.
+    resolve to public addresses only.
+    """
+    resolve_user_configured_service_host(host, field_name=field_name, port=port)
+
+
+def resolve_user_configured_service_host(
+    host: str,
+    *,
+    field_name: str,
+    port: int | None = None,
+) -> str | None:
+    """Validate a bare host and return one checked address for it.
+
+    Returns ``None`` in OSS mode, where no egress policy applies and the
+    caller should let the client library resolve the name itself. In SaaS mode
+    the returned address is safe to dial directly, which lets a caller close
+    the DNS rebinding window between this check and the connection.
     """
     if DEPLOYMENT_MODE == "oss":
-        return
+        return None
 
     hostname = host.strip()
     if hostname.startswith("[") and hostname.endswith("]"):
@@ -74,11 +88,13 @@ def validate_user_configured_service_host(
     if hostname.lower() == "localhost":
         raise ValueError(f"{field_name} cannot point to localhost in SaaS mode")
 
-    for ip in _resolve_hostname_ips(hostname, port):
+    resolved = _resolve_hostname_ips(hostname, port)
+    for ip in resolved:
         if _is_blocked_saas_service_ip(ip):
             raise ValueError(
                 f"{field_name} must resolve to a public IP address in SaaS mode"
             )
+    return str(resolved[0])
 
 
 def validate_user_configured_smtp_port(port: int, *, field_name: str) -> None:
