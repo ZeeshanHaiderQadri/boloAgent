@@ -23,7 +23,12 @@ from api.services.email.adapter import (
 )
 
 # Headers the adapter owns; a caller cannot override them through ``headers``.
-RESERVED_HEADERS = frozenset({"from", "to", "subject", "reply-to", "message-id"})
+# Bcc variants are reserved even though the builder never adds them: a hidden
+# recipient must stay a deliberate queue decision, not something a message
+# payload can inject.
+RESERVED_HEADERS = frozenset(
+    {"from", "to", "subject", "reply-to", "message-id", "bcc", "resent-bcc"}
+)
 
 
 def without_newlines(value: str, *, what: str) -> str:

@@ -28,7 +28,7 @@ from typing import Any, ClassVar
 
 import aioboto3
 from botocore.config import Config
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import BotoCoreError, ClientError, ParamValidationError
 
 from api.enums import EmailProvider
 from api.services.email.adapter import (
@@ -72,6 +72,7 @@ _TRANSIENT_ERROR_CODES = frozenset(
         "RequestTimeout",
         "SendingPausedException",
         "AccountSendingPausedException",
+        "ConfigurationSetSendingPausedException",
         "ServiceUnavailable",
         "ServiceUnavailableException",
         "InternalFailure",
@@ -312,6 +313,10 @@ class SesEmailAdapter(EmailAdapter):
 
     @staticmethod
     def _map_botocore_error(exc: BotoCoreError) -> EmailAdapterError:
+        if isinstance(exc, ParamValidationError):
+            # The SDK rejected our own request shape: a code defect or a bad
+            # setting, never something a retry can fix.
+            return EmailConfigurationError("SES request parameters are invalid")
         name = type(exc).__name__
         if name in _MISSING_CREDENTIAL_ERRORS:
             return EmailConfigurationError("SES credentials are missing or incomplete")
