@@ -235,6 +235,9 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "organization_id", "email", name="uq_email_suppressions_org_email"
         ),
+        sa.CheckConstraint(
+            "email = lower(email)", name="ck_email_suppressions_email_lowercase"
+        ),
     )
     op.create_index("ix_email_suppressions_id", "email_suppressions", ["id"])
     op.create_index(

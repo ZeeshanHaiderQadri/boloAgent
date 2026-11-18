@@ -5,6 +5,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Enum,
@@ -2202,6 +2203,9 @@ class EmailSuppressionModel(Base):
     __table_args__ = (
         UniqueConstraint(
             "organization_id", "email", name="uq_email_suppressions_org_email"
+        ),
+        CheckConstraint(
+            "email = lower(email)", name="ck_email_suppressions_email_lowercase"
         ),
         Index("ix_email_suppressions_organization_id", "organization_id"),
     )

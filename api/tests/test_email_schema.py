@@ -1,6 +1,7 @@
 """Email schema behaviour: limits, lead consent, and credential separation."""
 
 import pytest
+from sqlalchemy import text
 
 from api.db.models import EmailSenderModel, LeadModel
 from api.enums import EmailProvider
@@ -133,3 +134,21 @@ async def test_webhook_credential_list_hides_email_sender_credentials(
         "SMTP password",
         "Webhook secret",
     ]
+
+
+@pytest.mark.asyncio
+async def test_suppressions_enforce_lowercase_at_the_database(db_session):
+    """A failed flush deassociates the fixture transaction, so inspect the
+    constraint itself; the write path must not rely on app-level lowercasing."""
+    async with db_session.async_session() as session:
+        definition = (
+            await session.execute(
+                text(
+                    "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                    "WHERE conname = 'ck_email_suppressions_email_lowercase'"
+                )
+            )
+        ).scalar_one_or_none()
+
+    assert definition is not None
+    assert "lower(" in definition and "email" in definition
