@@ -104,6 +104,12 @@ exposure:
 # -----------------------------------------------------------------------------
 config:
   environment: production
+  # Egress policy and auth model: "oss" for a self-hosted cluster, "saas" for a
+  # hosted, multi-tenant deployment. "saas" rejects user-configured URLs and
+  # SMTP servers that resolve to private addresses and restricts SMTP to the
+  # standard submission ports. Required: the API refuses to start with
+  # environment=production and no explicit mode.
+  deploymentMode: oss
   logLevel: INFO
   backendApiEndpoint: ""  # public URL the browser uses to reach the API; auto-derived from exposure.host if empty in NOTES
   minioBucket: voice-audio

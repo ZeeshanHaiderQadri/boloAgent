@@ -86,3 +86,42 @@ async def test_deleting_a_credential_used_by_a_sender_is_blocked(db_session):
         credential.credential_uuid, org.id, purpose="email_sender"
     )
     assert still_active is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_guard_ignores_other_organizations_senders(db_session):
+    user, org = await _make_user_and_org(db_session, "delete_guard_a")
+    other_user, other_org = await _make_user_and_org(db_session, "delete_guard_b")
+    credential = await db_session.create_credential(
+        organization_id=org.id,
+        user_id=user.id,
+        name="Shared password",
+        credential_type="basic_auth",
+        credential_data={"username": "u", "password": "p"},
+        purpose="email_sender",
+    )
+
+    async with db_session.async_session() as session:
+        for owner_org, sender_name in (
+            (org, "Own sender"),
+            (other_org, "Foreign sender"),
+        ):
+            session.add(
+                EmailSenderModel(
+                    organization_id=owner_org.id,
+                    name=sender_name,
+                    provider=EmailProvider.SMTP.value,
+                    from_name="Bolo",
+                    from_email="hello@example.test",
+                    credential_id=credential.id,
+                )
+            )
+        await session.commit()
+
+    with pytest.raises(CredentialInUseError) as exc_info:
+        await db_session.delete_credential(
+            credential.credential_uuid, org.id, purpose="email_sender"
+        )
+
+    assert exc_info.value.sender_names == ["Own sender"]
+    assert "Foreign sender" not in str(exc_info.value)

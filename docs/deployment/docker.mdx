@@ -202,6 +202,11 @@ You should be able to create and test a voice agent now.
 - Public-IP installs get a trusted Let's Encrypt certificate (via sslip.io) that renews automatically; private-IP installs use a self-signed certificate (browser warning)
 - The TURN server (coturn) is configured for WebRTC NAT traversal
 - For production deployments with proper SSL and domain names, see the [Custom Domain](custom-domain) documentation
+- `DEPLOYMENT_MODE` is written to the generated `.env` and passed to the API by `docker-compose.yaml` as `oss`, which is correct for a self-hosted install. **If you host Bolo for other people, change it to `saas` before go-live.** SaaS mode rejects user-configured model URLs and SMTP servers that resolve to private addresses, and limits SMTP to the standard submission ports; OSS mode leaves both unrestricted for private networks and local relays. When `ENVIRONMENT=production`, the API and worker refuse to start if `DEPLOYMENT_MODE` is missing, so the mode can never be inherited by accident.
+
+<Warning>
+  Setting `DEPLOYMENT_MODE=saas` is not optional for a multi-tenant or customer-facing deployment. Running one in `oss` mode lets a tenant point a model service or SMTP server at your internal network. Verify the value in `bolo/.env` (or the Helm value `config.deploymentMode`) before the first customer is onboarded.
+</Warning>
 
 ### Files Created
 

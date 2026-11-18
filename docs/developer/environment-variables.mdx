@@ -9,8 +9,18 @@ Core environment variables are centralized in `api/constants.py`. Variables mark
 
 Bolo supports two deployment modes, set via `DEPLOYMENT_MODE`:
 
-- **OSS**: The default mode. Designed for self-hosted deployments using [Docker Compose](/deployment/docker) — the fastest way to get Bolo running. Uses local JWT authentication and MinIO for storage.
-- **SaaS**: Intended for customised deployments outside of Docker. Authentication and API key management are handled through Bolo Managed Platform Services (MPS), allowing greater flexibility in how the platform is hosted and integrated.
+- **OSS** (`oss`, the default): self-hosted deployments using [Docker Compose](/deployment/docker). Uses local JWT authentication and MinIO for storage. User-configured outbound destinations (model service URLs, SMTP servers) may point at localhost or private addresses, and SMTP may use any port.
+- **SaaS** (`saas`): a hosted deployment, typically outside Docker. Authentication and API key management are handled through Bolo Managed Platform Services (MPS). Every user-configured outbound destination must resolve to a public address, and SMTP is restricted to the standard submission ports (`25`, `465`, `587`, `2525`).
+
+`DEPLOYMENT_MODE` chooses more than authentication: it also turns the outbound egress protections on or off. A multi-tenant deployment that runs in `oss` mode lets one tenant make Bolo infrastructure connect to another tenant's private network, so choose the mode deliberately rather than relying on the default.
+
+<Warning>
+  When `ENVIRONMENT=production`, the API and worker refuse to start unless
+  `DEPLOYMENT_MODE` is set explicitly to `oss` or `saas`. This is a deliberate
+  guard: a hosted deployment must never inherit the permissive `oss` default by
+  accident. Set `DEPLOYMENT_MODE=saas` for a hosted deployment and
+  `DEPLOYMENT_MODE=oss` for a self-hosted one.
+</Warning>
 
 The relevant required variables for each mode are noted in the descriptions below.
 
@@ -21,7 +31,7 @@ The relevant required variables for each mode are noted in the descriptions belo
 | Variable | Default | Description |
 |---|---|---|
 | `ENVIRONMENT` | `local` | Runtime environment. Affects logging and behaviour. One of `local`, `production`, `test` |
-| `DEPLOYMENT_MODE` | `oss` | Deployment mode. Use `oss` for self-hosted |
+| `DEPLOYMENT_MODE` | `oss` | Deployment mode, one of `oss` or `saas`. **Required explicitly when `ENVIRONMENT=production`** — the API refuses to start otherwise. `saas` enforces public-address resolution for user-configured URLs and SMTP hosts and restricts SMTP to ports `25`, `465`, `587`, `2525`; `oss` leaves those unrestricted for private networks and local relays |
 | `AUTH_PROVIDER` | `local` | Authentication provider. `local` (default) uses the built-in email/password flow. Set to `stack` to delegate to Stack Auth for social login — see [Authentication](/deployment/authentication) for the full setup |
 
 ---

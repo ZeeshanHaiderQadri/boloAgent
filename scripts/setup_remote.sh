@@ -336,6 +336,11 @@ BOLO_CREDENTIAL_ENCRYPTION_KEYS=$(bolo_generate_credential_key)
 cat > .env << ENV_EOF
 # Remote deployments run with production signaling and HTTPS defaults
 ENVIRONMENT=production
+# Self-hosted install: user-configured service URLs and SMTP servers may use
+# private addresses. Set to saas (and re-run the stack) if this host will serve
+# other organizations. Required explicitly: the API refuses to start with
+# ENVIRONMENT=production when it is missing.
+DEPLOYMENT_MODE=oss
 
 # Canonical public host/base URL for this install. SERVER_IP stays the raw IP
 # (coturn external-ip and validation need it); PUBLIC_HOST is the sslip.io

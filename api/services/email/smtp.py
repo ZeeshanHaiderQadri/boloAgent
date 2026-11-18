@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import smtplib
+import socket
 import ssl
 from collections.abc import Mapping
-from email.message import EmailMessage
-from email.utils import formataddr, make_msgid
 from typing import Any, ClassVar
 
 from api.enums import EmailProvider
@@ -24,8 +23,10 @@ from api.services.email.adapter import (
     OutboundEmail,
     ProviderSendResult,
 )
+from api.services.email.mime import build_mime_message, message_id_domain
 from api.utils.url_security import (
-    validate_user_configured_service_host,
+    ServiceHostResolutionError,
+    resolve_user_configured_service_host,
     validate_user_configured_smtp_port,
 )
 
@@ -36,9 +37,6 @@ HOSTINGER_SMTP_PRESET: dict[str, Any] = {
 }
 
 DEFAULT_TIMEOUT_SECONDS = 15
-
-# Headers the adapter owns; a caller cannot override them through ``headers``.
-_RESERVED_HEADERS = {"from", "to", "subject", "reply-to", "message-id"}
 
 
 def _parse_port(value: Any) -> int:
@@ -76,7 +74,11 @@ def _resolve_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     # in SaaS mode the server must be public, on a standard submission port.
     try:
         validate_user_configured_smtp_port(port, field_name="SMTP port")
-        validate_user_configured_service_host(host, port=port, field_name="SMTP host")
+        resolve_user_configured_service_host(host, port=port, field_name="SMTP host")
+    except ServiceHostResolutionError as exc:
+        # A DNS outage is transient; retrying is the correct response. Only a
+        # policy rejection (private address, bad port) is a configuration error.
+        raise EmailDeliveryError("SMTP host could not be resolved") from exc
     except ValueError as exc:
         raise EmailConfigurationError(str(exc)) from exc
 
@@ -84,48 +86,47 @@ def _resolve_settings(settings: Mapping[str, Any]) -> dict[str, Any]:
     return resolved
 
 
-def _without_newlines(value: str, *, what: str) -> str:
-    if "\r" in value or "\n" in value:
-        raise EmailConfigurationError(f"{what} must not contain line breaks")
-    return value
+class _PinnedSMTP(smtplib.SMTP):
+    """SMTP client that dials an address the egress policy already checked.
 
+    The hostname is still handed to smtplib so EHLO and STARTTLS certificate
+    verification use the name the user configured, while the TCP connection
+    goes to the validated address. A fresh DNS lookup here would reopen the
+    rebinding window the check exists to close.
+    """
 
-def _build_message(config: EmailSenderConfig, message: OutboundEmail) -> EmailMessage:
-    msg = EmailMessage()
-    msg["From"] = formataddr(
-        (
-            _without_newlines(config.from_name, what="From name"),
-            _without_newlines(config.from_email, what="From address"),
+    def __init__(
+        self, hostname: str, port: int, *, pinned_ip: str, timeout: float
+    ) -> None:
+        self._pinned_ip = pinned_ip
+        super().__init__(hostname, port, timeout=timeout)
+
+    def _get_socket(self, host, port, timeout):
+        return socket.create_connection(
+            (self._pinned_ip, port), timeout, self.source_address
         )
-    )
-    to_name = (
-        _without_newlines(message.to_name, what="To name") if message.to_name else ""
-    )
-    msg["To"] = formataddr(
-        (to_name, _without_newlines(message.to_email, what="To address"))
-    )
-    msg["Subject"] = _without_newlines(message.subject, what="Subject")
-    if config.reply_to:
-        msg["Reply-To"] = _without_newlines(config.reply_to, what="Reply-To address")
 
-    for name, value in message.headers.items():
-        if name.lower() in _RESERVED_HEADERS:
-            continue
-        _without_newlines(str(name), what="Header name")
-        _without_newlines(str(value), what=f"Header {name}")
-        msg[name] = str(value)
 
-    # Message-ID is reserved: the adapter owns it so every message has one and
-    # callers cannot smuggle an unvalidated value through ``headers``.
-    domain = config.from_email.rpartition("@")[2] or None
-    msg["Message-ID"] = make_msgid(domain=domain)
+class _PinnedSMTPSSL(smtplib.SMTP_SSL):
+    """Implicit-TLS variant of :class:`_PinnedSMTP`."""
 
-    if message.text_body:
-        msg.set_content(message.text_body)
-        msg.add_alternative(message.html_body, subtype="html")
-    else:
-        msg.set_content(message.html_body, subtype="html")
-    return msg
+    def __init__(
+        self,
+        hostname: str,
+        port: int,
+        *,
+        pinned_ip: str,
+        timeout: float,
+        context: ssl.SSLContext,
+    ) -> None:
+        self._pinned_ip = pinned_ip
+        super().__init__(hostname, port, timeout=timeout, context=context)
+
+    def _get_socket(self, host, port, timeout):
+        sock = socket.create_connection(
+            (self._pinned_ip, port), timeout, self.source_address
+        )
+        return self.context.wrap_socket(sock, server_hostname=self._host)
 
 
 class SmtpEmailAdapter(EmailAdapter):
@@ -163,35 +164,52 @@ class SmtpEmailAdapter(EmailAdapter):
 
     @property
     def message_id_domain(self) -> str | None:
-        return self._config.from_email.rpartition("@")[2] or None
+        return message_id_domain(self._config)
 
     def _connection(self) -> smtplib.SMTP:
         host = self._settings["host"]
         port = self._settings["port"]
         # DNS can be rebound between saving settings and connecting, so the
-        # egress check runs again immediately before smtplib resolves the host.
+        # policy runs again here and the checked address is the one dialed.
         try:
-            validate_user_configured_service_host(
+            pinned_ip = resolve_user_configured_service_host(
                 host, port=port, field_name="SMTP host"
             )
+        except ServiceHostResolutionError as exc:
+            raise EmailDeliveryError("SMTP host could not be resolved") from exc
         except ValueError as exc:
             raise EmailConfigurationError(str(exc)) from exc
+
+        context = ssl.create_default_context()
         if self._settings["security"] == "ssl":
+            if pinned_ip is not None:
+                return _PinnedSMTPSSL(
+                    host,
+                    port,
+                    pinned_ip=pinned_ip,
+                    timeout=self._timeout,
+                    context=context,
+                )
             return smtplib.SMTP_SSL(
                 host,
                 port,
                 timeout=self._timeout,
-                context=ssl.create_default_context(),
+                context=context,
             )
-        connection = smtplib.SMTP(host, port, timeout=self._timeout)
+        if pinned_ip is not None:
+            connection: smtplib.SMTP = _PinnedSMTP(
+                host, port, pinned_ip=pinned_ip, timeout=self._timeout
+            )
+        else:
+            connection = smtplib.SMTP(host, port, timeout=self._timeout)
         connection.ehlo()
-        connection.starttls(context=ssl.create_default_context())
+        connection.starttls(context=context)
         connection.ehlo()
         return connection
 
     def _send_blocking(self, message: OutboundEmail) -> str:
         try:
-            msg = _build_message(self._config, message)
+            msg = build_mime_message(self._config, message)
             with self._connection() as connection:
                 connection.login(self._username, self._password)
                 connection.send_message(

@@ -101,6 +101,10 @@ services:
     profiles: ["remote", "local-turn"]
     environment:
       ENVIRONMENT: "${ENVIRONMENT:-local}"
+      # "oss" keeps private-address outbound destinations allowed (self-hosted).
+      # Set DEPLOYMENT_MODE=saas in .env for a hosted deployment; production
+      # refuses to start if the value is missing entirely.
+      DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-oss}"
       SERVER_IP: "${SERVER_IP:-}"
       PUBLIC_HOST: "${PUBLIC_HOST:-}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
@@ -163,6 +167,11 @@ services:
     environment:
       # Core application config
       ENVIRONMENT: "${ENVIRONMENT:-local}"
+      # Egress policy: "oss" (default) allows private-address outbound
+      # destinations and any SMTP port, which is correct for a self-hosted
+      # install. Set DEPLOYMENT_MODE=saas in .env for a hosted deployment.
+      # Production refuses to start when this is unset.
+      DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-oss}"
       LOG_LEVEL: "INFO"
 
       # Set to "false" in .env to disable public signup (invite-only installs).
