@@ -21,6 +21,9 @@ from api.utils.email_validation import (
         ("o'brien@apex-software.com", "o'brien@apex-software.com"),
         ("user@example.xn--p1ai", "user@example.xn--p1ai"),
         ("User@Sub.Example.XN--P1AI", "user@sub.example.xn--p1ai"),
+        ("info@email.com", "info@email.com"),
+        ("info@test.com", "info@test.com"),
+        ("info@company.com", "info@company.com"),
     ],
 )
 def test_valid_addresses_are_normalized(raw, expected):
@@ -37,7 +40,6 @@ def test_valid_addresses_are_normalized(raw, expected):
         ("info@domain.com", "placeholder_domain"),
         ("info@example.com", "placeholder_domain"),
         ("info@mail.example.com", "placeholder_domain"),
-        ("info@test.com", "placeholder_domain"),
         ("user@localhost", "reserved_domain"),
         ("user@printer.local", "reserved_domain"),
         ("not-an-email", "invalid_syntax"),

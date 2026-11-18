@@ -63,18 +63,16 @@ _FILE_EXTENSION_TLDS = frozenset(
 )
 
 # Common placeholder domains used in templates, CMS demos and sample data.
+# Only names that are reserved by RFC 2606 or clearly templated belong here;
+# real domains (``email.com``, ``test.com``, ``company.com``) must not be
+# rejected because a legitimate business could use them.
 _PLACEHOLDER_DOMAINS = frozenset(
     {
-        "company.com",
         "domain.com",
-        "email.com",
         "example.com",
         "example.net",
         "example.org",
         "mydomain.com",
-        "test.com",
-        "test.net",
-        "test.org",
         "your-domain.com",
         "yourdomain.com",
     }
