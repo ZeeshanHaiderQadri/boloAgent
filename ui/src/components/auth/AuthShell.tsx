@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 
 import { BrandLogo } from "@/components/BrandLogo";
+import { AmbientBackdrop } from "@/components/effects/AmbientBackdrop";
 
 const HIGHLIGHTS = [
   "Speech-to-speech",
@@ -42,7 +43,9 @@ export function AuthShell({
 
       {/* Brand / value panel (RIGHT) — hidden on mobile */}
       <aside className="relative hidden flex-col justify-between overflow-hidden border-l border-border/60 bg-zinc-950 p-10 lg:flex xl:p-14">
-        {/* Ambient depth: soft radial glow behind the content */}
+        {/* Ambient depth: drifting particles, then a soft radial glow. */}
+        <AmbientBackdrop particleCount={180} opacity={0.9} />
+        {/* Soft radial glow behind the content */}
         <div
           aria-hidden
           className="pointer-events-none absolute -right-24 top-1/3 size-[28rem] rounded-full opacity-20 blur-3xl"

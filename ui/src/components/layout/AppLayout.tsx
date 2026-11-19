@@ -4,8 +4,9 @@ import { AlertTriangle, Menu, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import posthog from "posthog-js";
-import React, { ReactNode } from "react";
+import React, { ReactNode, useEffect, useRef } from "react";
 
+import { AmbientBackdrop } from "@/components/effects/AmbientBackdrop";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar";
 import { PostHogEvent } from "@/constants/posthog-events";
@@ -93,6 +94,17 @@ interface AppLayoutProps {
 
 const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const pathname = usePathname();
+  const pageRef = useRef<HTMLDivElement | null>(null);
+
+  // Restart the page-enter transition on navigation without remounting the
+  // subtree (remounting would drop page state and break in-flight forms).
+  useEffect(() => {
+    const element = pageRef.current;
+    if (!element) return;
+    element.classList.remove("app-page-enter");
+    void element.offsetWidth;
+    element.classList.add("app-page-enter");
+  }, [pathname]);
 
   // Check if current route should have sidebar
   // Hide sidebar for root (/), /handler routes (Stack Auth routes), and /auth routes
@@ -114,16 +126,22 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               {!isWorkflowEditor && <AppHeader />}
 
               {/* Main content area */}
-              <main className="app-surface flex-1">
-                {children}
+              <main className="app-surface relative flex-1">
+                <AmbientBackdrop particleCount={220} opacity={0.45} />
+                <div ref={pageRef} className="relative z-10">
+                  {children}
+                </div>
               </main>
             </SidebarInset>
           </div>
         </LeadFormsProvider>
       ) : (
-        <div className="app-surface w-full flex-1">
-          <BackendStatusBanner />
-          {children}
+        <div className="app-surface relative w-full flex-1">
+          <AmbientBackdrop particleCount={220} opacity={0.45} />
+          <div ref={pageRef} className="relative z-10">
+            <BackendStatusBanner />
+            {children}
+          </div>
         </div>
       )}
     </SidebarProvider>
