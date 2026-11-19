@@ -437,3 +437,46 @@ async def test_test_send_returns_the_provider_message_id(
     assert response.json()["provider_message_id"] == "smtp-message-1"
     assert sent["to"] == "reviewer@example.net"
     assert invalid.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_race_created_campaign_returns_409_not_500(
+    db_session, test_client_factory, monkeypatch
+):
+    """If a campaign is inserted between the active-count check and the
+    commit, the IntegrityError must be caught and surfaced as 409."""
+    user, org = await _make_user_and_org(db_session, "sender_race_delete")
+    async with test_client_factory(user) as client:
+        created = await _create_sender(client)
+        sender_uuid = created.json()["uuid"]
+        sender = await db_session.get_email_sender(org.id, sender_uuid)
+
+        original_delete = db_session.__class__.delete_email_sender
+
+        async def _race_delete(self, organization_id, sender_uuid_arg):
+            # Insert a draft campaign referencing this sender just before
+            # the real call, so the FK prevents the commit.
+            async with db_session.async_session() as session:
+                from api.db.models import EmailCampaignModel
+
+                session.add(
+                    EmailCampaignModel(
+                        organization_id=org.id,
+                        name="Race campaign",
+                        sender_id=sender.id,
+                        status="draft",
+                    )
+                )
+                await session.commit()
+            # Restore and delegate so the real delete attempt fires.
+            monkeypatch.setattr(
+                db_session.__class__, "delete_email_sender", original_delete
+            )
+            return await original_delete(self, organization_id, sender_uuid_arg)
+
+        monkeypatch.setattr(db_session.__class__, "delete_email_sender", _race_delete)
+
+        response = await client.delete(f"/api/v1/email/senders/{sender_uuid}")
+
+    assert response.status_code == 409
+    assert "campaign" in response.json()["detail"]

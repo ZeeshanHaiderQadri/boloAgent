@@ -373,7 +373,13 @@ class EmailSenderClient(BaseDBClient):
             if credential is not None and credential.organization_id == organization_id:
                 credential.is_active = False
                 credential.updated_at = datetime.now(UTC)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                # A campaign was created between the active-count check and the
+                # delete; surface the same clear 409 as the explicit check.
+                raise EmailSenderCampaignInUseError(0) from exc
 
             logger.info(
                 f"Deleted email sender {sender_uuid} for organization {organization_id}"
