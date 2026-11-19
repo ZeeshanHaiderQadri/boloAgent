@@ -138,7 +138,15 @@ export default function EmailCampaignsPage() {
                 headers: { Authorization: `Bearer ${token}` },
                 body: {
                     name: createName.trim(),
-                    audience: { audience_type: "filter", all_matching: true },
+                    // has_email=true is the minimal valid placeholder: the API
+                    // requires at least one filter field, and every email
+                    // campaign only addresses leads that have an address anyway.
+                    // The operator picks a real audience on the detail page.
+                    audience: {
+                        audience_type: "filter",
+                        all_matching: true,
+                        filters: { has_email: true },
+                    },
                 },
             });
             if (response.error) {
