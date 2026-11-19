@@ -12,15 +12,17 @@ import {
     Search,
     Square,
     Timer,
+    Trash2,
     XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
     cancelLeadSearchApiV1LeadsSearchesSearchIdCancelPost,
+    deleteLeadSearchApiV1LeadsSearchesSearchIdDelete,
     getLeadSearchApiV1LeadsSearchesSearchIdGet,
     getLeadStatsApiV1LeadsStatsGet,
     listLeadsApiV1LeadsGet,
@@ -74,6 +76,7 @@ function statusVariant(status: string) {
 export default function LeadSearchPage() {
     const { user, redirectToLogin, loading } = useAuth();
     const params = useParams<{ searchId: string }>();
+    const router = useRouter();
     const searchId = Number(params.searchId);
     const hasFetched = useRef(false);
 
@@ -226,6 +229,30 @@ export default function LeadSearchPage() {
         }
     };
 
+    const handleDelete = async () => {
+        if (
+            !window.confirm(
+                `Delete the search “${search?.name ?? ""}”? Leads it found stay in your CRM.`,
+            )
+        ) {
+            return;
+        }
+        setActionBusy(true);
+        try {
+            const response = await deleteLeadSearchApiV1LeadsSearchesSearchIdDelete({
+                path: { search_id: searchId },
+            });
+            if (response.error) {
+                toast.error(detailFromError(response.error, "Could not delete the search"));
+                return;
+            }
+            toast.success("Search deleted — leads kept in CRM");
+            router.push("/leads");
+        } finally {
+            setActionBusy(false);
+        }
+    };
+
     const leads = data?.leads ?? [];
     const active = isLeadSearchActive(search?.status);
     const stopping = search?.status === "stopping";
@@ -334,6 +361,15 @@ export default function LeadSearchPage() {
                                 >
                                     <ListPlus className="h-4 w-4" />
                                     Extend
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => void handleDelete()}
+                                    disabled={actionBusy}
+                                    title="Delete this search; its leads stay in the CRM"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete
                                 </Button>
                             </>
                         )}

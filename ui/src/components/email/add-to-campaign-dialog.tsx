@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
+    addLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPost,
     createEmailCampaignApiV1EmailCampaignsPost,
     listEmailCampaignsApiV1EmailCampaignsGet,
     updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch,
@@ -38,7 +39,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 
-interface FilterState {
+export interface FilterState {
     q?: string;
     status?: string;
     tag?: string;
@@ -130,12 +131,19 @@ export function AddToCampaignDialog({
     }, [open, getAccessToken]);
 
     function buildAudienceRule(): AudienceRuleRequest {
+        // `has_email: false` (No email filter) is a real filter, so truthiness
+        // alone would drop it and flip the audience to has_email: true.
+        const hasActiveFilter =
+            filterState != null &&
+            Object.values(filterState).some(
+                (value) => value !== undefined && value !== null && value !== "",
+            );
         if (audienceType === "leads") {
             if (useAllFilter) {
                 // Use filterState if available; fall back to has_email=true so the
                 // API always gets at least one filter field.
                 const filters: CampaignFilters =
-                    filterState && Object.values(filterState).some(Boolean)
+                    hasActiveFilter && filterState
                         ? {
                               q: filterState.q ?? undefined,
                               status: (filterState.status as CampaignFilters["status"]) ?? undefined,
@@ -166,7 +174,7 @@ export function AddToCampaignDialog({
         // filter or any fallback — always include at least has_email so the API
         // never sees an empty filter object.
         const filters: CampaignFilters =
-            filterState && Object.values(filterState).some(Boolean)
+            hasActiveFilter && filterState
                 ? {
                       q: filterState.q ?? undefined,
                       status: (filterState.status as CampaignFilters["status"]) ?? undefined,
@@ -214,16 +222,38 @@ export function AddToCampaignDialog({
         setUpdateError(null);
         try {
             const token = await getAccessToken();
-            const rule = buildAudienceRule();
-            const response = await updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch({
-                headers: { Authorization: `Bearer ${token}` },
-                path: { campaign_uuid: selectedDraftUuid },
-                body: { audience: rule },
-            });
-            if (response.error) {
-                throw new Error(detailFromError(response.error, "Failed to update campaign"));
+            const appendSelectedLeads =
+                audienceType === "leads" && !useAllFilter && (leadIds?.length ?? 0) > 0;
+            if (appendSelectedLeads) {
+                // Append the checked rows; the draft's existing audience is kept.
+                const response =
+                    await addLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPost({
+                        headers: { Authorization: `Bearer ${token}` },
+                        path: { campaign_uuid: selectedDraftUuid },
+                        body: { lead_ids: leadIds ?? [] },
+                    });
+                if (response.error) {
+                    throw new Error(
+                        detailFromError(response.error, "Failed to add leads to campaign"),
+                    );
+                }
+                toast.success(
+                    `Added ${leadIds?.length ?? 0} lead(s) to the campaign audience`,
+                );
+            } else {
+                const rule = buildAudienceRule();
+                const response = await updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch({
+                    headers: { Authorization: `Bearer ${token}` },
+                    path: { campaign_uuid: selectedDraftUuid },
+                    body: { audience: rule },
+                });
+                if (response.error) {
+                    throw new Error(
+                        detailFromError(response.error, "Failed to update campaign"),
+                    );
+                }
+                toast.success("Campaign audience updated");
             }
-            toast.success("Campaign audience updated");
             onOpenChange(false);
             router.push(`/email/campaigns/${selectedDraftUuid}`);
         } catch (cause) {

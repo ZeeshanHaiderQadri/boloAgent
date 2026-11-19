@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
     listRecipients: vi.fn(),
     listCampaigns: vi.fn(),
     previewAudience: vi.fn(),
+    launchCampaign: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ useAuth: () => state.auth }));
@@ -28,6 +29,7 @@ vi.mock('@/client', () => ({
     listCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGet: state.listRecipients,
     listEmailCampaignsApiV1EmailCampaignsGet: state.listCampaigns,
     previewCampaignAudienceApiV1EmailCampaignsPreviewPost: state.previewAudience,
+    launchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPost: state.launchCampaign,
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock('next/navigation', () => ({
@@ -133,9 +135,10 @@ const mockRecipientsData = {
         {
             lead_id: 1,
             title: 'Alice Corp',
-            masked_email: 'a***@acme.com',
+            email: 'alice@acme.com',
             email_consent: 'opted_in',
             bucket: 'eligible',
+            reason: 'Consent recorded — will receive this campaign.',
         },
     ],
     page: 1,
@@ -239,8 +242,17 @@ describe('email campaign wizard', () => {
         expect(screen.getByRole('heading', { name: /Step 3/i })).toBeDefined();
     });
 
-    it('step 5 review: launch button is disabled', async () => {
+    it('step 5 review: launch button calls the launch endpoint', async () => {
         // Campaign with sender+template resumes at step 2 (heading "Step 3")
+        state.launchCampaign.mockResolvedValue({
+            data: {
+                status: 'sending',
+                ready: true,
+                preconditions: [],
+                message: 'Campaign launched: 90 recipient(s) queued for delivery.',
+                queued_count: 90,
+            },
+        });
         state.getCampaign.mockResolvedValue({ data: campaignWithSenderAndTemplate });
         render(<EmailCampaignDetailPage />);
 
@@ -256,9 +268,14 @@ describe('email campaign wizard', () => {
         clickNext();
         await atStep(5);
 
-        // Launch button must be disabled
-        const launchButton = screen.getByRole('button', { name: /launch/i });
-        expect((launchButton as HTMLButtonElement).disabled).toBe(true);
+        const launchButton = screen.getByRole('button', { name: /launch campaign/i });
+        expect((launchButton as HTMLButtonElement).disabled).toBe(false);
+
+        fireEvent.click(launchButton);
+        await waitFor(() => expect(state.launchCampaign).toHaveBeenCalled());
+        expect(state.launchCampaign.mock.calls[0][0]).toMatchObject({
+            path: { campaign_uuid: 'camp-1' },
+        });
     });
 
     it('recipients step: renders a row from the mocked recipients endpoint', async () => {
@@ -274,9 +291,9 @@ describe('email campaign wizard', () => {
 
         // Recipient row should appear from the mocked endpoint
         expect(await screen.findByText('Alice Corp')).toBeDefined();
-        expect(screen.getByText('a***@acme.com')).toBeDefined();
-        // Raw email must never appear
-        expect(screen.queryByText('alice@acme.com')).toBeNull();
+        // The operator sees the address the campaign resolves.
+        expect(screen.getByText('alice@acme.com')).toBeDefined();
+        expect(screen.getByText(/Consent recorded/)).toBeDefined();
     });
 
     it('auto-save: PATCH is called when advancing past step 2 with a sender selected', async () => {
@@ -294,5 +311,43 @@ describe('email campaign wizard', () => {
         const callBody = state.updateCampaign.mock.calls[0][0].body;
         expect('sender_uuid' in callBody).toBe(true);
         expect('template_uuid' in callBody).toBe(true);
+    });
+
+    it('auto-preview: filter audiences send the stored filters without all_matching', async () => {
+        state.getCampaign.mockResolvedValue({
+            data: {
+                ...campaignWithSenderAndTemplate,
+                audience_type: 'filter',
+                audience: { filters: { city: 'Austin', has_email: true, all_matching: true }, all_matching: true },
+            },
+        });
+        render(<EmailCampaignDetailPage />);
+
+        await screen.findByText('November outreach');
+        await atStep(3); // resumes at consent
+
+        clickNext();
+
+        await waitFor(() => expect(state.previewAudience).toHaveBeenCalledTimes(1));
+        const body = state.previewAudience.mock.calls[0][0].body;
+        expect(body.audience.audience_type).toBe('filter');
+        expect(body.audience.all_matching).toBe(true);
+        expect(body.audience.filters).toEqual({ city: 'Austin', has_email: true });
+        expect(state.previewAudience.mock.calls[0][0].body.audience.filters).not.toHaveProperty('all_matching');
+    });
+
+    it('recipients step: initial fetch asks for all buckets instead of an empty bucket', async () => {
+        state.getCampaign.mockResolvedValue({ data: campaignWithSenderAndTemplate });
+        render(<EmailCampaignDetailPage />);
+
+        await screen.findByText('November outreach');
+        await atStep(3);
+
+        clickNext();
+        await atStep(4);
+
+        await waitFor(() => expect(state.listRecipients).toHaveBeenCalled());
+        const query = state.listRecipients.mock.calls[0][0].query;
+        expect(query.bucket).toBeUndefined();
     });
 });

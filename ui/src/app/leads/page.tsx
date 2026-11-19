@@ -8,12 +8,15 @@ import {
     Phone,
     Plus,
     Search,
+    Trash2,
     Trophy,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
+    deleteLeadSearchApiV1LeadsSearchesSearchIdDelete,
     getLeadStatsApiV1LeadsStatsGet,
     listLeadsApiV1LeadsGet,
     listLeadSearchesApiV1LeadsSearchesGet,
@@ -88,6 +91,25 @@ export default function LeadsPage() {
             setIsLoading(false);
         }
     }, []);
+
+    const handleDeleteSearch = async (searchId: number, searchName: string) => {
+        if (
+            !window.confirm(
+                `Delete the search “${searchName}”? Leads it found stay in your CRM.`,
+            )
+        ) {
+            return;
+        }
+        const response = await deleteLeadSearchApiV1LeadsSearchesSearchIdDelete({
+            path: { search_id: searchId },
+        });
+        if (response.error) {
+            toast.error(detailFromError(response.error, "Could not delete the search"));
+            return;
+        }
+        toast.success("Search deleted — leads kept in CRM");
+        void fetchOverview();
+    };
 
     useEffect(() => {
         if (loading || !user || hasFetched.current) return;
@@ -275,12 +297,30 @@ export default function LeadsPage() {
                                                     {formatDateTime(search.created_at, timezone)}
                                                 </TableCell>
                                                 <TableCell className="text-right">
-                                                    <Button size="sm" variant="outline" asChild>
-                                                        <Link href={`/leads/searches/${search.id}`}>
-                                                            Open
-                                                            <ArrowRight className="h-3.5 w-3.5" />
-                                                        </Link>
-                                                    </Button>
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <Button size="sm" variant="outline" asChild>
+                                                            <Link href={`/leads/searches/${search.id}`}>
+                                                                Open
+                                                                <ArrowRight className="h-3.5 w-3.5" />
+                                                            </Link>
+                                                        </Button>
+                                                        {!isLeadSearchActive(search.status) && (
+                                                            <Button
+                                                                size="icon"
+                                                                variant="ghost"
+                                                                aria-label={`Delete ${search.name}`}
+                                                                title="Delete this search; its leads stay in the CRM"
+                                                                onClick={() =>
+                                                                    void handleDeleteSearch(
+                                                                        search.id,
+                                                                        search.name,
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        )}
+                                                    </div>
                                                 </TableCell>
                                             </TableRow>
                                         ))}

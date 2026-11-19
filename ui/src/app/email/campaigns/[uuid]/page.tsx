@@ -1,11 +1,13 @@
 "use client";
 
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
+    deleteEmailCampaignApiV1EmailCampaignsCampaignUuidDelete,
     getEmailCampaignApiV1EmailCampaignsCampaignUuidGet,
     listEmailSendersApiV1EmailSendersGet,
     listEmailTemplatesApiV1EmailTemplatesGet,
@@ -13,10 +15,13 @@ import {
     updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch,
 } from "@/client";
 import type {
+    AudienceRuleRequest,
+    CampaignFilters,
     EmailCampaignResponse,
     EmailSenderResponse,
     EmailTemplateSummary,
 } from "@/client/types.gen";
+import { CampaignSendProgress } from "@/components/email/wizard/CampaignSendProgress";
 import { CampaignStepper } from "@/components/email/wizard/CampaignStepper";
 import { Step1Audience } from "@/components/email/wizard/Step1Audience";
 import { Step2SenderTemplate } from "@/components/email/wizard/Step2SenderTemplate";
@@ -25,6 +30,15 @@ import { Step4Recipients } from "@/components/email/wizard/Step4Recipients";
 import { Step5Review } from "@/components/email/wizard/Step5Review";
 import { WizardSummary } from "@/components/email/wizard/WizardSummary";
 import { PageLayout } from "@/components/layout/PageLayout";
+import {
+    AlertDialog,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { detailFromError } from "@/lib/apiError";
@@ -37,6 +51,8 @@ const STEPS = [
     { label: "Recipients" },
     { label: "Review" },
 ];
+
+const DELETABLE_STATUSES = ["draft", "ready", "completed", "cancelled", "failed"];
 
 function resumeStep(campaign: EmailCampaignResponse): number {
     // If consent was explicitly set, start at recipients (step 3)
@@ -55,8 +71,38 @@ function resumeStep(campaign: EmailCampaignResponse): number {
     return 0;
 }
 
+/**
+ * Rebuild the API audience rule from the stored campaign.
+ *
+ * Filter audiences are stored with the filter object plus `all_matching`, but
+ * CampaignFilters rejects unknown keys, so `all_matching` must be stripped
+ * before it is sent back to the API.
+ */
+function audienceRuleForRequest(campaign: EmailCampaignResponse): AudienceRuleRequest {
+    const audience = campaign.audience as Record<string, unknown>;
+    const rule: AudienceRuleRequest = {
+        audience_type: campaign.audience_type as AudienceRuleRequest["audience_type"],
+        lead_ids: audience.lead_ids as number[] | undefined,
+        project_id: audience.project_id as number | undefined,
+        tag: audience.tag as string | undefined,
+        excluded_lead_ids: audience.excluded_lead_ids as number[] | undefined,
+        manual_emails: audience.manual_emails as string[] | undefined,
+        extra_lead_ids: audience.extra_lead_ids as number[] | undefined,
+    };
+    if (campaign.audience_type === "filter") {
+        const filters = {
+            ...((audience.filters as Record<string, unknown> | undefined) ?? {}),
+        };
+        delete filters.all_matching;
+        rule.filters = filters as CampaignFilters;
+        rule.all_matching = true;
+    }
+    return rule;
+}
+
 export default function EmailCampaignDetailPage() {
     const { uuid: campaignUuid } = useParams<{ uuid: string }>();
+    const router = useRouter();
     const { user, loading: authLoading, getAccessToken, redirectToLogin } = useAuth();
 
     const [campaign, setCampaign] = useState<EmailCampaignResponse | null>(null);
@@ -80,6 +126,10 @@ export default function EmailCampaignDetailPage() {
 
     // Field errors
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+    const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
 
     const hasFetched = useRef(false);
 
@@ -130,7 +180,7 @@ export default function EmailCampaignDetailPage() {
             }
         };
         void load();
-    }, [authLoading, user, getAccessToken, campaignUuid]);
+    }, [authLoading, user, getAccessToken, campaignUuid, reloadKey]);
 
     const autoSave = async (fields: Parameters<typeof updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch>[0]["body"]) => {
         const token = await getAccessToken();
@@ -146,22 +196,19 @@ export default function EmailCampaignDetailPage() {
     const autoPreview = async () => {
         if (!campaign) return;
         const token = await getAccessToken();
-        const audience = campaign.audience as Record<string, unknown>;
         const response = await previewCampaignAudienceApiV1EmailCampaignsPreviewPost({
             headers: { Authorization: `Bearer ${token}` },
             body: {
-                audience: {
-                    audience_type: campaign.audience_type as "leads" | "project" | "tag" | "filter",
-                    lead_ids: audience.lead_ids as number[] | undefined,
-                    project_id: audience.project_id as number | undefined,
-                    tag: audience.tag as string | undefined,
-                    excluded_lead_ids: audience.excluded_lead_ids as number[] | undefined,
-                },
+                audience: audienceRuleForRequest(campaign),
                 consent_policy: consentPolicy as "opted_in_only" | "include_unknown",
                 consent_override_reason:
                     consentPolicy === "include_unknown" ? overrideReason.trim() || null : null,
             },
         });
+        if (response.error) {
+            toast.error(detailFromError(response.error, "Failed to preview audience"));
+            return;
+        }
         if (response.data) {
             // Store the preview counts on the campaign so step 5 shows real data
             const updated = {
@@ -202,8 +249,38 @@ export default function EmailCampaignDetailPage() {
         setCurrentStep(3);
     };
 
-    const handleStep4Next = () => {
+    const handleStep4Next = async () => {
+        // Exclusions reset the stored counts via PATCH; refresh them so step 5
+        // reviews the audience as it currently stands.
+        await autoPreview();
         setCurrentStep(4);
+    };
+
+    const deleteCampaign = async () => {
+        if (deleting) return;
+        setDeleting(true);
+        try {
+            const token = await getAccessToken();
+            const response =
+                await deleteEmailCampaignApiV1EmailCampaignsCampaignUuidDelete({
+                    headers: { Authorization: `Bearer ${token}` },
+                    path: { campaign_uuid: campaignUuid },
+                });
+            if (response.error) {
+                toast.error(
+                    detailFromError(response.error, "Failed to delete campaign"),
+                );
+                return;
+            }
+            toast.success("Campaign deleted");
+            router.push("/email/campaigns");
+        } catch (cause) {
+            toast.error(
+                cause instanceof Error ? cause.message : "Failed to delete campaign",
+            );
+        } finally {
+            setDeleting(false);
+        }
     };
 
     if (loading || authLoading || !user) {
@@ -234,6 +311,7 @@ export default function EmailCampaignDetailPage() {
                             hasFetched.current = false;
                             setError(null);
                             setLoading(true);
+                            setReloadKey((key) => key + 1);
                         }}
                     >
                         Retry
@@ -245,13 +323,19 @@ export default function EmailCampaignDetailPage() {
 
     if (!campaign) return null;
 
+    const isEditable = campaign.status === "draft" || campaign.status === "ready";
+
     return (
         <PageLayout
             title={campaign.name}
-            description="Configure this email campaign step by step."
+            description={
+                isEditable
+                    ? "Configure this email campaign step by step."
+                    : "Live sending progress. Pause, resume, or stop at any time."
+            }
         >
             {/* Back link */}
-            <div className="mb-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <Link
                     href="/email/campaigns"
                     className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -259,70 +343,116 @@ export default function EmailCampaignDetailPage() {
                     <ChevronLeft className="h-3.5 w-3.5" />
                     All campaigns
                 </Link>
+                {DELETABLE_STATUSES.includes(campaign.status) && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteOpen(true)}
+                    >
+                        <Trash2 className="h-4 w-4" />
+                        Delete campaign
+                    </Button>
+                )}
             </div>
 
-            {/* Stepper */}
-            <CampaignStepper steps={STEPS} currentStep={currentStep} />
+            {!isEditable ? (
+                <CampaignSendProgress campaign={campaign} onCampaignChange={setCampaign} />
+            ) : (
+                <>
+                    {/* Stepper */}
+                    <CampaignStepper steps={STEPS} currentStep={currentStep} />
 
-            {/* Two-column layout: wizard content + sticky summary */}
-            <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
-                <div className="min-w-0 rounded-xl border bg-card p-5">
-                    {currentStep === 0 && (
-                        <Step1Audience
-                            campaign={campaign}
-                            onNext={handleStep1Next}
-                        />
-                    )}
-                    {currentStep === 1 && (
-                        <Step2SenderTemplate
-                            campaign={campaign}
-                            senders={senders}
-                            templates={templates}
-                            senderUuid={senderUuid}
-                            templateUuid={templateUuid}
-                            onSenderChange={setSenderUuid}
-                            onTemplateChange={setTemplateUuid}
-                            onBack={() => setCurrentStep(0)}
-                            onNext={() => void handleStep2Next()}
-                            fieldErrors={fieldErrors}
-                        />
-                    )}
-                    {currentStep === 2 && (
-                        <Step3Consent
-                            consentPolicy={consentPolicy}
-                            overrideReason={overrideReason}
-                            onConsentChange={(p) => {
-                                setConsentPolicy(p);
-                                setFieldErrors({});
-                            }}
-                            onReasonChange={(r) => {
-                                setOverrideReason(r);
-                                if (r.trim()) setFieldErrors({});
-                            }}
-                            onBack={() => setCurrentStep(1)}
-                            onNext={() => void handleStep3Next()}
-                            fieldErrors={fieldErrors}
-                        />
-                    )}
-                    {currentStep === 3 && (
-                        <Step4Recipients
-                            campaign={campaign}
-                            onCampaignChange={setCampaign}
-                            onBack={() => setCurrentStep(2)}
-                            onNext={handleStep4Next}
-                        />
-                    )}
-                    {currentStep === 4 && (
-                        <Step5Review
-                            campaign={campaign}
-                            onBack={() => setCurrentStep(3)}
-                        />
-                    )}
-                </div>
+                    {/* Two-column layout: wizard content + sticky summary */}
+                    <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+                        <div className="min-w-0 rounded-xl border bg-card p-5">
+                            {currentStep === 0 && (
+                                <Step1Audience
+                                    campaign={campaign}
+                                    onNext={handleStep1Next}
+                                />
+                            )}
+                            {currentStep === 1 && (
+                                <Step2SenderTemplate
+                                    campaign={campaign}
+                                    senders={senders}
+                                    templates={templates}
+                                    senderUuid={senderUuid}
+                                    templateUuid={templateUuid}
+                                    onSenderChange={setSenderUuid}
+                                    onTemplateChange={setTemplateUuid}
+                                    onBack={() => setCurrentStep(0)}
+                                    onNext={() => void handleStep2Next()}
+                                    fieldErrors={fieldErrors}
+                                />
+                            )}
+                            {currentStep === 2 && (
+                                <Step3Consent
+                                    consentPolicy={consentPolicy}
+                                    overrideReason={overrideReason}
+                                    onConsentChange={(p) => {
+                                        setConsentPolicy(p);
+                                        setFieldErrors({});
+                                    }}
+                                    onReasonChange={(r) => {
+                                        setOverrideReason(r);
+                                        if (r.trim()) setFieldErrors({});
+                                    }}
+                                    onBack={() => setCurrentStep(1)}
+                                    onNext={() => void handleStep3Next()}
+                                    fieldErrors={fieldErrors}
+                                />
+                            )}
+                            {currentStep === 3 && (
+                                <Step4Recipients
+                                    campaign={campaign}
+                                    onCampaignChange={setCampaign}
+                                    onBack={() => setCurrentStep(2)}
+                                    onNext={() => void handleStep4Next()}
+                                />
+                            )}
+                            {currentStep === 4 && (
+                                <Step5Review
+                                    campaign={campaign}
+                                    onCampaignChange={setCampaign}
+                                    onBack={() => setCurrentStep(3)}
+                                />
+                            )}
+                        </div>
 
-                {/* Sticky summary */}
-                <WizardSummary campaign={campaign} />
-            </div>
+                        {/* Sticky summary */}
+                        <WizardSummary campaign={campaign} />
+                    </div>
+                </>
+            )}
+
+            <AlertDialog
+                open={deleteOpen}
+                onOpenChange={(open) => {
+                    if (!deleting) setDeleteOpen(open);
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete campaign?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Delete &quot;{campaign.name}&quot;? This action cannot be
+                            undone. Its delivery records are removed with it.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                        <Button
+                            variant="destructive"
+                            disabled={deleting}
+                            onClick={() => void deleteCampaign()}
+                        >
+                            {deleting && <Loader2 className="h-4 w-4 animate-spin" />}
+                            {deleting ? "Deleting..." : "Delete"}
+                        </Button>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </PageLayout>
     );
 }

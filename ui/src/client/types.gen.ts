@@ -127,6 +127,16 @@ export type ActiveCallsResponse = {
 };
 
 /**
+ * AddLeadsToCampaignRequest
+ */
+export type AddLeadsToCampaignRequest = {
+    /**
+     * Lead Ids
+     */
+    lead_ids: Array<number>;
+};
+
+/**
  * AmbientNoiseConfigurationDefaults
  */
 export type AmbientNoiseConfigurationDefaults = {
@@ -223,6 +233,14 @@ export type AudienceRuleRequest = {
      * Excluded Lead Ids
      */
     excluded_lead_ids?: Array<number>;
+    /**
+     * Manual Emails
+     */
+    manual_emails?: Array<string>;
+    /**
+     * Extra Lead Ids
+     */
+    extra_lead_ids?: Array<number>;
 };
 
 /**
@@ -651,6 +669,16 @@ export type BuilderTurnRequest = {
 };
 
 /**
+ * BulkLeadDeleteRequest
+ */
+export type BulkLeadDeleteRequest = {
+    /**
+     * Lead Ids
+     */
+    lead_ids: Array<number>;
+};
+
+/**
  * BulkLeadEmailConsentRequest
  */
 export type BulkLeadEmailConsentRequest = {
@@ -985,6 +1013,56 @@ export type CampaignLogEntryResponse = {
 };
 
 /**
+ * CampaignMessageItem
+ */
+export type CampaignMessageItem = {
+    /**
+     * Email
+     */
+    email: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Error Message
+     */
+    error_message: string | null;
+    /**
+     * Sent At
+     */
+    sent_at: string | null;
+    /**
+     * Updated At
+     */
+    updated_at: string | null;
+};
+
+/**
+ * CampaignMessagesResponse
+ *
+ * Recent per-recipient delivery rows for one campaign.
+ */
+export type CampaignMessagesResponse = {
+    /**
+     * Items
+     */
+    items: Array<CampaignMessageItem>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Page
+     */
+    page: number;
+    /**
+     * Limit
+     */
+    limit: number;
+};
+
+/**
  * CampaignPreviewRequest
  */
 export type CampaignPreviewRequest = {
@@ -1019,54 +1097,6 @@ export type CampaignPreviewResponse = {
      * Warnings
      */
     warnings: Array<string>;
-};
-
-/**
- * CampaignProgressResponse
- */
-export type CampaignProgressResponse = {
-    /**
-     * Campaign Id
-     */
-    campaign_id: number;
-    /**
-     * State
-     */
-    state: string;
-    /**
-     * Total Rows
-     */
-    total_rows: number;
-    /**
-     * Processed Rows
-     */
-    processed_rows: number;
-    /**
-     * Failed Calls
-     */
-    failed_calls: number;
-    /**
-     * Progress Percentage
-     */
-    progress_percentage: number;
-    /**
-     * Source Sync
-     */
-    source_sync: {
-        [key: string]: unknown;
-    };
-    /**
-     * Rate Limit
-     */
-    rate_limit: number;
-    /**
-     * Started At
-     */
-    started_at: string | null;
-    /**
-     * Completed At
-     */
-    completed_at: string | null;
 };
 
 /**
@@ -2543,6 +2573,7 @@ export type EmailCampaignResponse = {
      */
     failure_reason: string | null;
     counts: CampaignCountsResponse;
+    progress?: ApiRoutesEmailCampaignsCampaignProgressResponse;
     sender: SenderSummaryResponse | null;
     template: TemplateSummaryResponse | null;
     /**
@@ -3597,6 +3628,10 @@ export type LaunchResponse = {
      * Message
      */
     message: string;
+    /**
+     * Queued Count
+     */
+    queued_count?: number;
 };
 
 /**
@@ -6284,15 +6319,15 @@ export type RecipientItem = {
     /**
      * Lead Id
      */
-    lead_id: number;
+    lead_id?: number | null;
     /**
      * Title
      */
     title: string;
     /**
-     * Masked Email
+     * Email
      */
-    masked_email: string;
+    email: string;
     /**
      * Email Consent
      */
@@ -6301,6 +6336,10 @@ export type RecipientItem = {
      * Bucket
      */
     bucket: string;
+    /**
+     * Reason
+     */
+    reason: string;
 };
 
 /**
@@ -9966,6 +10005,98 @@ export type WorkflowVersionSummaryResponse = {
     published_at: string | null;
 };
 
+/**
+ * CampaignProgressResponse
+ */
+export type ApiRoutesCampaignCampaignProgressResponse = {
+    /**
+     * Campaign Id
+     */
+    campaign_id: number;
+    /**
+     * State
+     */
+    state: string;
+    /**
+     * Total Rows
+     */
+    total_rows: number;
+    /**
+     * Processed Rows
+     */
+    processed_rows: number;
+    /**
+     * Failed Calls
+     */
+    failed_calls: number;
+    /**
+     * Progress Percentage
+     */
+    progress_percentage: number;
+    /**
+     * Source Sync
+     */
+    source_sync: {
+        [key: string]: unknown;
+    };
+    /**
+     * Rate Limit
+     */
+    rate_limit: number;
+    /**
+     * Started At
+     */
+    started_at: string | null;
+    /**
+     * Completed At
+     */
+    completed_at: string | null;
+};
+
+/**
+ * CampaignProgressResponse
+ *
+ * Delivery state of the frozen recipient rows, polled by the UI.
+ */
+export type ApiRoutesEmailCampaignsCampaignProgressResponse = {
+    /**
+     * Total
+     */
+    total?: number;
+    /**
+     * Held
+     */
+    held?: number;
+    /**
+     * Queued
+     */
+    queued?: number;
+    /**
+     * Sending
+     */
+    sending?: number;
+    /**
+     * Sent
+     */
+    sent?: number;
+    /**
+     * Failed
+     */
+    failed?: number;
+    /**
+     * Cancelled
+     */
+    cancelled?: number;
+    /**
+     * Bounced
+     */
+    bounced?: number;
+    /**
+     * Complained
+     */
+    complained?: number;
+};
+
 export type InitiateCallApiV1TelephonyInitiateCallPostData = {
     body: InitiateCallRequest;
     headers?: {
@@ -13583,7 +13714,7 @@ export type GetCampaignProgressApiV1CampaignCampaignIdProgressGetResponses = {
     /**
      * Successful Response
      */
-    200: CampaignProgressResponse;
+    200: ApiRoutesCampaignCampaignProgressResponse;
 };
 
 export type GetCampaignProgressApiV1CampaignCampaignIdProgressGetResponse = GetCampaignProgressApiV1CampaignCampaignIdProgressGetResponses[keyof GetCampaignProgressApiV1CampaignCampaignIdProgressGetResponses];
@@ -13908,6 +14039,54 @@ export type CreateLeadSearchApiV1LeadsSearchesPostResponses = {
 };
 
 export type CreateLeadSearchApiV1LeadsSearchesPostResponse = CreateLeadSearchApiV1LeadsSearchesPostResponses[keyof CreateLeadSearchApiV1LeadsSearchesPostResponses];
+
+export type DeleteLeadSearchApiV1LeadsSearchesSearchIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Search Id
+         */
+        search_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/searches/{search_id}';
+};
+
+export type DeleteLeadSearchApiV1LeadsSearchesSearchIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteLeadSearchApiV1LeadsSearchesSearchIdDeleteError = DeleteLeadSearchApiV1LeadsSearchesSearchIdDeleteErrors[keyof DeleteLeadSearchApiV1LeadsSearchesSearchIdDeleteErrors];
+
+export type DeleteLeadSearchApiV1LeadsSearchesSearchIdDeleteResponses = {
+    /**
+     * Response Delete Lead Search Api V1 Leads Searches  Search Id  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: boolean;
+    };
+};
+
+export type DeleteLeadSearchApiV1LeadsSearchesSearchIdDeleteResponse = DeleteLeadSearchApiV1LeadsSearchesSearchIdDeleteResponses[keyof DeleteLeadSearchApiV1LeadsSearchesSearchIdDeleteResponses];
 
 export type GetLeadSearchApiV1LeadsSearchesSearchIdGetData = {
     body?: never;
@@ -14417,6 +14596,49 @@ export type BulkUpdateLeadsApiV1LeadsBulkPostResponses = {
 };
 
 export type BulkUpdateLeadsApiV1LeadsBulkPostResponse = BulkUpdateLeadsApiV1LeadsBulkPostResponses[keyof BulkUpdateLeadsApiV1LeadsBulkPostResponses];
+
+export type BulkDeleteLeadsApiV1LeadsBulkDeletePostData = {
+    body: BulkLeadDeleteRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/leads/bulk-delete';
+};
+
+export type BulkDeleteLeadsApiV1LeadsBulkDeletePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BulkDeleteLeadsApiV1LeadsBulkDeletePostError = BulkDeleteLeadsApiV1LeadsBulkDeletePostErrors[keyof BulkDeleteLeadsApiV1LeadsBulkDeletePostErrors];
+
+export type BulkDeleteLeadsApiV1LeadsBulkDeletePostResponses = {
+    /**
+     * Response Bulk Delete Leads Api V1 Leads Bulk Delete Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: number;
+    };
+};
+
+export type BulkDeleteLeadsApiV1LeadsBulkDeletePostResponse = BulkDeleteLeadsApiV1LeadsBulkDeletePostResponses[keyof BulkDeleteLeadsApiV1LeadsBulkDeletePostResponses];
 
 export type BulkUpdateLeadEmailConsentApiV1LeadsEmailConsentBulkPostData = {
     body: BulkLeadEmailConsentRequest;
@@ -16518,6 +16740,50 @@ export type UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchResponses = {
 
 export type UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchResponse = UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchResponses[keyof UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchResponses];
 
+export type AddLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPostData = {
+    body: AddLeadsToCampaignRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/campaigns/{campaign_uuid}/add-leads';
+};
+
+export type AddLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AddLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPostError = AddLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPostErrors[keyof AddLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPostErrors];
+
+export type AddLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailCampaignResponse;
+};
+
+export type AddLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPostResponse = AddLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPostResponses[keyof AddLeadsToEmailCampaignApiV1EmailCampaignsCampaignUuidAddLeadsPostResponses];
+
 export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostData = {
     body?: never;
     headers?: {
@@ -16561,6 +16827,182 @@ export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponse
 };
 
 export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponse = LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponses[keyof LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponses];
+
+export type PauseEmailCampaignApiV1EmailCampaignsCampaignUuidPausePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/campaigns/{campaign_uuid}/pause';
+};
+
+export type PauseEmailCampaignApiV1EmailCampaignsCampaignUuidPausePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PauseEmailCampaignApiV1EmailCampaignsCampaignUuidPausePostError = PauseEmailCampaignApiV1EmailCampaignsCampaignUuidPausePostErrors[keyof PauseEmailCampaignApiV1EmailCampaignsCampaignUuidPausePostErrors];
+
+export type PauseEmailCampaignApiV1EmailCampaignsCampaignUuidPausePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailCampaignResponse;
+};
+
+export type PauseEmailCampaignApiV1EmailCampaignsCampaignUuidPausePostResponse = PauseEmailCampaignApiV1EmailCampaignsCampaignUuidPausePostResponses[keyof PauseEmailCampaignApiV1EmailCampaignsCampaignUuidPausePostResponses];
+
+export type ResumeEmailCampaignApiV1EmailCampaignsCampaignUuidResumePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/campaigns/{campaign_uuid}/resume';
+};
+
+export type ResumeEmailCampaignApiV1EmailCampaignsCampaignUuidResumePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResumeEmailCampaignApiV1EmailCampaignsCampaignUuidResumePostError = ResumeEmailCampaignApiV1EmailCampaignsCampaignUuidResumePostErrors[keyof ResumeEmailCampaignApiV1EmailCampaignsCampaignUuidResumePostErrors];
+
+export type ResumeEmailCampaignApiV1EmailCampaignsCampaignUuidResumePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailCampaignResponse;
+};
+
+export type ResumeEmailCampaignApiV1EmailCampaignsCampaignUuidResumePostResponse = ResumeEmailCampaignApiV1EmailCampaignsCampaignUuidResumePostResponses[keyof ResumeEmailCampaignApiV1EmailCampaignsCampaignUuidResumePostResponses];
+
+export type StopEmailCampaignApiV1EmailCampaignsCampaignUuidStopPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/campaigns/{campaign_uuid}/stop';
+};
+
+export type StopEmailCampaignApiV1EmailCampaignsCampaignUuidStopPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StopEmailCampaignApiV1EmailCampaignsCampaignUuidStopPostError = StopEmailCampaignApiV1EmailCampaignsCampaignUuidStopPostErrors[keyof StopEmailCampaignApiV1EmailCampaignsCampaignUuidStopPostErrors];
+
+export type StopEmailCampaignApiV1EmailCampaignsCampaignUuidStopPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailCampaignResponse;
+};
+
+export type StopEmailCampaignApiV1EmailCampaignsCampaignUuidStopPostResponse = StopEmailCampaignApiV1EmailCampaignsCampaignUuidStopPostResponses[keyof StopEmailCampaignApiV1EmailCampaignsCampaignUuidStopPostResponses];
+
+export type RestartEmailCampaignApiV1EmailCampaignsCampaignUuidRestartPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/campaigns/{campaign_uuid}/restart';
+};
+
+export type RestartEmailCampaignApiV1EmailCampaignsCampaignUuidRestartPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RestartEmailCampaignApiV1EmailCampaignsCampaignUuidRestartPostError = RestartEmailCampaignApiV1EmailCampaignsCampaignUuidRestartPostErrors[keyof RestartEmailCampaignApiV1EmailCampaignsCampaignUuidRestartPostErrors];
+
+export type RestartEmailCampaignApiV1EmailCampaignsCampaignUuidRestartPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailCampaignResponse;
+};
+
+export type RestartEmailCampaignApiV1EmailCampaignsCampaignUuidRestartPostResponse = RestartEmailCampaignApiV1EmailCampaignsCampaignUuidRestartPostResponses[keyof RestartEmailCampaignApiV1EmailCampaignsCampaignUuidRestartPostResponses];
 
 export type ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetData = {
     body?: never;
@@ -16618,6 +17060,59 @@ export type ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetRe
 };
 
 export type ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetResponse = ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetResponses[keyof ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetResponses];
+
+export type ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: {
+        /**
+         * Page
+         */
+        page?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/email/campaigns/{campaign_uuid}/messages';
+};
+
+export type ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetError = ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetErrors[keyof ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetErrors];
+
+export type ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CampaignMessagesResponse;
+};
+
+export type ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponse = ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponses[keyof ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponses];
 
 export type ListToolsApiV1ToolsGetData = {
     body?: never;
@@ -19856,6 +20351,74 @@ export type GetTurnCredentialsApiV1TurnCredentialsGetResponses = {
 };
 
 export type GetTurnCredentialsApiV1TurnCredentialsGetResponse = GetTurnCredentialsApiV1TurnCredentialsGetResponses[keyof GetTurnCredentialsApiV1TurnCredentialsGetResponses];
+
+export type UnsubscribeApiV1UnsubscribeTokenGetData = {
+    body?: never;
+    path: {
+        /**
+         * Token
+         */
+        token: string;
+    };
+    query?: never;
+    url: '/api/v1/unsubscribe/{token}';
+};
+
+export type UnsubscribeApiV1UnsubscribeTokenGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UnsubscribeApiV1UnsubscribeTokenGetError = UnsubscribeApiV1UnsubscribeTokenGetErrors[keyof UnsubscribeApiV1UnsubscribeTokenGetErrors];
+
+export type UnsubscribeApiV1UnsubscribeTokenGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: string;
+};
+
+export type UnsubscribeApiV1UnsubscribeTokenGetResponse = UnsubscribeApiV1UnsubscribeTokenGetResponses[keyof UnsubscribeApiV1UnsubscribeTokenGetResponses];
+
+export type UnsubscribeOneClickApiV1UnsubscribeTokenPostData = {
+    body?: never;
+    path: {
+        /**
+         * Token
+         */
+        token: string;
+    };
+    query?: never;
+    url: '/api/v1/unsubscribe/{token}';
+};
+
+export type UnsubscribeOneClickApiV1UnsubscribeTokenPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UnsubscribeOneClickApiV1UnsubscribeTokenPostError = UnsubscribeOneClickApiV1UnsubscribeTokenPostErrors[keyof UnsubscribeOneClickApiV1UnsubscribeTokenPostErrors];
+
+export type UnsubscribeOneClickApiV1UnsubscribeTokenPostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type UnsubscribeOneClickApiV1UnsubscribeTokenPostResponse = UnsubscribeOneClickApiV1UnsubscribeTokenPostResponses[keyof UnsubscribeOneClickApiV1UnsubscribeTokenPostResponses];
 
 export type OptionsInitApiV1PublicEmbedInitOptionsData = {
     body?: never;

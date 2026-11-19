@@ -48,7 +48,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 
-const DRAFT_STATUSES = ["draft", "ready"];
+// A running campaign must be cancelled first; everything else can be removed.
+const DELETABLE_STATUSES = ["draft", "ready", "completed", "cancelled", "failed"];
 
 function statusBadge(status: string) {
     switch (status) {
@@ -58,8 +59,12 @@ function statusBadge(status: string) {
             return <Badge variant="outline">Ready</Badge>;
         case "sending":
             return <Badge>Sending</Badge>;
-        case "sent":
-            return <Badge>Sent</Badge>;
+        case "launching":
+            return <Badge>Sending</Badge>;
+        case "paused":
+            return <Badge variant="outline">Paused</Badge>;
+        case "completed":
+            return <Badge variant="success">Completed</Badge>;
         case "cancelled":
             return <Badge variant="destructive">Cancelled</Badge>;
         case "failed":
@@ -191,7 +196,7 @@ export default function EmailCampaignsPage() {
         <>
             <PageLayout
                 title="Email campaigns"
-                description="Build and track email campaigns. Nothing sends until you launch — and launch is currently disabled."
+                description="Build and track email campaigns. Nothing sends until you launch, and sending can be paused or stopped mid-run."
             >
                 <PageSection
                     title="Campaigns"
@@ -278,7 +283,7 @@ export default function EmailCampaignsPage() {
                                         >
                                             Open
                                         </Button>
-                                        {DRAFT_STATUSES.includes(campaign.status) && (
+                                        {DELETABLE_STATUSES.includes(campaign.status) && (
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
@@ -355,8 +360,9 @@ export default function EmailCampaignsPage() {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Delete campaign?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Delete &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
-                            Only draft and ready campaigns can be deleted.
+                            Delete &quot;{deleteTarget?.name}&quot;? This action cannot be
+                            undone. Its delivery records are removed with it. A running
+                            campaign must be cancelled before it can be deleted.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     {deleteError && (

@@ -3,7 +3,10 @@
 import { useState } from "react";
 
 import type { EmailCampaignResponse } from "@/client/types.gen";
-import { AddToCampaignDialog } from "@/components/email/add-to-campaign-dialog";
+import {
+    AddToCampaignDialog,
+    type FilterState,
+} from "@/components/email/add-to-campaign-dialog";
 import { Button } from "@/components/ui/button";
 
 interface Props {
@@ -43,6 +46,11 @@ const AUDIENCE_CARDS: Array<{
 export function Step1Audience({ campaign, onNext }: Props) {
     const [dialogOpen, setDialogOpen] = useState(false);
     const audience = campaign.audience as Record<string, unknown>;
+    const storedFilters =
+        campaign.audience_type === "filter"
+            ? (audience.filters as Record<string, unknown> | undefined)
+            : undefined;
+    const { all_matching: _allMatching, ...filterState } = storedFilters ?? {};
 
     return (
         <div className="space-y-5">
@@ -104,6 +112,7 @@ export function Step1Audience({ campaign, onNext }: Props) {
                 leadIds={(audience.lead_ids as number[] | undefined) ?? []}
                 projectId={(audience.project_id as number | undefined) ?? undefined}
                 tag={(audience.tag as string | undefined) ?? undefined}
+                filterState={storedFilters ? (filterState as FilterState) : undefined}
             />
         </div>
     );
