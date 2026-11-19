@@ -598,17 +598,18 @@ async def update_email_campaign(
 
     consent_kwargs: dict[str, Any] = {}
     if request.consent_policy is not None:
+        # When re-asserting include_unknown without a new reason, fall back to
+        # whatever reason is already stored. The fallback must come first so
+        # _consent_values receives a non-empty reason and does not raise 422.
+        override_reason = request.consent_override_reason
+        if (
+            request.consent_policy == EmailCampaignConsentPolicy.INCLUDE_UNKNOWN
+            and not (override_reason or "").strip()
+        ):
+            override_reason = (campaign.consent_override_reason or "").strip() or None
         policy, reason, warning = _consent_values(
-            request.consent_policy, request.consent_override_reason
+            request.consent_policy, override_reason
         )
-        if request.consent_policy == EmailCampaignConsentPolicy.INCLUDE_UNKNOWN:
-            # Reuse the stored reason when the operator only re-asserts include.
-            reason = reason or (campaign.consent_override_reason or "").strip()
-            if not reason:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Including unknown-consent leads requires a written reason.",
-                )
         consent_kwargs = {
             "consent_policy": policy,
             "consent_override_reason": reason,

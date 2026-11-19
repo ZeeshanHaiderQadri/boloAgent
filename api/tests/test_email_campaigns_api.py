@@ -334,3 +334,53 @@ async def test_template_without_unsubscribe_link_reports_a_warning(
     summary = created.json()["template"]
     assert summary["has_unsubscribe_placeholder"] is False
     assert "unsubscribe" in summary["unsubscribe_warning"].lower()
+
+
+@pytest.mark.asyncio
+async def test_patch_include_unknown_reuses_stored_reason(
+    db_session, test_client_factory
+):
+    """Re-asserting include_unknown without a new reason succeeds when the
+    campaign already has a stored reason; it fails when neither the request
+    nor the stored campaign has one."""
+    user, org = await _user_and_org(db_session, "campaign_patch_fallback")
+    async with db_session.async_session() as session:
+        lead = await _lead(
+            session, org.id, "patch-fallback", email="b@x.com", consent="unknown"
+        )
+        await session.commit()
+        lead_id = lead.id
+
+    async with test_client_factory(user) as client:
+        # Create with an initial include_unknown reason.
+        created = await _create(
+            client,
+            [lead_id],
+            consent_policy="include_unknown",
+            consent_override_reason="Initial consent reason.",
+        )
+        assert created.status_code == 201, created.text
+        campaign_uuid = created.json()["uuid"]
+
+        # Re-asserting include_unknown without a new reason must succeed by
+        # reusing the stored reason.
+        reassert = await client.patch(
+            f"/api/v1/email/campaigns/{campaign_uuid}",
+            json={"consent_policy": "include_unknown"},
+        )
+        assert reassert.status_code == 200, reassert.text
+        assert reassert.json()["consent_override_reason"] == "Initial consent reason."
+
+        # Switching a fresh campaign (no stored reason) to include_unknown
+        # without a reason must still fail.
+        fresh = await _create(
+            client,
+            [lead_id],
+            name="No-reason campaign",
+        )
+        assert fresh.status_code == 201
+        no_reason = await client.patch(
+            f"/api/v1/email/campaigns/{fresh.json()['uuid']}",
+            json={"consent_policy": "include_unknown"},
+        )
+        assert no_reason.status_code == 422
