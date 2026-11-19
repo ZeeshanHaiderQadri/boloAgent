@@ -50,6 +50,7 @@ from api.services.email.adapter import (
 )
 from api.services.email.factory import build_adapter as _build_adapter
 from api.services.email.limits import effective_limits, provider_limits
+from api.services.email.ses import SesEmailAdapter
 from api.services.email.smtp import SmtpEmailAdapter
 from api.services.email.template_rate_limits import (
     allow_template_preview,
