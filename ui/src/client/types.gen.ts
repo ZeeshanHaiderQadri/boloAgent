@@ -988,6 +988,8 @@ export type CampaignPreviewRequest = {
     audience: AudienceRuleRequest;
     /**
      * Campaign Uuid
+     *
+     * Deprecated: rejected with 422. Use PATCH to update counts.
      */
     campaign_uuid?: string | null;
 };

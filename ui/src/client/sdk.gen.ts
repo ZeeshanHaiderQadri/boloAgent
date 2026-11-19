@@ -1533,6 +1533,11 @@ export const testSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPost = 
  * Preview Campaign Audience
  *
  * Resolve an audience rule without storing or sending anything.
+ *
+ * Counts are never written back to a campaign from here: the preview may use
+ * any audience or consent policy the caller likes, and writing those counts
+ * would corrupt the stored campaign. Use PATCH (which resets counts when the
+ * audience changes) or launch (which re-resolves and stores fresh counts).
  */
 export const previewCampaignAudienceApiV1EmailCampaignsPreviewPost = <ThrowOnError extends boolean = false>(options: Options<PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostData, ThrowOnError>): RequestResult<PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostResponses, PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostErrors, ThrowOnError> => (options.client ?? client).post<PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostResponses, PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostErrors, ThrowOnError>({
     url: '/api/v1/email/campaigns/preview',
