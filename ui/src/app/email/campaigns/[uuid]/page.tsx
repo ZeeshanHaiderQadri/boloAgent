@@ -3,9 +3,12 @@
 import {
     AlertCircle,
     AlertTriangle,
+    CheckCircle2,
     ChevronLeft,
     Loader2,
+    Lock,
     RefreshCw,
+    XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -26,7 +29,7 @@ import type {
     EmailSenderResponse,
     EmailTemplateSummary,
 } from "@/client/types.gen";
-import { PageLayout, PageSection } from "@/components/layout/PageLayout";
+import { PageLayout } from "@/components/layout/PageLayout";
 import {
     AlertDialog,
     AlertDialogCancel,
@@ -56,26 +59,55 @@ import { EMAIL_CONSENT_WARNING } from "@/lib/emailConsent";
 const DRAFT_STATUSES = ["draft", "ready"];
 
 function statusBadge(status: string) {
-    switch (status) {
-        case "draft":
-            return <Badge variant="secondary">Draft</Badge>;
-        case "ready":
-            return <Badge variant="outline">Ready</Badge>;
-        case "sending":
-            return <Badge>Sending</Badge>;
-        case "sent":
-            return <Badge>Sent</Badge>;
-        case "cancelled":
-            return <Badge variant="destructive">Cancelled</Badge>;
-        case "failed":
-            return <Badge variant="destructive">Failed</Badge>;
+    const variants: Record<string, string> = {
+        draft: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+        ready: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+        launching: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+        sending: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
+        completed: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+        cancelled: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+        failed: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+    };
+    return (
+        <span
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[status] ?? "bg-muted text-muted-foreground"}`}
+        >
+            {status.charAt(0).toUpperCase() + status.slice(1)}
+        </span>
+    );
+}
+
+function audienceSummary(campaign: EmailCampaignResponse): string {
+    const a = campaign.audience as Record<string, unknown>;
+    switch (campaign.audience_type) {
+        case "leads": {
+            const ids = (a.lead_ids as number[] | undefined) ?? [];
+            return `${ids.length} lead${ids.length === 1 ? "" : "s"} selected`;
+        }
+        case "project":
+            return `Lead project #${String(a.project_id ?? "?")}`;
+        case "tag":
+            return `Tag: ${String(a.tag ?? "?")}`;
+        case "filter":
+            return "All leads matching filter";
         default:
-            return <Badge variant="secondary">{status}</Badge>;
+            return campaign.audience_type;
     }
 }
 
+const BUCKET_LABELS: [keyof CampaignPreviewResponse["counts"], string][] = [
+    ["recipient_count", "Total matched"],
+    ["excluded_no_email_count", "No email"],
+    ["excluded_invalid_email_count", "Invalid email"],
+    ["excluded_suppressed_count", "Suppressed"],
+    ["excluded_opted_out_count", "Opted out"],
+    ["excluded_unknown_count", "Unknown consent (excluded)"],
+    ["duplicates_collapsed_count", "Duplicates collapsed"],
+    ["eligible_count", "Eligible"],
+];
+
 export default function EmailCampaignDetailPage() {
-    const { uuid } = useParams<{ uuid: string }>();
+    const { uuid: campaignUuid } = useParams<{ uuid: string }>();
     const { user, loading: authLoading, getAccessToken, redirectToLogin } = useAuth();
 
     const [campaign, setCampaign] = useState<EmailCampaignResponse | null>(null);
@@ -85,21 +117,24 @@ export default function EmailCampaignDetailPage() {
     const [error, setError] = useState<string | null>(null);
     const [reload, setReload] = useState(0);
 
-    // Edit fields
+    // Form state
     const [name, setName] = useState("");
-    const [senderUuid, setSenderUuid] = useState<string>("");
-    const [templateUuid, setTemplateUuid] = useState<string>("");
-    const [consentPolicy, setConsentPolicy] = useState<"opted_in_only" | "include_unknown">("opted_in_only");
+    const [senderUuid, setSenderUuid] = useState("");
+    const [templateUuid, setTemplateUuid] = useState("");
+    const [consentPolicy, setConsentPolicy] = useState<"opted_in_only" | "include_unknown">(
+        "opted_in_only",
+    );
     const [overrideReason, setOverrideReason] = useState("");
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
 
-    // Preview
+    // Preview state
     const [preview, setPreview] = useState<CampaignPreviewResponse | null>(null);
     const [previewing, setPreviewing] = useState(false);
     const [previewError, setPreviewError] = useState<string | null>(null);
+    const [reasonRequired, setReasonRequired] = useState(false);
 
-    // Launch (disabled — nothing sends)
+    // Launch dialog (always disabled in this release)
     const [launchOpen, setLaunchOpen] = useState(false);
 
     useEffect(() => {
@@ -114,10 +149,10 @@ export default function EmailCampaignDetailPage() {
             setError(null);
             try {
                 const token = await getAccessToken();
-                const [campaignRes, sendersRes, templatesRes] = await Promise.all([
+                const [campRes, sendersRes, templatesRes] = await Promise.all([
                     getEmailCampaignApiV1EmailCampaignsCampaignUuidGet({
                         headers: { Authorization: `Bearer ${token}` },
-                        path: { campaign_uuid: uuid },
+                        path: { campaign_uuid: campaignUuid },
                     }),
                     listEmailSendersApiV1EmailSendersGet({
                         headers: { Authorization: `Bearer ${token}` },
@@ -126,75 +161,83 @@ export default function EmailCampaignDetailPage() {
                         headers: { Authorization: `Bearer ${token}` },
                     }),
                 ]);
-                if (campaignRes.error) {
-                    throw new Error(detailFromError(campaignRes.error, "Failed to load campaign"));
+                if (campRes.error) {
+                    throw new Error(detailFromError(campRes.error, "Failed to load campaign"));
                 }
-                if (sendersRes.error) {
-                    throw new Error(detailFromError(sendersRes.error, "Failed to load senders"));
-                }
-                if (templatesRes.error) {
-                    throw new Error(detailFromError(templatesRes.error, "Failed to load templates"));
-                }
-                if (!cancelled) {
-                    const c = campaignRes.data!;
+                if (!cancelled && campRes.data) {
+                    const c = campRes.data;
                     setCampaign(c);
-                    setSenders(sendersRes.data ?? []);
-                    setTemplates(templatesRes.data ?? []);
                     setName(c.name);
                     setSenderUuid(c.sender?.uuid ?? "");
                     setTemplateUuid(c.template?.uuid ?? "");
                     setConsentPolicy(
-                        (c.consent_policy as "opted_in_only" | "include_unknown") ?? "opted_in_only"
+                        c.consent_policy === "include_unknown" ? "include_unknown" : "opted_in_only",
                     );
                     setOverrideReason(c.consent_override_reason ?? "");
                 }
+                if (!cancelled && !sendersRes.error) setSenders(sendersRes.data ?? []);
+                if (!cancelled && !templatesRes.error) setTemplates(templatesRes.data ?? []);
             } catch (cause) {
-                if (!cancelled) {
+                if (!cancelled)
                     setError(cause instanceof Error ? cause.message : "Failed to load campaign");
-                }
             } finally {
                 if (!cancelled) setLoading(false);
             }
         };
         void load();
-        return () => { cancelled = true; };
-    }, [authLoading, user, getAccessToken, uuid, reload]);
-
-    const isDraft = campaign ? DRAFT_STATUSES.includes(campaign.status) : false;
+        return () => {
+            cancelled = true;
+        };
+    }, [authLoading, user, getAccessToken, campaignUuid, reload]);
 
     const save = async () => {
-        if (!campaign || saving) return;
+        if (!campaign || saving || !name.trim()) return;
+        // Validate consent override before hitting the API
+        if (consentPolicy === "include_unknown" && !overrideReason.trim()) {
+            setSaveError(
+                "A written reason is required when including unknown-consent leads.",
+            );
+            return;
+        }
         setSaving(true);
         setSaveError(null);
         try {
             const token = await getAccessToken();
-            const body: Parameters<typeof updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch>[0]["body"] = {
-                name: name.trim() || null,
-                sender_uuid: senderUuid || null,
-                template_uuid: templateUuid || null,
-                consent_policy: consentPolicy,
-                consent_override_reason: consentPolicy === "include_unknown" ? (overrideReason.trim() || null) : null,
-            };
             const response = await updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch({
                 headers: { Authorization: `Bearer ${token}` },
-                path: { campaign_uuid: uuid },
-                body,
+                path: { campaign_uuid: campaignUuid },
+                body: {
+                    name: name.trim(),
+                    sender_uuid: senderUuid || null,
+                    template_uuid: templateUuid || null,
+                    consent_policy: consentPolicy,
+                    consent_override_reason:
+                        consentPolicy === "include_unknown"
+                            ? overrideReason.trim() || null
+                            : null,
+                },
             });
             if (response.error) {
                 throw new Error(detailFromError(response.error, "Failed to save campaign"));
             }
-            const updated = response.data!;
-            setCampaign(updated);
-            setName(updated.name);
-            setSenderUuid(updated.sender?.uuid ?? "");
-            setTemplateUuid(updated.template?.uuid ?? "");
-            setConsentPolicy(
-                (updated.consent_policy as "opted_in_only" | "include_unknown") ?? "opted_in_only"
-            );
-            setOverrideReason(updated.consent_override_reason ?? "");
+            if (response.data) {
+                const updated = response.data;
+                setCampaign(updated);
+                setName(updated.name);
+                setSenderUuid(updated.sender?.uuid ?? "");
+                setTemplateUuid(updated.template?.uuid ?? "");
+                setConsentPolicy(
+                    updated.consent_policy === "include_unknown"
+                        ? "include_unknown"
+                        : "opted_in_only",
+                );
+                setOverrideReason(updated.consent_override_reason ?? "");
+            }
             toast.success("Campaign saved");
         } catch (cause) {
-            setSaveError(cause instanceof Error ? cause.message : "Failed to save campaign");
+            setSaveError(
+                cause instanceof Error ? cause.message : "Failed to save campaign",
+            );
         } finally {
             setSaving(false);
         }
@@ -202,8 +245,18 @@ export default function EmailCampaignDetailPage() {
 
     const runPreview = async () => {
         if (!campaign || previewing) return;
+        // Validate before calling the API
+        if (consentPolicy === "include_unknown" && !overrideReason.trim()) {
+            setReasonRequired(true);
+            setPreviewError(
+                "A written reason is required to preview with the include-unknown policy.",
+            );
+            return;
+        }
+        setReasonRequired(false);
         setPreviewing(true);
         setPreviewError(null);
+        setPreview(null);
         try {
             const token = await getAccessToken();
             const audience = campaign.audience as AudienceRuleRequest;
@@ -213,11 +266,17 @@ export default function EmailCampaignDetailPage() {
                     audience,
                     consent_policy: consentPolicy,
                     consent_override_reason:
-                        consentPolicy === "include_unknown" ? (overrideReason.trim() || null) : null,
+                        consentPolicy === "include_unknown"
+                            ? overrideReason.trim() || null
+                            : null,
                 },
             });
             if (response.error) {
-                throw new Error(detailFromError(response.error, "Preview failed"));
+                const detail = detailFromError(response.error, "Preview failed");
+                if (detail.includes("rate limit") || detail.includes("429")) {
+                    throw new Error("Too many previews — wait a moment and try again.");
+                }
+                throw new Error(detail);
             }
             setPreview(response.data!);
         } catch (cause) {
@@ -262,8 +321,15 @@ export default function EmailCampaignDetailPage() {
 
     if (!campaign) return null;
 
+    const isDraft = DRAFT_STATUSES.includes(campaign.status);
     const selectedSender = senders.find((s) => s.uuid === senderUuid) ?? null;
     const selectedTemplate = templates.find((t) => t.uuid === templateUuid) ?? null;
+    const senderGuidance =
+        selectedSender
+            ? (campaign.sender?.uuid === selectedSender.uuid
+                ? campaign.sender?.guidance
+                : null) ?? `${selectedSender.limits?.daily_cap ?? "?"} per day`
+            : null;
 
     return (
         <>
@@ -271,94 +337,104 @@ export default function EmailCampaignDetailPage() {
                 title={campaign.name}
                 description="Configure who receives this campaign and how it is sent."
             >
-                <div className="mb-4 flex items-center gap-3">
-                    {statusBadge(campaign.status)}
-                    <Link
-                        href="/email/campaigns"
-                        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                    >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                        All campaigns
-                    </Link>
+                {/* Top bar */}
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                        {statusBadge(campaign.status)}
+                        <Link
+                            href="/email/campaigns"
+                            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                        >
+                            <ChevronLeft className="h-3.5 w-3.5" />
+                            All campaigns
+                        </Link>
+                    </div>
+                    {isDraft && (
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void runPreview()}
+                                disabled={previewing}
+                            >
+                                {previewing ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <RefreshCw className="h-4 w-4" />
+                                )}
+                                Preview audience
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={() => void save()}
+                                disabled={saving || !name.trim()}
+                            >
+                                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                                {saving ? "Saving…" : "Save"}
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                disabled
+                                onClick={() => setLaunchOpen(true)}
+                                title="Email sending is currently disabled"
+                            >
+                                <Lock className="h-3.5 w-3.5" />
+                                Launch
+                            </Button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Sending-disabled notice */}
+                <div className="mb-5 flex items-start gap-2 rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+                    <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>
+                        Email sending is currently disabled (
+                        <code className="text-xs">EMAIL_CAMPAIGN_SENDING_ENABLED=false</code>).
+                        Configure your campaign and run a preview — the Launch button will be
+                        unlocked when sending is enabled.
+                    </p>
                 </div>
 
                 {!isDraft && (
-                    <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+                    <div className="mb-5 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
                         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                         <p>
-                            This campaign can no longer be edited — it has status{" "}
+                            This campaign can no longer be edited — status is{" "}
                             <strong>{campaign.status}</strong>.
                         </p>
                     </div>
                 )}
 
-                {/* Launch disabled banner */}
-                <div className="mb-4 flex items-start gap-2 rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <p>
-                        Email sending is currently disabled. The Launch button is intentionally
-                        locked. Configure your campaign, run a preview, and it will be ready
-                        when sending is enabled.
-                    </p>
-                </div>
+                {/* Two-column grid */}
+                <div className="grid gap-6 lg:grid-cols-2">
+                    {/* ── Left column: settings ───────────────────────────────── */}
+                    <div className="space-y-5 rounded-xl border bg-card p-5">
+                        <h2 className="text-base font-semibold">Campaign settings</h2>
 
-                <PageSection
-                    title="Campaign settings"
-                    description="Configure who receives this campaign and how it is sent."
-                    actions={
-                        isDraft ? (
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    variant="outline"
-                                    onClick={() => void runPreview()}
-                                    disabled={previewing}
-                                >
-                                    {previewing ? (
-                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <RefreshCw className="h-4 w-4" />
-                                    )}
-                                    Preview audience
-                                </Button>
-                                <Button
-                                    onClick={() => void save()}
-                                    disabled={saving || !name.trim()}
-                                >
-                                    {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                                    {saving ? "Saving..." : "Save"}
-                                </Button>
-                                <Button
-                                    variant="secondary"
-                                    disabled
-                                    title="Email sending is currently disabled"
-                                >
-                                    Launch
-                                </Button>
+                        {saveError && (
+                            <div
+                                role="alert"
+                                className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+                            >
+                                {saveError}
                             </div>
-                        ) : null
-                    }
-                >
-                    {saveError && (
-                        <div
-                            role="alert"
-                            className="mb-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
-                        >
-                            {saveError}
-                        </div>
-                    )}
+                        )}
 
-                    <div className="space-y-5">
+                        {/* Name */}
                         <div className="grid gap-2">
-                            <Label htmlFor="campaign-name">Name *</Label>
+                            <Label htmlFor="campaign-name">Name</Label>
                             <Input
                                 id="campaign-name"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 disabled={!isDraft}
-                                placeholder="Campaign name"
+                                placeholder="e.g. Spring outreach"
                             />
                         </div>
 
+                        {/* Sender */}
                         <div className="grid gap-2">
                             <Label htmlFor="sender-select">Sender</Label>
                             <Select
@@ -373,17 +449,22 @@ export default function EmailCampaignDetailPage() {
                                     {senders.map((sender) => (
                                         <SelectItem key={sender.uuid} value={sender.uuid}>
                                             {sender.name} — {sender.from_email}
+                                            {sender.status !== "verified" ? " (unverified)" : ""}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
-                            {selectedSender && campaign.sender?.uuid === selectedSender.uuid && campaign.sender.guidance && (
-                                <p className="text-xs text-muted-foreground">
-                                    {campaign.sender.guidance}
+                            {senderGuidance && (
+                                <p className="text-xs text-muted-foreground">{senderGuidance}</p>
+                            )}
+                            {selectedSender && selectedSender.status !== "verified" && (
+                                <p className="text-xs text-destructive">
+                                    This sender is not verified. Verify it before launching.
                                 </p>
                             )}
                         </div>
 
+                        {/* Template */}
                         <div className="grid gap-2">
                             <Label htmlFor="template-select">Template</Label>
                             <Select
@@ -398,25 +479,35 @@ export default function EmailCampaignDetailPage() {
                                     {templates.map((template) => (
                                         <SelectItem key={template.uuid} value={template.uuid}>
                                             {template.name}
+                                            {!template.has_unsubscribe_placeholder
+                                                ? " (no unsubscribe)"
+                                                : ""}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
-                            {selectedTemplate && !selectedTemplate.has_unsubscribe_placeholder && (
-                                <p className="text-xs text-destructive">
-                                    This template has no unsubscribe placeholder. A campaign cannot
-                                    launch without one.
-                                </p>
-                            )}
+                            {selectedTemplate &&
+                                !selectedTemplate.has_unsubscribe_placeholder && (
+                                    <p className="text-xs text-destructive">
+                                        Missing{" "}
+                                        <code className="text-xs">{"{{unsubscribe_link}}"}</code>{" "}
+                                        — launch will be blocked.
+                                    </p>
+                                )}
                         </div>
 
+                        {/* Consent policy */}
                         <div className="grid gap-2">
                             <Label htmlFor="consent-policy">Consent policy</Label>
                             <Select
                                 value={consentPolicy}
-                                onValueChange={(v) =>
-                                    setConsentPolicy(v as "opted_in_only" | "include_unknown")
-                                }
+                                onValueChange={(v) => {
+                                    setConsentPolicy(
+                                        v as "opted_in_only" | "include_unknown",
+                                    );
+                                    setReasonRequired(false);
+                                    setPreviewError(null);
+                                }}
                                 disabled={!isDraft}
                             >
                                 <SelectTrigger id="consent-policy">
@@ -433,127 +524,205 @@ export default function EmailCampaignDetailPage() {
                             </Select>
                         </div>
 
+                        {/* Include-unknown override */}
                         {consentPolicy === "include_unknown" && (
-                            <div className="space-y-3">
-                                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
-                                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                            <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                                <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400">
+                                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                                     <p>{EMAIL_CONSENT_WARNING}</p>
                                 </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="override-reason">
-                                        Written reason for including unknown consent *
+                                <div className="grid gap-1.5">
+                                    <Label
+                                        htmlFor="override-reason"
+                                        className={reasonRequired ? "text-destructive" : ""}
+                                    >
+                                        Written reason (required)
                                     </Label>
                                     <Textarea
                                         id="override-reason"
                                         value={overrideReason}
-                                        onChange={(e) => setOverrideReason(e.target.value)}
+                                        onChange={(e) => {
+                                            setOverrideReason(e.target.value);
+                                            if (e.target.value.trim()) {
+                                                setReasonRequired(false);
+                                                setPreviewError(null);
+                                            }
+                                        }}
                                         disabled={!isDraft}
                                         placeholder="e.g. These are existing customers from before the consent system was introduced on 2026-01-01."
                                         rows={3}
+                                        className={
+                                            reasonRequired
+                                                ? "border-destructive focus-visible:ring-destructive"
+                                                : ""
+                                        }
                                     />
+                                    {reasonRequired && (
+                                        <p
+                                            role="alert"
+                                            className="text-xs text-destructive"
+                                        >
+                                            Enter a reason before previewing or saving.
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         )}
                     </div>
-                </PageSection>
 
-                {/* Preview results */}
-                {previewError && (
-                    <div
-                        role="alert"
-                        className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive"
-                    >
-                        {previewError}
-                    </div>
-                )}
-
-                {preview && (
-                    <PageSection
-                        title="Audience preview"
-                        description="Counts are estimates based on the current audience rule and consent policy."
-                    >
-                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                            <Stat label="Recipients" value={preview.counts.recipient_count} />
-                            <Stat label="Eligible" value={preview.counts.eligible_count} />
-                            <Stat label="No email" value={preview.counts.excluded_no_email_count} />
-                            <Stat label="Invalid email" value={preview.counts.excluded_invalid_email_count} />
-                            <Stat label="Suppressed" value={preview.counts.excluded_suppressed_count} />
-                            <Stat label="Opted out" value={preview.counts.excluded_opted_out_count} />
-                            <Stat label="Unknown consent" value={preview.counts.excluded_unknown_count} />
-                            <Stat label="Duplicates collapsed" value={preview.counts.duplicates_collapsed_count} />
-                            <Stat label="Unknown leads" value={preview.unknown_lead_count} />
+                    {/* ── Right column: audience + preview ───────────────────── */}
+                    <div className="space-y-5">
+                        {/* Audience summary */}
+                        <div className="rounded-xl border bg-card p-5">
+                            <h2 className="mb-3 text-base font-semibold">Audience</h2>
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                                <Badge variant="outline">
+                                    {campaign.audience_type}
+                                </Badge>
+                                <span className="text-muted-foreground">
+                                    {audienceSummary(campaign)}
+                                </span>
+                            </div>
+                            <p className="mt-2 text-xs text-muted-foreground">
+                                The audience is configured here as a starting point. Use the
+                                &ldquo;Add to email campaign&rdquo; action from the Leads CRM or a
+                                Lead project to change it to a specific selection.
+                            </p>
                         </div>
 
-                        {preview.warnings.length > 0 && (
-                            <div className="mt-4 space-y-1">
-                                {preview.warnings.map((w, i) => (
+                        {/* Preview error */}
+                        {previewError && (
+                            <div
+                                role="alert"
+                                className="flex items-start gap-2 rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive"
+                            >
+                                <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                                <p>{previewError}</p>
+                            </div>
+                        )}
+
+                        {/* Preview results */}
+                        {previewing && (
+                            <div className="flex items-center justify-center rounded-xl border bg-card p-8">
+                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                            </div>
+                        )}
+
+                        {preview && !previewing && (
+                            <div className="rounded-xl border bg-card p-5">
+                                <h2 className="mb-4 text-base font-semibold">
+                                    Audience preview
+                                </h2>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {BUCKET_LABELS.map(([key, label]) => (
+                                        <div
+                                            key={key}
+                                            className={`rounded-lg border p-3 ${key === "eligible_count" ? "border-emerald-500/30 bg-emerald-500/5" : "bg-muted/30"}`}
+                                        >
+                                            <p className="text-xs text-muted-foreground">
+                                                {label}
+                                            </p>
+                                            <p className="mt-1 text-lg font-semibold tabular-nums">
+                                                {preview.counts[key].toLocaleString()}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {preview.masked_sample.length > 0 && (
+                                    <div className="mt-4">
+                                        <p className="mb-2 text-xs font-medium text-muted-foreground">
+                                            Masked sample — never full addresses
+                                        </p>
+                                        <ul className="space-y-1">
+                                            {preview.masked_sample.map((addr, i) => (
+                                                <li
+                                                    key={i}
+                                                    className="font-mono text-xs text-muted-foreground"
+                                                >
+                                                    {addr}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {preview.warnings.length > 0 && (
+                                    <div className="mt-3 space-y-1">
+                                        {preview.warnings.map((w, i) => (
+                                            <div
+                                                key={i}
+                                                className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400"
+                                            >
+                                                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                                <span>{w}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {preview.counts.eligible_count === 0 && (
+                                    <p className="mt-3 text-sm text-destructive">
+                                        No eligible recipients — launch would be blocked.
+                                    </p>
+                                )}
+
+                                {preview.counts.eligible_count > 0 && (
+                                    <div className="mt-3 flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400">
+                                        <CheckCircle2 className="h-4 w-4" />
+                                        {preview.counts.eligible_count.toLocaleString()} eligible
+                                        recipient{preview.counts.eligible_count === 1 ? "" : "s"}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Stored counts (always shown) */}
+                        <div className="rounded-xl border bg-card p-5">
+                            <h2 className="mb-4 text-base font-semibold">
+                                Stored counts
+                                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                                    — last saved
+                                </span>
+                            </h2>
+                            <div className="grid grid-cols-2 gap-3">
+                                {BUCKET_LABELS.map(([key, label]) => (
                                     <div
-                                        key={i}
-                                        className="flex items-start gap-2 text-sm text-amber-700 dark:text-amber-400"
+                                        key={key}
+                                        className={`rounded-lg border p-3 ${key === "eligible_count" ? "border-emerald-500/30 bg-emerald-500/5" : "bg-muted/30"}`}
                                     >
-                                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                                        <span>{w}</span>
+                                        <p className="text-xs text-muted-foreground">{label}</p>
+                                        <p className="mt-1 text-lg font-semibold tabular-nums">
+                                            {campaign.counts[key].toLocaleString()}
+                                        </p>
                                     </div>
                                 ))}
                             </div>
-                        )}
+                        </div>
 
-                        {preview.masked_sample.length > 0 && (
-                            <div className="mt-4">
-                                <p className="mb-2 text-xs font-medium text-muted-foreground">
-                                    Masked sample — never full addresses
-                                </p>
-                                <ul className="space-y-1">
-                                    {preview.masked_sample.map((addr, i) => (
-                                        <li
-                                            key={i}
-                                            className="font-mono text-xs text-muted-foreground"
-                                        >
-                                            {addr}
-                                        </li>
-                                    ))}
-                                </ul>
+                        {/* Failure reason */}
+                        {campaign.failure_reason && (
+                            <div className="flex items-start gap-2 rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
+                                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                                <div>
+                                    <p className="font-medium">Campaign failed</p>
+                                    <p className="mt-1">{campaign.failure_reason}</p>
+                                </div>
                             </div>
                         )}
-                    </PageSection>
-                )}
-
-                {/* Campaign counts (from stored response) */}
-                {campaign.counts && (
-                    <PageSection
-                        title="Stored counts"
-                        description="Last saved audience counts for this campaign."
-                    >
-                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                            <Stat label="Recipients" value={campaign.counts.recipient_count} />
-                            <Stat label="Eligible" value={campaign.counts.eligible_count} />
-                            <Stat label="No email" value={campaign.counts.excluded_no_email_count} />
-                            <Stat label="Invalid email" value={campaign.counts.excluded_invalid_email_count} />
-                            <Stat label="Suppressed" value={campaign.counts.excluded_suppressed_count} />
-                            <Stat label="Opted out" value={campaign.counts.excluded_opted_out_count} />
-                        </div>
-                    </PageSection>
-                )}
-
-                {/* Failure reason */}
-                {campaign.failure_reason && (
-                    <div className="flex items-start gap-2 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
-                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                        <div>
-                            <p className="font-medium">Campaign failed</p>
-                            <p className="mt-1">{campaign.failure_reason}</p>
-                        </div>
                     </div>
-                )}
+                </div>
             </PageLayout>
 
-            {/* Launch confirmation — permanently disabled */}
+            {/* Launch confirmation — permanently disabled in this release */}
             <AlertDialog open={launchOpen} onOpenChange={setLaunchOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>Launch disabled</AlertDialogTitle>
+                        <AlertDialogTitle>Launch is disabled</AlertDialogTitle>
                         <AlertDialogDescription>
-                            Email sending is currently disabled. No messages will be sent.
+                            <code>EMAIL_CAMPAIGN_SENDING_ENABLED</code> is off. No messages
+                            will be sent. Configure your campaign and check back when sending
+                            is enabled.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -562,14 +731,5 @@ export default function EmailCampaignDetailPage() {
                 </AlertDialogContent>
             </AlertDialog>
         </>
-    );
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-    return (
-        <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="mt-1 text-lg font-semibold">{value.toLocaleString()}</p>
-        </div>
     );
 }
