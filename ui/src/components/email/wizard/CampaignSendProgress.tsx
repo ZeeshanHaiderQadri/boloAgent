@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CountUp } from "@/components/ui/count-up";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 
@@ -243,7 +244,7 @@ export function CampaignSendProgress({ campaign, onCampaignChange }: Props) {
             <div className="space-y-2 rounded-xl border bg-card p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <span className="text-sm font-medium">
-                        {settled.toLocaleString()} of {total.toLocaleString()} processed
+                        <CountUp value={settled} /> of <CountUp value={total} /> processed
                     </span>
                     <span className="text-xs text-muted-foreground tabular-nums">
                         {percent}%
@@ -251,7 +252,7 @@ export function CampaignSendProgress({ campaign, onCampaignChange }: Props) {
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-muted">
                     <div
-                        className="h-full rounded-full bg-cta transition-[width] duration-500"
+                        className="h-full rounded-full bg-cta transition-[width] duration-500 motion-reduce:transition-none"
                         style={{ width: `${percent}%` }}
                     />
                 </div>
@@ -387,9 +388,7 @@ function Counter({
     return (
         <div className="rounded-lg border bg-muted/20 px-2.5 py-2">
             <p className="text-xs text-muted-foreground">{label}</p>
-            <p className={`text-base font-semibold tabular-nums ${tone ?? ""}`}>
-                {value.toLocaleString()}
-            </p>
+            <CountUp value={value} className={`block text-base font-semibold ${tone ?? ""}`} />
         </div>
     );
 }

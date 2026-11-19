@@ -373,7 +373,7 @@ export default function EmailCampaignDetailPage() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <Link
                     href="/email/campaigns"
-                    className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                    className="focus-ring inline-flex items-center gap-1 rounded text-sm text-muted-foreground hover:text-foreground"
                 >
                     <ChevronLeft className="h-3.5 w-3.5" />
                     All campaigns

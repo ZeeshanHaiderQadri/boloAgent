@@ -402,7 +402,7 @@ export function Step4Recipients({
                                     onClick={() => void removeManualEmail(address)}
                                     disabled={manualBusy}
                                     aria-label={`Remove ${address}`}
-                                    className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
+                                    className="focus-ring rounded-full p-0.5 text-muted-foreground hover:text-destructive"
                                 >
                                     <X className="h-3 w-3" />
                                 </button>
@@ -424,7 +424,7 @@ export function Step4Recipients({
                             key={opt.value}
                             type="button"
                             onClick={() => handleBucketChange(opt.value)}
-                            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                            className={`focus-ring inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                                 isActive
                                     ? "border-primary bg-primary/10 text-primary"
                                     : "border-border text-muted-foreground hover:border-muted-foreground"

@@ -46,7 +46,7 @@ export function Step3Consent({
                 <button
                     type="button"
                     onClick={() => onConsentChange("opted_in_only")}
-                    className={`rounded-lg border p-4 text-left transition-colors ${
+                    className={`focus-ring rounded-lg border p-4 text-left transition-colors ${
                         consentPolicy === "opted_in_only"
                             ? "border-primary bg-primary/5"
                             : "border-border hover:border-muted-foreground"
@@ -61,7 +61,7 @@ export function Step3Consent({
                 <button
                     type="button"
                     onClick={() => onConsentChange("include_unknown")}
-                    className={`rounded-lg border p-4 text-left transition-colors ${
+                    className={`focus-ring rounded-lg border p-4 text-left transition-colors ${
                         consentPolicy === "include_unknown"
                             ? "border-amber-500 bg-amber-500/5"
                             : "border-border hover:border-muted-foreground"
