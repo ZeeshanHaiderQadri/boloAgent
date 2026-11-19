@@ -50,7 +50,12 @@ export function Step1Audience({ campaign, onNext }: Props) {
         campaign.audience_type === "filter"
             ? (audience.filters as Record<string, unknown> | undefined)
             : undefined;
-    const { all_matching: _allMatching, ...filterState } = storedFilters ?? {};
+    // all_matching is carried on the audience rule, not inside filters.
+    const filterState = storedFilters
+        ? Object.fromEntries(
+              Object.entries(storedFilters).filter(([key]) => key !== "all_matching"),
+          )
+        : undefined;
 
     return (
         <div className="space-y-5">
@@ -112,7 +117,7 @@ export function Step1Audience({ campaign, onNext }: Props) {
                 leadIds={(audience.lead_ids as number[] | undefined) ?? []}
                 projectId={(audience.project_id as number | undefined) ?? undefined}
                 tag={(audience.tag as string | undefined) ?? undefined}
-                filterState={storedFilters ? (filterState as FilterState) : undefined}
+                filterState={filterState as FilterState | undefined}
             />
         </div>
     );

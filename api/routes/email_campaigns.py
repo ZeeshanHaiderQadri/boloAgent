@@ -44,7 +44,6 @@ from api.services.email.audience import (
     AudienceError,
     AudienceRule,
     normalized_manual_addresses,
-    mask_address,
     resolve_audience,
     validate_audience_rule,
 )
@@ -60,9 +59,9 @@ from api.services.email.campaign_state import (
     assert_campaign_transition,
 )
 from api.services.email.limits import effective_limits
-from api.utils.email_buckets import EXCLUSION_ORDER
 from api.tasks.arq import enqueue_job
 from api.tasks.function_names import FunctionNames
+from api.utils.email_buckets import EXCLUSION_ORDER
 
 router = APIRouter(prefix="/email/campaigns")
 
@@ -295,7 +294,9 @@ def _rule_from_request(request: AudienceRuleRequest) -> AudienceRule:
         filters=filters,
         excluded_lead_ids=tuple(request.excluded_lead_ids or ()),
         manual_emails=tuple(
-            address.strip() for address in (request.manual_emails or ()) if address.strip()
+            address.strip()
+            for address in (request.manual_emails or ())
+            if address.strip()
         ),
         extra_lead_ids=tuple(request.extra_lead_ids or ()),
     )
@@ -488,8 +489,8 @@ async def _campaign_response(
         template = await db_client.get_email_template_by_id(
             campaign.organization_id, campaign.template_id
         )
-    message_counts = (
-        await db_client.count_campaign_messages(campaign.organization_id, campaign.id)
+    message_counts = await db_client.count_campaign_messages(
+        campaign.organization_id, campaign.id
     )
     progress = CampaignProgressResponse(
         total=sum(message_counts.values()),
@@ -968,13 +969,9 @@ async def launch_email_campaign(
     current_status = campaign.status
     try:
         if current_status == EmailCampaignStatus.DRAFT.value:
-            assert_campaign_transition(
-                current_status, EmailCampaignStatus.READY.value
-            )
+            assert_campaign_transition(current_status, EmailCampaignStatus.READY.value)
             current_status = EmailCampaignStatus.READY.value
-        assert_campaign_transition(
-            current_status, EmailCampaignStatus.LAUNCHING.value
-        )
+        assert_campaign_transition(current_status, EmailCampaignStatus.LAUNCHING.value)
     except CampaignStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -1029,8 +1026,7 @@ async def launch_email_campaign(
         ready=True,
         preconditions=[],
         message=(
-            f"Campaign launched: {queued_count} recipient(s) queued for "
-            "delivery."
+            f"Campaign launched: {queued_count} recipient(s) queued for delivery."
         ),
         queued_count=queued_count,
     )
@@ -1055,9 +1051,7 @@ async def pause_email_campaign(
             detail=f"Only a sending campaign can be paused (now {campaign.status!r}).",
         )
     try:
-        assert_campaign_transition(
-            campaign.status, EmailCampaignStatus.PAUSED.value
-        )
+        assert_campaign_transition(campaign.status, EmailCampaignStatus.PAUSED.value)
     except CampaignStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await db_client.set_campaign_launch_fields(
@@ -1086,9 +1080,7 @@ async def resume_email_campaign(
             detail=f"Only a paused campaign can be resumed (now {campaign.status!r}).",
         )
     try:
-        assert_campaign_transition(
-            campaign.status, EmailCampaignStatus.SENDING.value
-        )
+        assert_campaign_transition(campaign.status, EmailCampaignStatus.SENDING.value)
     except CampaignStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     await db_client.set_campaign_launch_fields(
@@ -1126,9 +1118,7 @@ async def stop_email_campaign(
             detail=f"Cannot stop a campaign in {campaign.status!r} state.",
         )
     try:
-        assert_campaign_transition(
-            campaign.status, EmailCampaignStatus.CANCELLED.value
-        )
+        assert_campaign_transition(campaign.status, EmailCampaignStatus.CANCELLED.value)
     except CampaignStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     cancelled = await db_client.cancel_pending_messages(
@@ -1200,9 +1190,7 @@ async def restart_email_campaign(
             ),
         )
     try:
-        assert_campaign_transition(
-            campaign.status, EmailCampaignStatus.SENDING.value
-        )
+        assert_campaign_transition(campaign.status, EmailCampaignStatus.SENDING.value)
     except CampaignStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -1220,9 +1208,7 @@ async def restart_email_campaign(
             ),
         )
 
-    requeued = await db_client.requeue_cancelled_messages(
-        organization_id, campaign.id
-    )
+    requeued = await db_client.requeue_cancelled_messages(organization_id, campaign.id)
     if requeued == 0:
         raise HTTPException(
             status_code=409,

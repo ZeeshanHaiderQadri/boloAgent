@@ -9,7 +9,11 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from api.enums import EmailProvider
-from api.services.email.adapter import EmailAdapter, EmailConfigurationError, EmailSenderConfig
+from api.services.email.adapter import (
+    EmailAdapter,
+    EmailConfigurationError,
+    EmailSenderConfig,
+)
 from api.services.email.ses import SesEmailAdapter
 from api.services.email.smtp import SmtpEmailAdapter
 
@@ -24,9 +28,7 @@ def sender_config(sender: Any) -> EmailSenderConfig:
     )
 
 
-def build_adapter(
-    sender: Any, credentials: Mapping[str, Any]
-) -> EmailAdapter:
+def build_adapter(sender: Any, credentials: Mapping[str, Any]) -> EmailAdapter:
     provider = EmailProvider(sender.provider)
     config = sender_config(sender)
     if provider is EmailProvider.SMTP:

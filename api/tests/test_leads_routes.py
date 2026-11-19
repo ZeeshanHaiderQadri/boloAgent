@@ -1168,9 +1168,7 @@ def test_bulk_delete_is_org_scoped_and_reports_count():
 
     assert response.status_code == 200
     assert response.json() == {"deleted": 2}
-    db.delete_leads.assert_awaited_once_with(
-        [1, 2], USER.selected_organization_id
-    )
+    db.delete_leads.assert_awaited_once_with([1, 2], USER.selected_organization_id)
 
 
 def test_bulk_delete_without_matches_is_404():

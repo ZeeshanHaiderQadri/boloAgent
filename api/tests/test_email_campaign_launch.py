@@ -293,9 +293,7 @@ async def test_launch_freezes_and_queues_when_enabled(
     async def record_enqueue(function_name, *args, **kwargs):
         enqueued.append((function_name, args, kwargs))
 
-    monkeypatch.setattr(
-        "api.routes.email_campaigns.enqueue_job", record_enqueue
-    )
+    monkeypatch.setattr("api.routes.email_campaigns.enqueue_job", record_enqueue)
 
     user, org = await _user_and_org(db_session, "launch_ready")
     lead_id = await _lead(db_session, org.id)
@@ -320,12 +318,16 @@ async def test_launch_freezes_and_queues_when_enabled(
 
     async with db_session.async_session() as session:
         messages = (
-            await session.execute(
-                select(EmailMessageModel).where(
-                    EmailMessageModel.organization_id == org.id
+            (
+                await session.execute(
+                    select(EmailMessageModel).where(
+                        EmailMessageModel.organization_id == org.id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert len(messages) == 1
     message = messages[0]
     assert message.status == EmailMessageStatus.QUEUED.value
@@ -453,12 +455,16 @@ async def _set_status(db_session, campaign_uuid, status):
 async def _set_message_status(db_session, organization_id, status):
     async with db_session.async_session() as session:
         messages = (
-            await session.execute(
-                select(EmailMessageModel).where(
-                    EmailMessageModel.organization_id == organization_id
+            (
+                await session.execute(
+                    select(EmailMessageModel).where(
+                        EmailMessageModel.organization_id == organization_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for message in messages:
             message.status = status
             message.error_message = "Stopped by the operator."
@@ -485,9 +491,7 @@ async def _launched_campaign(db_session, test_client_factory, monkeypatch, slug)
             client, lead_id, sender_uuid=sender.uuid, template_uuid=template.uuid
         )
         campaign_uuid = created.json()["uuid"]
-        launched = await client.post(
-            f"/api/v1/email/campaigns/{campaign_uuid}/launch"
-        )
+        launched = await client.post(f"/api/v1/email/campaigns/{campaign_uuid}/launch")
         assert launched.status_code == 200, launched.text
         yield client, user, org, campaign_uuid, enqueued
 
@@ -504,9 +508,7 @@ async def test_restart_is_403_while_sending_is_disabled(
         campaign_uuid = created.json()["uuid"]
         await _set_status(db_session, campaign_uuid, "cancelled")
         monkeypatch.setattr("api.constants.EMAIL_CAMPAIGN_SENDING_ENABLED", False)
-        response = await client.post(
-            f"/api/v1/email/campaigns/{campaign_uuid}/restart"
-        )
+        response = await client.post(f"/api/v1/email/campaigns/{campaign_uuid}/restart")
 
     assert response.status_code == 403
 
@@ -524,20 +526,22 @@ async def test_restart_requeues_cancelled_rows_and_skips_delivered(
         )
         enqueued.clear()
 
-        response = await client.post(
-            f"/api/v1/email/campaigns/{campaign_uuid}/restart"
-        )
+        response = await client.post(f"/api/v1/email/campaigns/{campaign_uuid}/restart")
         assert response.status_code == 200, response.text
         assert response.json()["status"] == "sending"
 
         async with db_session.async_session() as session:
             messages = (
-                await session.execute(
-                    select(EmailMessageModel).where(
-                        EmailMessageModel.organization_id == org.id
+                (
+                    await session.execute(
+                        select(EmailMessageModel).where(
+                            EmailMessageModel.organization_id == org.id
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
 
     assert [m.status for m in messages] == [EmailMessageStatus.QUEUED.value]
     assert all(m.error_message is None for m in messages)
@@ -559,9 +563,7 @@ async def test_restart_rejects_a_running_campaign(
         created = await _campaign(client, lead_id)
         campaign_uuid = created.json()["uuid"]
         await _set_status(db_session, campaign_uuid, "sending")
-        response = await client.post(
-            f"/api/v1/email/campaigns/{campaign_uuid}/restart"
-        )
+        response = await client.post(f"/api/v1/email/campaigns/{campaign_uuid}/restart")
 
     assert response.status_code == 409
     assert "cancelled or failed" in response.json()["detail"]
@@ -578,9 +580,7 @@ async def test_restart_without_remaining_rows_is_409(
         await _set_message_status(db_session, org.id, EmailMessageStatus.SENT.value)
         enqueued.clear()
 
-        response = await client.post(
-            f"/api/v1/email/campaigns/{campaign_uuid}/restart"
-        )
+        response = await client.post(f"/api/v1/email/campaigns/{campaign_uuid}/restart")
         fetched = await client.get(f"/api/v1/email/campaigns/{campaign_uuid}")
 
     assert response.status_code == 409

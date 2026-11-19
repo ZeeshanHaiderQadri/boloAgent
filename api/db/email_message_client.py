@@ -235,9 +235,7 @@ class EmailMessageClient(BaseDBClient):
                     EmailMessageModel.campaign_id == campaign_id,
                     EmailMessageModel.status == EmailMessageStatus.CANCELLED.value,
                 )
-                .values(
-                    status=EmailMessageStatus.QUEUED.value, error_message=None
-                )
+                .values(status=EmailMessageStatus.QUEUED.value, error_message=None)
             )
             await session.commit()
             return int(result.rowcount or 0)

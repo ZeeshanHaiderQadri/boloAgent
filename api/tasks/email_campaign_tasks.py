@@ -23,13 +23,16 @@ from datetime import UTC, datetime, timedelta
 from loguru import logger
 
 from api.db import db_client
-from api.enums import EmailCampaignStatus, EmailSenderStatus, EmailMessageStatus
+from api.enums import EmailCampaignStatus, EmailMessageStatus, EmailSenderStatus
 from api.services.email.adapter import (
     EmailConfigurationError,
     EmailDeliveryError,
     OutboundEmail,
 )
-from api.services.email.campaign_state import CampaignStateError, assert_campaign_transition
+from api.services.email.campaign_state import (
+    CampaignStateError,
+    assert_campaign_transition,
+)
 from api.services.email.factory import build_adapter
 from api.services.email.limits import effective_limits
 from api.tasks.function_names import FunctionNames
@@ -66,7 +69,9 @@ async def _fail_campaign(campaign, *, reason: str) -> None:
     )
 
 
-async def _requeue(ctx: dict, campaign_id: int, organization_id: int, *, delay: timedelta | None = None) -> None:
+async def _requeue(
+    ctx: dict, campaign_id: int, organization_id: int, *, delay: timedelta | None = None
+) -> None:
     redis = (ctx or {}).get("redis")
     if redis is None:
         logger.error(
@@ -82,7 +87,9 @@ async def _requeue(ctx: dict, campaign_id: int, organization_id: int, *, delay: 
     )
 
 
-async def _deliver(adapter, message, *, delay_seconds: float) -> tuple[bool, str | None]:
+async def _deliver(
+    adapter, message, *, delay_seconds: float
+) -> tuple[bool, str | None]:
     """Send one message, retrying transient failures a bounded number of times."""
     attempt = 1
     while True:
@@ -104,7 +111,9 @@ async def _deliver(adapter, message, *, delay_seconds: float) -> tuple[bool, str
         except EmailDeliveryError as exc:
             if attempt >= MAX_SEND_ATTEMPTS:
                 return False, str(exc)
-            backoff = RETRY_BACKOFF_SECONDS[min(attempt - 1, len(RETRY_BACKOFF_SECONDS) - 1)]
+            backoff = RETRY_BACKOFF_SECONDS[
+                min(attempt - 1, len(RETRY_BACKOFF_SECONDS) - 1)
+            ]
             if exc.retry_after_seconds:
                 backoff = max(backoff, exc.retry_after_seconds)
             logger.info(
@@ -122,7 +131,9 @@ async def _deliver(adapter, message, *, delay_seconds: float) -> tuple[bool, str
             return False, f"Unexpected error: {exc}"
 
 
-async def send_email_campaign(ctx: dict, campaign_id: int, organization_id: int) -> None:
+async def send_email_campaign(
+    ctx: dict, campaign_id: int, organization_id: int
+) -> None:
     """Deliver every due recipient row for one campaign.
 
     ARQ passes ``organization_id`` too so the worker reloads the campaign with
@@ -195,9 +206,7 @@ async def send_email_campaign(ctx: dict, campaign_id: int, organization_id: int)
             )
             return
 
-        batch = await db_client.claim_queued_messages(
-            campaign.id, limit=BATCH_SIZE
-        )
+        batch = await db_client.claim_queued_messages(campaign.id, limit=BATCH_SIZE)
         if not batch:
             break
 
@@ -207,9 +216,7 @@ async def send_email_campaign(ctx: dict, campaign_id: int, organization_id: int)
             )
             adapter = await asyncio.to_thread(build_adapter, sender, credentials)
         except EmailConfigurationError as exc:
-            await _fail_campaign(
-                campaign, reason=f"The sender cannot be used: {exc}"
-            )
+            await _fail_campaign(campaign, reason=f"The sender cannot be used: {exc}")
             return
         except Exception:
             logger.exception(
@@ -246,9 +253,7 @@ async def send_email_campaign(ctx: dict, campaign_id: int, organization_id: int)
                     fresh is not None
                     and fresh.status == EmailCampaignStatus.PAUSED.value
                 ):
-                    await db_client.requeue_claimed_messages(
-                        organization_id, remaining
-                    )
+                    await db_client.requeue_claimed_messages(organization_id, remaining)
                     logger.info(
                         "Campaign {} paused; {} claimed row(s) returned to the queue",
                         campaign.id,
@@ -266,23 +271,24 @@ async def send_email_campaign(ctx: dict, campaign_id: int, organization_id: int)
                     )
                 return
 
-            if message.to_email in suppressed or consents.get(
-                message.lead_id
-            ) == "opted_out":
+            if (
+                message.to_email in suppressed
+                or consents.get(message.lead_id) == "opted_out"
+            ):
                 await db_client.mark_message_cancelled(
                     message.id,
                     "Skipped: the address was unsubscribed before this send.",
                 )
                 continue
 
-            ok, detail = await _deliver(
-                adapter, message, delay_seconds=delay_seconds
-            )
+            ok, detail = await _deliver(adapter, message, delay_seconds=delay_seconds)
             if ok:
                 await db_client.mark_message_sent(message.id, detail)
                 sent += 1
             else:
-                await db_client.mark_message_failed(message.id, detail or "Send failed.")
+                await db_client.mark_message_failed(
+                    message.id, detail or "Send failed."
+                )
                 failed += 1
                 logger.warning(
                     "Message {} failed permanently: {}", message.message_uuid, detail

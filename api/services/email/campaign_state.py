@@ -99,12 +99,8 @@ CAMPAIGN_TRANSITIONS: Final[Mapping[str, frozenset[str]]] = {
     EmailCampaignStatus.COMPLETED.value: frozenset(),
     # A stopped or failed campaign may be restarted: its undelivered rows are
     # requeued and handed back to the worker.
-    EmailCampaignStatus.CANCELLED.value: frozenset(
-        {EmailCampaignStatus.SENDING.value}
-    ),
-    EmailCampaignStatus.FAILED.value: frozenset(
-        {EmailCampaignStatus.SENDING.value}
-    ),
+    EmailCampaignStatus.CANCELLED.value: frozenset({EmailCampaignStatus.SENDING.value}),
+    EmailCampaignStatus.FAILED.value: frozenset({EmailCampaignStatus.SENDING.value}),
 }
 
 MESSAGE_TRANSITIONS: Final[Mapping[str, frozenset[str]]] = {

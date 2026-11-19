@@ -54,7 +54,9 @@ def _message_rows(
                 "to_name": recipient.values.get("business_name") or None,
                 "subject": render_subject(subject_template, values),
                 "html_body": render_html(html_template, values),
-                "text_body": render_text(text_template, values) if text_template else None,
+                "text_body": render_text(text_template, values)
+                if text_template
+                else None,
                 "headers": unsubscribe_headers(link),
             }
         )

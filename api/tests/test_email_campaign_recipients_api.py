@@ -384,9 +384,7 @@ async def test_recipients_invalid_email_explains_validator_rejection(
 
 
 @pytest.mark.asyncio
-async def test_recipients_unknown_bucket_returns_422(
-    db_session, test_client_factory
-):
+async def test_recipients_unknown_bucket_returns_422(db_session, test_client_factory):
     user, org = await _user_and_org(db_session, "recip_bad_bucket")
     async with db_session.async_session() as session:
         lead = await _lead(session, org.id, "bb-lead", email="bb@acme.com")

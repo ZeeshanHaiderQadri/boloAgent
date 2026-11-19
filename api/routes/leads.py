@@ -163,9 +163,7 @@ def _email_consent_activity(
 
 def _available_provider(provider: str | None) -> str:
     providers = available_providers(LEADS_ENABLE_DEMO_PROVIDER)
-    resolved = (
-        provider or default_provider_name(LEADS_ENABLE_DEMO_PROVIDER)
-    ).strip()
+    resolved = (provider or default_provider_name(LEADS_ENABLE_DEMO_PROVIDER)).strip()
     if resolved not in providers:
         raise HTTPException(
             status_code=400,

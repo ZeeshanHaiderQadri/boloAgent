@@ -405,9 +405,7 @@ async def test_terminal_campaigns_can_be_deleted(db_session, test_client_factory
                 ).scalar_one()
                 row.status = status
                 await session.commit()
-            deleted = await client.delete(
-                f"/api/v1/email/campaigns/{campaign_uuid}"
-            )
+            deleted = await client.delete(f"/api/v1/email/campaigns/{campaign_uuid}")
             assert deleted.status_code == 200, deleted.text
             fetched = await client.get(f"/api/v1/email/campaigns/{campaign_uuid}")
             assert fetched.status_code == 404
