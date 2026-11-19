@@ -8,7 +8,6 @@ import {
     updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch,
 } from "@/client";
 import type { CampaignRecipientsResponse, EmailCampaignResponse } from "@/client/types.gen";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { detailFromError } from "@/lib/apiError";
