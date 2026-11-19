@@ -120,7 +120,8 @@ async def test_search_completes_at_target_and_enqueues_auto_calls(monkeypatch):
     assert provider.cancelled is True
     assert updates[-1]["status"] == "completed"
     assert updates[-1]["results_count"] == 2
-    redis.enqueue_job.assert_awaited_once_with("run_lead_auto_dispatch", search.id)
+    redis.enqueue_job.assert_any_await("run_lead_auto_dispatch", search.id)
+    redis.enqueue_job.assert_any_await("enrich_lead_socials", search.id)
 
 
 @pytest.mark.asyncio
@@ -285,3 +286,65 @@ async def test_auto_dispatch_explains_when_no_numbers_were_found(monkeypatch):
 
     assert result["status"] == "skipped"
     assert "No dialable phone numbers" in updates[-1]["auto_call_error"]
+
+
+@pytest.mark.asyncio
+async def test_social_enrichment_scans_pending_leads_and_chains_batches(monkeypatch):
+    search = _search(provider="google_maps", status="completed")
+    pending = [
+        SimpleNamespace(id=1, website="https://apex.example", title="Apex Labs"),
+        SimpleNamespace(id=2, website="https://cedar.example", title="Cedar Works"),
+    ]
+    saved: list[tuple[int, dict]] = []
+
+    async def get_search(_search_id):
+        return search
+
+    async def list_pending(_organization_id, *, search_id=None, limit=25):
+        return pending
+
+    async def count_pending(_organization_id, *, search_id=None):
+        return 3
+
+    async def save(lead_id, _organization_id, *, social_links, checked_at):
+        saved.append((lead_id, social_links))
+        return None
+
+    async def discover(url, *, business_name=None):
+        if "apex" in url:
+            return {"instagram": "https://www.instagram.com/apex/"}
+        return {}
+
+    monkeypatch.setattr(lead_tasks.db_client, "get_lead_search_unscoped", get_search)
+    monkeypatch.setattr(
+        lead_tasks.db_client, "list_leads_needing_socials", list_pending
+    )
+    monkeypatch.setattr(
+        lead_tasks.db_client, "count_leads_needing_socials", count_pending
+    )
+    monkeypatch.setattr(lead_tasks.db_client, "update_lead_socials", save)
+    monkeypatch.setattr(lead_tasks, "discover_social_links", discover)
+    redis = SimpleNamespace(enqueue_job=AsyncMock())
+
+    result = await lead_tasks.enrich_lead_socials({"redis": redis}, search.id)
+
+    assert result == {"status": "completed", "scanned": 2, "found": 1, "remaining": 3}
+    assert {lead_id for lead_id, _links in saved} == {1, 2}
+    redis.enqueue_job.assert_awaited_once_with("enrich_lead_socials", search.id)
+
+
+@pytest.mark.asyncio
+async def test_social_enrichment_skips_generated_demo_websites(monkeypatch):
+    search = _search(provider="demo", status="completed")
+
+    async def get_search(_search_id):
+        return search
+
+    monkeypatch.setattr(lead_tasks.db_client, "get_lead_search_unscoped", get_search)
+    scan = AsyncMock()
+    monkeypatch.setattr(lead_tasks.db_client, "list_leads_needing_socials", scan)
+
+    result = await lead_tasks.enrich_lead_socials({}, search.id)
+
+    assert result == {"status": "skipped", "reason": "demo provider"}
+    scan.assert_not_called()

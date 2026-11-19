@@ -66,6 +66,7 @@ from api.services.leads.providers import (
     available_providers,
     default_provider_name,
 )
+from api.services.leads.socials import discover_social_links
 from api.tasks.arq import enqueue_job
 from api.tasks.function_names import FunctionNames
 
@@ -916,6 +917,33 @@ async def update_lead_email_consent(
         await db_client.add_lead_activity(**activity)
         updated = lead
 
+    return LeadResponse.model_validate(updated)
+
+
+@router.post("/{lead_id}/refresh-socials", response_model=LeadResponse)
+async def refresh_lead_socials(
+    lead_id: int, user: UserModel = Depends(get_user)
+) -> LeadResponse:
+    """Re-scan one lead's website for social profiles on demand."""
+    organization_id = _organization_id(user)
+    lead = await db_client.get_lead(lead_id, organization_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    if not (lead.website or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="This lead has no website to scan for social profiles.",
+        )
+
+    social_links = await discover_social_links(lead.website, business_name=lead.title)
+    updated = await db_client.update_lead_socials(
+        lead_id,
+        organization_id,
+        social_links=social_links,
+        checked_at=datetime.now(UTC),
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
     return LeadResponse.model_validate(updated)
 
 

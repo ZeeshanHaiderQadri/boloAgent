@@ -19,6 +19,43 @@ class ServiceHostResolutionError(ValueError):
     """
 
 
+class UnsafeOutboundURLError(ValueError):
+    """A URL may not be fetched because it could reach a private network."""
+
+
+def validate_public_http_url(url: str) -> str:
+    """Reject URLs that could make Bolo reach a private or local service.
+
+    Unlike :func:`validate_user_configured_service_url` this check is always
+    on. Scraper-derived website URLs are third-party input, so they must never
+    be trusted to point at loopback, LAN or metadata addresses regardless of
+    the ``OUTBOUND_NETWORK_POLICY`` the operator configured.
+    """
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise UnsafeOutboundURLError("Only http and https URLs can be fetched")
+    if parsed.username or parsed.password:
+        raise UnsafeOutboundURLError("URLs with credentials cannot be fetched")
+
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise UnsafeOutboundURLError("URL has an invalid port") from exc
+    if port is not None and port not in {80, 443}:
+        raise UnsafeOutboundURLError("Only standard web ports can be fetched")
+
+    hostname = parsed.hostname.lower().rstrip(".")
+    if hostname == "localhost" or hostname.endswith(".localhost"):
+        raise UnsafeOutboundURLError("localhost cannot be fetched")
+
+    for ip in _resolve_hostname_ips(hostname, port):
+        if _is_blocked_outbound_ip(ip):
+            raise UnsafeOutboundURLError(
+                "The URL resolves to a private network address"
+            )
+    return url.strip()
+
+
 def validate_user_configured_service_url(
     url: str,
     *,

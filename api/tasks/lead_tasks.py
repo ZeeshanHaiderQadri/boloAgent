@@ -29,7 +29,12 @@ from api.services.leads.providers import (
     ProviderJobStatus,
     get_provider,
 )
+from api.services.leads.socials import discover_social_links
 from api.tasks.function_names import FunctionNames
+
+SOCIAL_ENRICH_BATCH_SIZE = 25
+SOCIAL_ENRICH_CONCURRENCY = 4
+SOCIAL_ENRICH_MAX_RUNS = 40
 
 
 async def _set_status(search_id: int, organization_id: int, **values: Any) -> None:
@@ -55,6 +60,18 @@ async def _enqueue_auto_calls(ctx: dict, search_id: int) -> None:
         await redis.enqueue_job(FunctionNames.RUN_LEAD_AUTO_DISPATCH, search_id)
     except Exception as exc:  # queue outage must not fail a finished search
         logger.warning("Could not queue auto calls for search {}: {}", search_id, exc)
+
+
+async def _enqueue_social_enrichment(ctx: dict, search_id: int) -> None:
+    redis = (ctx or {}).get("redis")
+    if redis is None:
+        return
+    try:
+        await redis.enqueue_job(FunctionNames.ENRICH_LEAD_SOCIALS, search_id)
+    except Exception as exc:  # enrichment is cosmetic; never fail the search
+        logger.warning(
+            "Could not queue social enrichment for search {}: {}", search_id, exc
+        )
 
 
 async def _append_search_leads_to_campaign(search: Any) -> None:
@@ -133,6 +150,7 @@ async def run_lead_search(ctx: dict, search_id: int) -> dict[str, Any]:
             status="stopped",
             completed_at=datetime.now(UTC),
         )
+        await _enqueue_social_enrichment(ctx, search.id)
         return {"status": "stopped"}
 
     search.started_at = search.started_at or datetime.now(UTC)
@@ -298,6 +316,8 @@ async def run_lead_search(ctx: dict, search_id: int) -> dict[str, Any]:
             total_results,
             new_total,
         )
+
+        await _enqueue_social_enrichment(ctx, search.id)
 
         if (search.params or {}).get("auto_call") and not getattr(
             search, "auto_call_campaign_id", None
@@ -481,3 +501,88 @@ async def sync_lead_call_outcomes(ctx: dict) -> dict[str, Any]:
 
     logger.info("Recorded {} lead call outcome(s)", len(activities))
     return {"status": "ok", "recorded": len(activities)}
+
+
+async def enrich_lead_socials(ctx: dict, search_id: int) -> dict[str, Any]:
+    """Scan each lead's own website for its social profiles.
+
+    The query only returns leads whose website has never been scanned, so a
+    repeated or duplicated job is cheap. Each processed lead is stamped with
+    ``socials_checked_at`` even when nothing was found, which keeps a rerun
+    from hammering the same sites; an operator can still refresh one lead on
+    demand from the API.
+    """
+    search = await db_client.get_lead_search_unscoped(search_id)
+    if search is None:
+        return {"status": "missing"}
+    if search.provider == "demo":
+        # Demo websites are generated placeholders, not real sites.
+        return {"status": "skipped", "reason": "demo provider"}
+    return await _scan_pending_socials(ctx, search.organization_id, search.id, run=0)
+
+
+async def _scan_pending_socials(
+    ctx: dict, organization_id: int, search_id: int, *, run: int
+) -> dict[str, Any]:
+    leads = await db_client.list_leads_needing_socials(
+        organization_id, search_id=search_id, limit=SOCIAL_ENRICH_BATCH_SIZE
+    )
+    if not leads:
+        return {"status": "completed", "scanned": 0, "found": 0, "remaining": 0}
+
+    semaphore = asyncio.Semaphore(SOCIAL_ENRICH_CONCURRENCY)
+    found = 0
+
+    async def scan(lead) -> None:
+        nonlocal found
+        async with semaphore:
+            try:
+                links = await discover_social_links(
+                    lead.website, business_name=lead.title
+                )
+            except Exception as exc:  # a single hostile page must not fail the batch
+                logger.warning(
+                    "Social scan failed for lead {} ({}): {}",
+                    lead.id,
+                    lead.website,
+                    exc,
+                )
+                links = {}
+            await db_client.update_lead_socials(
+                lead.id,
+                organization_id,
+                social_links=links,
+                checked_at=datetime.now(UTC),
+            )
+            found += len(links)
+
+    await asyncio.gather(*(scan(lead) for lead in leads))
+
+    remaining = await db_client.count_leads_needing_socials(
+        organization_id, search_id=search_id
+    )
+    if remaining and run + 1 < SOCIAL_ENRICH_MAX_RUNS:
+        redis = (ctx or {}).get("redis")
+        if redis is not None:
+            try:
+                await redis.enqueue_job(FunctionNames.ENRICH_LEAD_SOCIALS, search_id)
+            except Exception as exc:
+                logger.warning(
+                    "Could not continue social enrichment for search {}: {}",
+                    search_id,
+                    exc,
+                )
+
+    logger.info(
+        "Social enrichment for search {}: scanned {}, found {}, remaining {}",
+        search_id,
+        len(leads),
+        found,
+        remaining,
+    )
+    return {
+        "status": "completed",
+        "scanned": len(leads),
+        "found": found,
+        "remaining": remaining,
+    }

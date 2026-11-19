@@ -508,6 +508,88 @@ class LeadClient(BaseDBClient):
             )
             return list(result.scalars().all())
 
+    async def list_leads_needing_socials(
+        self,
+        organization_id: int,
+        *,
+        search_id: int | None = None,
+        limit: int = 25,
+    ) -> list[LeadModel]:
+        """Leads with a website that were never scanned for social profiles."""
+        filters = [
+            LeadModel.organization_id == organization_id,
+            LeadModel.website.is_not(None),
+            LeadModel.website != "",
+            LeadModel.socials_checked_at.is_(None),
+        ]
+        if search_id is not None:
+            filters.append(
+                LeadModel.id.in_(
+                    select(LeadSearchResultModel.lead_id).where(
+                        LeadSearchResultModel.search_id == search_id
+                    )
+                )
+            )
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(LeadModel)
+                .where(*filters)
+                .order_by(LeadModel.id.asc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def count_leads_needing_socials(
+        self, organization_id: int, *, search_id: int | None = None
+    ) -> int:
+        filters = [
+            LeadModel.organization_id == organization_id,
+            LeadModel.website.is_not(None),
+            LeadModel.website != "",
+            LeadModel.socials_checked_at.is_(None),
+        ]
+        if search_id is not None:
+            filters.append(
+                LeadModel.id.in_(
+                    select(LeadSearchResultModel.lead_id).where(
+                        LeadSearchResultModel.search_id == search_id
+                    )
+                )
+            )
+        async with self.async_session() as session:
+            total = await session.scalar(
+                select(func.count(LeadModel.id)).where(*filters)
+            )
+            return int(total or 0)
+
+    async def update_lead_socials(
+        self,
+        lead_id: int,
+        organization_id: int,
+        *,
+        social_links: dict[str, str],
+        checked_at: datetime,
+    ) -> LeadModel | None:
+        async with self.async_session() as session:
+            result = await session.execute(
+                update(LeadModel)
+                .where(
+                    LeadModel.id == lead_id,
+                    LeadModel.organization_id == organization_id,
+                )
+                .values(
+                    social_links=social_links,
+                    socials_checked_at=checked_at,
+                    updated_at=datetime.now(UTC),
+                )
+                .returning(LeadModel)
+            )
+            row = result.scalar_one_or_none()
+            await session.commit()
+            if row is not None:
+                await session.refresh(row)
+            return row
+
     async def update_lead(
         self,
         lead_id: int,

@@ -62,6 +62,8 @@ def _lead(**overrides):
         "phone_e164": "+14155550142",
         "email": "hello@apex-software-demo.com",
         "website": "https://apex-software-demo.com",
+        "social_links": {},
+        "socials_checked_at": None,
         "place_id": "abc123",
         "cid": None,
         "rating": 4.6,
@@ -1180,3 +1182,55 @@ def test_bulk_delete_without_matches_is_404():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "No matching leads"
+
+
+def test_refresh_socials_scans_the_website_and_saves_org_scoped_links():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+    db.update_lead_socials = AsyncMock(
+        return_value=_lead(
+            social_links={"instagram": "https://www.instagram.com/apex/"},
+            socials_checked_at=NOW,
+        )
+    )
+    discover = AsyncMock(return_value={"instagram": "https://www.instagram.com/apex/"})
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.discover_social_links", discover),
+    ):
+        response = _app().post("/leads/1/refresh-socials")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["social_links"] == {
+        "instagram": "https://www.instagram.com/apex/"
+    }
+    db.get_lead.assert_awaited_once_with(1, USER.selected_organization_id)
+    discover.assert_awaited_once_with(
+        "https://apex-software-demo.com", business_name="Apex Software Labs"
+    )
+    kwargs = db.update_lead_socials.await_args.kwargs
+    assert kwargs["social_links"] == {"instagram": "https://www.instagram.com/apex/"}
+    assert db.update_lead_socials.await_args.args == (1, USER.selected_organization_id)
+
+
+def test_refresh_socials_requires_a_lead_website():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead(website=None))
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().post("/leads/1/refresh-socials")
+
+    assert response.status_code == 400
+    db.update_lead_socials.assert_not_called()
+
+
+def test_refresh_socials_is_scoped_to_the_selected_organization():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=None)
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().post("/leads/99/refresh-socials")
+
+    assert response.status_code == 404
+    db.get_lead.assert_awaited_once_with(99, USER.selected_organization_id)

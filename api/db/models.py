@@ -1851,6 +1851,11 @@ class LeadModel(Base):
     phone_e164 = Column(String(32), nullable=True)
     email = Column(String(320), nullable=True)
     website = Column(String(1024), nullable=True)
+    # Profiles found on the business's own website, keyed by platform.
+    social_links = Column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
+    socials_checked_at = Column(DateTime(timezone=True), nullable=True)
     place_id = Column(String(255), nullable=True)
     cid = Column(String(64), nullable=True)
     rating = Column(Float, nullable=True)

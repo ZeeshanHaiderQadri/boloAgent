@@ -460,3 +460,44 @@ async def test_first_address_clears_consent_without_a_reset_entry(db_session):
     ]
     changes = [item for item in activities if item.title == "Email address changed"]
     assert len(changes) == 1
+
+
+@pytest.mark.asyncio
+async def test_social_enrichment_queue_is_org_scoped_and_tracks_scans(db_session):
+    user, org = await _org(db_session)
+    other_user, other_org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    other_search = await _search(db_session, other_user, other_org)
+
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[
+            _row("Apex Labs", "p1", website="https://apex-labs.com"),
+            _row("Cedar Works", "p2", website=""),
+        ],
+    )
+    await db_session.upsert_leads_for_search(
+        search_id=other_search.id,
+        organization_id=other_org.id,
+        leads=[_row("Other Org Co", "o1", website="https://other.example.com")],
+    )
+
+    pending = await db_session.list_leads_needing_socials(org.id, search_id=search.id)
+
+    assert [lead.title for lead in pending] == ["Apex Labs"]
+    assert await db_session.count_leads_needing_socials(org.id) == 1
+
+    updated = await db_session.update_lead_socials(
+        pending[0].id,
+        org.id,
+        social_links={"instagram": "https://www.instagram.com/apex/"},
+        checked_at=datetime.now(UTC),
+    )
+
+    assert updated is not None
+    assert updated.social_links == {"instagram": "https://www.instagram.com/apex/"}
+    assert updated.socials_checked_at is not None
+    assert await db_session.count_leads_needing_socials(org.id) == 0
+    # The other organization's lead was never part of this batch.
+    assert await db_session.count_leads_needing_socials(other_org.id) == 1

@@ -69,6 +69,7 @@ from api.tasks.campaign_tasks import (
 from api.tasks.email_campaign_tasks import send_email_campaign
 from api.tasks.knowledge_base_processing import process_knowledge_base_document
 from api.tasks.lead_tasks import (
+    enrich_lead_socials,
     run_lead_auto_dispatch,
     run_lead_search,
     sync_lead_call_outcomes,
@@ -116,6 +117,7 @@ class WorkerSettings:
         process_knowledge_base_document,
         func(run_lead_search, timeout=LEADS_SCRAPER_TIMEOUT_SECONDS + 120),
         func(run_lead_auto_dispatch, timeout=300),
+        func(enrich_lead_socials, timeout=600),
         deliver_webhook,
         complete_inactive_text_chat_session,
         finalize_completed_text_chat,
