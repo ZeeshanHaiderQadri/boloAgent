@@ -192,23 +192,16 @@ async def test_create_list_get_update_and_delete_a_campaign(
         duplicate = await _create(client, ids)
         assert duplicate.status_code == 409
 
-        preview = await client.post(
-            "/api/v1/email/campaigns/preview",
-            json={
-                "audience": _audience(*ids),
-                "campaign_uuid": campaign_uuid,
-            },
+        # Preview no longer stores counts; PATCH the audience to reset them.
+        patched = await client.patch(
+            f"/api/v1/email/campaigns/{campaign_uuid}",
+            json={"audience": _audience(*ids)},
         )
-        assert preview.status_code == 200, preview.text
+        assert patched.status_code == 200, patched.text
 
         fetched = await client.get(f"/api/v1/email/campaigns/{campaign_uuid}")
         assert fetched.status_code == 200
-        assert fetched.json()["counts"]["eligible_count"] == 2
-        assert fetched.json()["sender"]["estimated_days"] == 1
-        assert (
-            fetched.json()["sender"]["guidance"]
-            == "10 per day, this campaign will take 1 day."
-        )
+        assert fetched.json()["counts"]["eligible_count"] == 0
 
         updated = await client.patch(
             f"/api/v1/email/campaigns/{campaign_uuid}",
@@ -315,6 +308,7 @@ async def test_only_draft_or_ready_campaigns_can_be_edited_or_deleted(
             f"/api/v1/email/campaigns/{campaign_uuid}", json={"name": "Nope"}
         )
         deleted = await client.delete(f"/api/v1/email/campaigns/{campaign_uuid}")
+        # campaign_uuid is rejected on preview regardless of campaign state.
         preview = await client.post(
             "/api/v1/email/campaigns/preview",
             json={"audience": _audience(*ids), "campaign_uuid": campaign_uuid},
@@ -322,7 +316,7 @@ async def test_only_draft_or_ready_campaigns_can_be_edited_or_deleted(
 
     assert edited.status_code == 409
     assert deleted.status_code == 409
-    assert preview.status_code == 409
+    assert preview.status_code == 422
 
 
 @pytest.mark.asyncio

@@ -98,8 +98,12 @@ class ConsentRequest(BaseModel):
 
 class CampaignPreviewRequest(ConsentRequest):
     audience: AudienceRuleRequest
-    # When supplied, the resolved counts are stored on this draft campaign.
-    campaign_uuid: Optional[str] = None
+    # campaign_uuid is no longer accepted. Count storage belongs to PATCH and
+    # launch, which know the campaign's audience and consent policy.
+    campaign_uuid: Optional[str] = Field(
+        default=None,
+        description="Deprecated: rejected with 422. Use PATCH to update counts.",
+    )
 
 
 class CampaignCountsResponse(BaseModel):
@@ -408,8 +412,31 @@ async def preview_campaign_audience(
     request: CampaignPreviewRequest,
     user: UserModel = Depends(get_user),
 ) -> CampaignPreviewResponse:
-    """Resolve an audience rule without storing or sending anything."""
+    """Resolve an audience rule without storing or sending anything.
+
+    Counts are never written back to a campaign from here: the preview may use
+    any audience or consent policy the caller likes, and writing those counts
+    would corrupt the stored campaign. Use PATCH (which resets counts when the
+    audience changes) or launch (which re-resolves and stores fresh counts).
+    """
     organization_id = _require_organization(user)
+
+    if request.campaign_uuid:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "campaign_uuid is no longer accepted on preview. "
+                "PATCH the campaign to store updated counts, or use the "
+                "launch endpoint which re-resolves the audience itself."
+            ),
+        )
+
+    # Validate cheaply before consuming a rate-limit token.
+    rule = _validated_rule(request.audience)
+    policy, _, _ = _consent_values(
+        request.consent_policy, request.consent_override_reason
+    )
+
     try:
         allowed = await allow_campaign_preview(
             user_id=user.id, organization_id=organization_id
@@ -425,32 +452,12 @@ async def preview_campaign_audience(
             detail="Too many campaign previews. Try again later.",
         )
 
-    rule = _validated_rule(request.audience)
-    policy, _, _ = _consent_values(
-        request.consent_policy, request.consent_override_reason
-    )
     try:
         resolution = await resolve_audience(
             organization_id, rule, consent_policy=policy
         )
     except AudienceError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    if request.campaign_uuid:
-        campaign = await _campaign_or_404(organization_id, request.campaign_uuid)
-        if campaign.status not in _EDITABLE_STATUSES:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Only draft or ready campaigns can store preview counts; "
-                    "this campaign has already started."
-                ),
-            )
-        await db_client.update_email_campaign_counts(
-            organization_id,
-            request.campaign_uuid,
-            counts=resolution.counters(),
-        )
 
     warnings: list[str] = []
     if (

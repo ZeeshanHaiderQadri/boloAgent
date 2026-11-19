@@ -223,3 +223,41 @@ async def test_preview_rejects_bad_rules_and_foreign_leads(
     assert foreign_leads.status_code == 422
     assert paged_filter.status_code == 422
     assert unknown_field.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_preview_with_campaign_uuid_is_rejected_and_stores_nothing(
+    db_session, test_client_factory
+):
+    """campaign_uuid on preview is a 422; it must not store counts from a
+    different audience on the campaign."""
+    user, org = await _user_and_org(db_session, "campaign_preview_no_store")
+    ids = await _leads(db_session, org.id, count=2)
+
+    async with test_client_factory(user) as client:
+        created = await client.post(
+            "/api/v1/email/campaigns",
+            json={
+                "name": "No-store campaign",
+                "audience": _audience(*ids),
+            },
+        )
+        assert created.status_code == 201, created.text
+        campaign_uuid = created.json()["uuid"]
+
+        # Preview with a different audience and campaign_uuid must be rejected.
+        different = await client.post(
+            "/api/v1/email/campaigns/preview",
+            json={
+                "audience": {"audience_type": "leads", "lead_ids": [ids[0]]},
+                "campaign_uuid": campaign_uuid,
+            },
+        )
+        fetched = await client.get(f"/api/v1/email/campaigns/{campaign_uuid}")
+
+    assert different.status_code == 422
+    assert "campaign_uuid" in different.json()["detail"]
+    # The campaign's counts stay at the create-time defaults (all zero).
+    counts = fetched.json()["counts"]
+    assert counts["recipient_count"] == 0
+    assert counts["eligible_count"] == 0
