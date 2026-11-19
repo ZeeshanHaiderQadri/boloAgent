@@ -30,6 +30,16 @@ address, the representative is the opted-in lead before an unknown one, then
 the newest record. The extra leads are reported as
 ``duplicates_collapsed_count`` and are not recipients.
 
+.. note:: Launch must persist the winner.
+
+    The launch step must call :func:`resolve_audience` again rather than
+    reading the stored counts, and it must write one ``email_messages`` row
+    per *winning* lead id — the one this resolver picked for each address.
+    The opted-in-over-unknown / newest preference only becomes observable and
+    enforceable when the actual lead id is recorded in the outgoing message
+    row. Reusing the stored counts skips the de-duplication and breaks the
+    consent guarantee.
+
 Performance
 -----------
 

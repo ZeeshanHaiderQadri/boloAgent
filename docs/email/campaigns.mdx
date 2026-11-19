@@ -104,6 +104,20 @@ Launch is one shared check, used by the API and shown by the UI:
 
 Every failing check is reported at once, in plain language.
 
+## Launch must persist the winning recipient
+
+The launch step must call the resolver again — it must not read the counts
+that were stored by PATCH. For each eligible address, the resolver returns a
+single *winning* lead: the opted-in lead before an unknown one, then the
+newest record. The launch engine must write one `email_messages` row carrying
+that exact lead id.
+
+This matters because the opted-in-over-unknown / newest preference is only
+observable and enforceable once the winning lead id is recorded in the
+outgoing message row. If the engine reads stored counts instead of calling
+the resolver, it cannot know which lead won, and the consent guarantee
+breaks.
+
 ## Bounce ordering
 
 A provider bounce or complaint can arrive while a message is still marked
