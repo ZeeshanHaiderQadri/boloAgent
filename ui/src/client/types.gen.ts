@@ -219,6 +219,10 @@ export type AudienceRuleRequest = {
      * All Matching
      */
     all_matching?: boolean;
+    /**
+     * Excluded Lead Ids
+     */
+    excluded_lead_ids?: Array<number>;
 };
 
 /**
@@ -866,6 +870,10 @@ export type CampaignCountsResponse = {
      */
     excluded_unknown_count: number;
     /**
+     * Excluded Manual Count
+     */
+    excluded_manual_count?: number;
+    /**
      * Duplicates Collapsed Count
      */
     duplicates_collapsed_count: number;
@@ -1059,6 +1067,34 @@ export type CampaignProgressResponse = {
      * Completed At
      */
     completed_at: string | null;
+};
+
+/**
+ * CampaignRecipientsResponse
+ */
+export type CampaignRecipientsResponse = {
+    /**
+     * Items
+     */
+    items: Array<RecipientItem>;
+    /**
+     * Page
+     */
+    page: number;
+    /**
+     * Limit
+     */
+    limit: number;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Totals Per Bucket
+     */
+    totals_per_bucket: {
+        [key: string]: number;
+    };
 };
 
 /**
@@ -6239,6 +6275,32 @@ export type PublishWorkflowRequest = {
      * Change Description
      */
     change_description?: string | null;
+};
+
+/**
+ * RecipientItem
+ */
+export type RecipientItem = {
+    /**
+     * Lead Id
+     */
+    lead_id: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Masked Email
+     */
+    masked_email: string;
+    /**
+     * Email Consent
+     */
+    email_consent: string;
+    /**
+     * Bucket
+     */
+    bucket: string;
 };
 
 /**
@@ -16499,6 +16561,63 @@ export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponse
 };
 
 export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponse = LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponses[keyof LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponses];
+
+export type ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: {
+        /**
+         * Bucket
+         */
+        bucket?: string | null;
+        /**
+         * Page
+         */
+        page?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/email/campaigns/{campaign_uuid}/recipients';
+};
+
+export type ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetError = ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetErrors[keyof ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetErrors];
+
+export type ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CampaignRecipientsResponse;
+};
+
+export type ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetResponse = ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetResponses[keyof ListCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGetResponses];
 
 export type ListToolsApiV1ToolsGetData = {
     body?: never;
