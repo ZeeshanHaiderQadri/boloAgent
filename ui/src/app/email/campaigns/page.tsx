@@ -138,7 +138,7 @@ export default function EmailCampaignsPage() {
                 headers: { Authorization: `Bearer ${token}` },
                 body: {
                     name: createName.trim(),
-                    audience: { audience_type: "leads", lead_ids: [] },
+                    audience: { audience_type: "filter", all_matching: true },
                 },
             });
             if (response.error) {
