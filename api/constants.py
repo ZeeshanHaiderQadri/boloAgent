@@ -22,8 +22,8 @@ EMAIL_CONSENT_WARNING = (
 )
 
 # Campaign sending is off by default. The launch endpoint answers 403 while
-# this is false. Turning it on only enables the precondition check in this
-# release: nothing is sent and no recipient rows are queued.
+# this is false. When true, launch freezes the audience, queues recipient rows
+# and the ARQ worker delivers them through the campaign's verified sender.
 EMAIL_CAMPAIGN_SENDING_ENABLED = os.getenv(
     "EMAIL_CAMPAIGN_SENDING_ENABLED", "false"
 ).strip().lower() in {"1", "true", "yes"}
@@ -337,6 +337,10 @@ FORCE_TURN_RELAY = os.getenv("FORCE_TURN_RELAY", "false").lower() == "true"
 OSS_JWT_SECRET = os.getenv("OSS_JWT_SECRET", "change-me-in-production")
 OSS_JWT_EXPIRY_HOURS = int(os.getenv("OSS_JWT_EXPIRY_HOURS", "720"))  # 30 days
 
+# Unsubscribe links are signed so the public route needs no session, and a
+# tampered address/campaign pair cannot suppress someone else's email.
+EMAIL_UNSUBSCRIBE_SECRET = os.getenv("EMAIL_UNSUBSCRIBE_SECRET") or OSS_JWT_SECRET
+
 TUNER_BASE_URL = os.getenv("TUNER_BASE_URL", "https://api.usetuner.ai")
 
 # Lead Generation -----------------------------------------------------------
@@ -355,9 +359,9 @@ LEADS_MAX_SEARCH_DEPTH = int(os.getenv("LEADS_MAX_SEARCH_DEPTH", "10"))
 # as soon as the search has that many results (instead of running to max_time).
 LEADS_DEFAULT_TARGET_RESULTS = int(os.getenv("LEADS_DEFAULT_TARGET_RESULTS", "25"))
 LEADS_MAX_TARGET_RESULTS = int(os.getenv("LEADS_MAX_TARGET_RESULTS", "1000"))
-# "demo" generates deterministic sample businesses so the feature works without
-# Chromium; "google_maps" submits jobs to the scraper container.
-LEADS_DEFAULT_PROVIDER = os.getenv("LEADS_DEFAULT_PROVIDER", "demo")
+# "google_maps" submits jobs to the scraper container and is the default;
+# "demo" generates deterministic sample businesses and is opt-in only.
+LEADS_DEFAULT_PROVIDER = os.getenv("LEADS_DEFAULT_PROVIDER", "google_maps")
 LEADS_ENABLE_DEMO_PROVIDER = (
     os.getenv("LEADS_ENABLE_DEMO_PROVIDER", "true").lower() == "true"
 )

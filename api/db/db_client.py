@@ -5,6 +5,7 @@ from api.db.campaign_client import CampaignClient
 from api.db.email_audience_client import EmailAudienceClient
 from api.db.email_campaign_client import EmailCampaignClient
 from api.db.email_domain_client import EmailDomainClient
+from api.db.email_message_client import EmailMessageClient
 from api.db.email_sender_client import EmailSenderClient
 from api.db.email_template_client import EmailTemplateClient
 from api.db.embed_token_client import EmbedTokenClient
@@ -56,6 +57,7 @@ class DBClient(
     EmailDomainClient,
     EmailCampaignClient,
     EmailAudienceClient,
+    EmailMessageClient,
     AgentTriggerClient,
     WebhookCredentialClient,
     WebhookDeliveryClient,

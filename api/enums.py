@@ -337,6 +337,7 @@ class EmailCampaignStatus(Enum):
     READY = "ready"  # sender, template and audience chosen; preview has recipients
     LAUNCHING = "launching"  # audience frozen, recipient rows created as held
     SENDING = "sending"  # held rows released to queued for the worker
+    PAUSED = "paused"  # worker stops claiming rows; queued rows stay queued
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     FAILED = "failed"

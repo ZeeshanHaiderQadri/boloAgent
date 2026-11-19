@@ -70,7 +70,7 @@ export default function NewLeadSearchPage() {
     const [location, setLocation] = useState("");
     const [countryCode, setCountryCode] = useState("US");
     const [language, setLanguage] = useState("en");
-    const [provider, setProvider] = useState("demo");
+    const [provider, setProvider] = useState("");
     const [emailExtraction, setEmailExtraction] = useState(false);
     const [targetResults, setTargetResults] = useState("25");
     const [websiteFilter, setWebsiteFilter] = useState<WebsiteFilter>("any");

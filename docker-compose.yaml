@@ -88,7 +88,10 @@ services:
     image: gosom/google-maps-scraper:latest
     container_name: google-maps-scraper
     profiles: ["leads"]
-    command: ["-web", "-addr", ":8080", "-data-folder", "/data"]
+    # -c sets crawl concurrency. The upstream default is 1, which serializes
+    # every search behind the previous job's email-site visits (each up to a
+    # 30s networkidle timeout), stalling new searches at 0 results.
+    command: ["-web", "-addr", ":8080", "-data-folder", "/data", "-c", "4"]
     volumes:
       - gmapsdata:/data
     restart: unless-stopped

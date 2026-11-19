@@ -31,6 +31,7 @@ from api.routes.telephony import router as telephony_router
 from api.routes.tool import router as tool_router
 from api.routes.tts_cache import router as tts_cache_router
 from api.routes.turn_credentials import router as turn_credentials_router
+from api.routes.unsubscribe import router as unsubscribe_router
 from api.routes.user import router as user_router
 from api.routes.webrtc_signaling import router as webrtc_signaling_router
 from api.routes.workflow import router as workflow_router
@@ -66,6 +67,7 @@ router.include_router(organization_usage_router)
 router.include_router(reports_router)
 router.include_router(webrtc_signaling_router)
 router.include_router(turn_credentials_router)
+router.include_router(unsubscribe_router)
 router.include_router(public_embed_router)
 router.include_router(public_embed_chat_router)
 router.include_router(public_agent_router)

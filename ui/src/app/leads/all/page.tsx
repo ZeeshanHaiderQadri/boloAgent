@@ -20,6 +20,7 @@ import { toast } from "sonner";
 
 import {
     assignLeadsToProjectApiV1LeadProjectsProjectIdLeadsPost,
+    bulkDeleteLeadsApiV1LeadsBulkDeletePost,
     bulkUpdateLeadsApiV1LeadsBulkPost,
     createLeadProjectApiV1LeadProjectsPost,
     getLeadFacetsApiV1LeadsFacetsGet,
@@ -70,6 +71,7 @@ import {
 
 type LeadSort = "created_at" | "rating" | "title" | "status";
 type WebsiteFilter = "any" | "has" | "no";
+type EmailFilter = "any" | "has" | "no";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
 const FILTER_STORAGE_KEY = "bolo.leads.filters.v1";
@@ -86,8 +88,10 @@ interface SavedLeadFilters {
     city?: string;
     hasPhone?: boolean;
     website?: WebsiteFilter;
+    email?: EmailFilter;
     /** Legacy boolean from before website became a three-way filter. */
     hasWebsite?: boolean;
+    /** Legacy boolean from before email became a three-way filter. */
     hasEmail?: boolean;
     sort?: LeadSort;
     pageSize?: number;
@@ -160,6 +164,13 @@ function initialWebsite(saved: SavedLeadFilters): WebsiteFilter {
     return saved.hasWebsite ? "has" : "any";
 }
 
+function initialEmail(saved: SavedLeadFilters): EmailFilter {
+    if (saved.email === "has" || saved.email === "no") return saved.email;
+    if (saved.email === "any") return "any";
+    // The old checkbox only expressed "has email"; unchecked meant no filter.
+    return saved.hasEmail ? "has" : "any";
+}
+
 function pageChoices(totalPages: number): number[] {
     return Array.from({ length: Math.max(1, totalPages) }, (_, index) => index + 1);
 }
@@ -186,7 +197,9 @@ export default function AllLeadsPage() {
     const [website, setWebsite] = useState<WebsiteFilter>(() =>
         initialWebsite(savedFilters),
     );
-    const [hasEmail, setHasEmail] = useState(savedFilters.hasEmail ?? false);
+    const [email, setEmail] = useState<EmailFilter>(() =>
+        initialEmail(savedFilters),
+    );
     const [sort, setSort] = useState<LeadSort>(() => initialSort(savedFilters.sort));
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(() =>
@@ -236,7 +249,7 @@ export default function AllLeadsPage() {
             city,
             hasPhone,
             website,
-            hasEmail,
+            email,
             sort,
             pageSize,
         };
@@ -251,7 +264,7 @@ export default function AllLeadsPage() {
         city,
         hasPhone,
         website,
-        hasEmail,
+        email,
         sort,
         pageSize,
     ]);
@@ -305,7 +318,7 @@ export default function AllLeadsPage() {
                         has_phone: hasPhone ? true : null,
                         has_website:
                             website === "any" ? null : website === "has",
-                        has_email: hasEmail ? true : null,
+                        has_email: email === "any" ? null : email === "has",
                         country: country || null,
                         state: stateFilter || null,
                         city: city || null,
@@ -339,7 +352,7 @@ export default function AllLeadsPage() {
         category,
         hasPhone,
         website,
-        hasEmail,
+        email,
         country,
         stateFilter,
         city,
@@ -366,7 +379,7 @@ export default function AllLeadsPage() {
             city,
             hasPhone,
             website,
-            hasEmail,
+            email,
             sort,
             pageSize,
         }),
@@ -380,7 +393,7 @@ export default function AllLeadsPage() {
             city,
             hasPhone,
             website,
-            hasEmail,
+            email,
             sort,
             pageSize,
         ],
@@ -398,7 +411,7 @@ export default function AllLeadsPage() {
         setCity(filters.city ?? "");
         setHasPhone(filters.hasPhone ?? false);
         setWebsite(initialWebsite(filters));
-        setHasEmail(filters.hasEmail ?? false);
+        setEmail(initialEmail(filters));
         setSort(initialSort(filters.sort));
         if (filters.pageSize && PAGE_SIZE_OPTIONS.includes(filters.pageSize)) {
             setPageSize(filters.pageSize);
@@ -497,6 +510,36 @@ export default function AllLeadsPage() {
         }
     };
 
+    const deleteSelected = async () => {
+        if (selectedIds.length === 0) return;
+        if (
+            !window.confirm(
+                `Delete ${selectedIds.length} lead(s) from the CRM? This cannot be undone. ` +
+                    "Sent email records keep their address but lose the CRM link.",
+            )
+        ) {
+            return;
+        }
+        setBulkBusy(true);
+        try {
+            const response = await bulkDeleteLeadsApiV1LeadsBulkDeletePost({
+                body: { lead_ids: selectedIds },
+            });
+            if (response.error) {
+                toast.error(detailFromError(response.error, "Bulk delete failed"));
+                return;
+            }
+            toast.success(`Deleted ${response.data?.deleted ?? selectedIds.length} lead(s)`);
+            setSelectedIds([]);
+            await fetchLeads();
+        } catch (bulkError) {
+            console.error("Bulk delete failed:", bulkError);
+            toast.error("Bulk delete failed");
+        } finally {
+            setBulkBusy(false);
+        }
+    };
+
     const clearFilters = () => {
         setQuery("");
         setAppliedQuery("");
@@ -508,7 +551,7 @@ export default function AllLeadsPage() {
         setCity("");
         setHasPhone(false);
         setWebsite("any");
-        setHasEmail(false);
+        setEmail("any");
         setSort("created_at");
         setPage(1);
         setActiveViewId("");
@@ -521,7 +564,7 @@ export default function AllLeadsPage() {
         category: category || null,
         has_phone: hasPhone ? true : null,
         has_website: website === "any" ? null : website === "has",
-        has_email: hasEmail ? true : null,
+        has_email: email === "any" ? null : email === "has",
         country: country || null,
         state: stateFilter || null,
         city: city || null,
@@ -535,7 +578,7 @@ export default function AllLeadsPage() {
         category: category || null,
         has_phone: hasPhone ? true : null,
         has_website: website === "any" ? null : website === "has",
-        has_email: hasEmail ? true : null,
+        has_email: email === "any" ? null : email === "has",
         country: country || null,
         state: stateFilter || null,
         city: city || null,
@@ -721,14 +764,14 @@ export default function AllLeadsPage() {
                             )}
                         </div>
                         <form
-                            className="flex flex-wrap items-end gap-3"
+                            className="grid grid-cols-2 items-end gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6"
                             onSubmit={(event) => {
                                 event.preventDefault();
                                 setPage(1);
                                 setAppliedQuery(query.trim());
                             }}
                         >
-                        <div className="min-w-[220px] flex-1 space-y-1.5">
+                        <div className="col-span-2 space-y-1.5">
                             <Label htmlFor="lead-search" className="text-xs text-muted-foreground">
                                 Search
                             </Label>
@@ -743,7 +786,7 @@ export default function AllLeadsPage() {
                                 />
                             </div>
                         </div>
-                        <div className="w-56 space-y-1.5">
+                        <div className="col-span-2 space-y-1.5">
                             <Label className="text-xs text-muted-foreground">Category</Label>
                             <Select
                                 value={category || ANY}
@@ -767,7 +810,7 @@ export default function AllLeadsPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="w-36 space-y-1.5">
+                        <div className="space-y-1.5">
                             <Label className="text-xs text-muted-foreground">Tag</Label>
                             <Input
                                 value={tag}
@@ -778,7 +821,7 @@ export default function AllLeadsPage() {
                                 placeholder="e.g. hot"
                             />
                         </div>
-                        <div className="w-44 space-y-1.5">
+                        <div className="space-y-1.5">
                             <Label className="text-xs text-muted-foreground">Country</Label>
                             <Select
                                 value={country || ANY}
@@ -802,7 +845,7 @@ export default function AllLeadsPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="w-40 space-y-1.5">
+                        <div className="space-y-1.5">
                             <Label className="text-xs text-muted-foreground">State</Label>
                             <Select
                                 value={stateFilter || ANY}
@@ -830,7 +873,7 @@ export default function AllLeadsPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="w-40 space-y-1.5">
+                        <div className="space-y-1.5">
                             <Label className="text-xs text-muted-foreground">City</Label>
                             <Select
                                 value={city || ANY}
@@ -857,7 +900,7 @@ export default function AllLeadsPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="w-40 space-y-1.5">
+                        <div className="space-y-1.5">
                             <Label className="text-xs text-muted-foreground">Status</Label>
                             <Select
                                 value={status}
@@ -879,7 +922,7 @@ export default function AllLeadsPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="w-40 space-y-1.5">
+                        <div className="space-y-1.5">
                             <Label className="text-xs text-muted-foreground">Sort</Label>
                             <Select
                                 value={sort}
@@ -900,7 +943,7 @@ export default function AllLeadsPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="w-40 space-y-1.5">
+                        <div className="space-y-1.5">
                             <Label className="text-xs text-muted-foreground">Website</Label>
                             <Select
                                 value={website}
@@ -919,35 +962,48 @@ export default function AllLeadsPage() {
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="flex flex-wrap items-center gap-4 pb-2 text-sm">
-                            <label className="flex items-center gap-2">
-                                <Checkbox
-                                    checked={hasPhone}
-                                    onCheckedChange={(checked) => {
-                                        setHasPhone(checked === true);
-                                        setPage(1);
-                                    }}
-                                />
-                                Has phone
-                            </label>
-                            <label className="flex items-center gap-2">
-                                <Checkbox
-                                    checked={hasEmail}
-                                    onCheckedChange={(checked) => {
-                                        setHasEmail(checked === true);
-                                        setPage(1);
-                                    }}
-                                />
-                                Has email
-                            </label>
+                        <div className="space-y-1.5">
+                            <Label className="text-xs text-muted-foreground">Email</Label>
+                            <Select
+                                value={email}
+                                onValueChange={(value) => {
+                                    setEmail(value as EmailFilter);
+                                    setPage(1);
+                                }}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="any">Any email</SelectItem>
+                                    <SelectItem value="has">Has email</SelectItem>
+                                    <SelectItem value="no">No email</SelectItem>
+                                </SelectContent>
+                            </Select>
                         </div>
-                        <Button type="submit" variant="secondary">
-                            <Filter className="h-4 w-4" />
-                            Apply
-                        </Button>
-                        <Button type="button" variant="ghost" onClick={clearFilters}>
-                            Clear
-                        </Button>
+                        <div className="col-span-2 flex flex-wrap items-center gap-4 sm:col-span-3 lg:col-span-4 xl:col-span-6">
+                            <div className="flex flex-wrap items-center gap-4 text-sm">
+                                <label className="flex items-center gap-2">
+                                    <Checkbox
+                                        checked={hasPhone}
+                                        onCheckedChange={(checked) => {
+                                            setHasPhone(checked === true);
+                                            setPage(1);
+                                        }}
+                                    />
+                                    Has phone
+                                </label>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button type="submit" variant="secondary">
+                                    <Filter className="h-4 w-4" />
+                                    Apply
+                                </Button>
+                                <Button type="button" variant="ghost" onClick={clearFilters}>
+                                    Clear
+                                </Button>
+                            </div>
+                        </div>
                         </form>
                     </div>
                 }
@@ -1031,6 +1087,15 @@ export default function AllLeadsPage() {
                                 </Button>
                             </>
                         )}
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={bulkBusy}
+                            onClick={() => void deleteSelected()}
+                        >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                        </Button>
                         <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
                             Clear
                         </Button>
@@ -1146,7 +1211,7 @@ export default function AllLeadsPage() {
                     state: stateFilter || undefined,
                     city: city || undefined,
                     has_phone: hasPhone || undefined,
-                    has_email: hasEmail || undefined,
+                    has_email: email === "any" ? undefined : email === "has",
                 }}
                 pageVisibleCount={selectedIds.length}
             />

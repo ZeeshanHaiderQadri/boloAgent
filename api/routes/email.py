@@ -46,9 +46,9 @@ from api.services.email.adapter import (
     EmailAdapter,
     EmailConfigurationError,
     EmailDeliveryError,
-    EmailSenderConfig,
     OutboundEmail,
 )
+from api.services.email.factory import build_adapter as _build_adapter
 from api.services.email.limits import effective_limits, provider_limits
 from api.services.email.ses import SesEmailAdapter
 from api.services.email.smtp import SmtpEmailAdapter
@@ -371,28 +371,6 @@ def _credential_type_for(provider: EmailProvider) -> str:
         if provider is EmailProvider.SMTP
         else WebhookCredentialType.API_KEY.value
     )
-
-
-def _sender_config(sender: EmailSenderModel) -> EmailSenderConfig:
-    return EmailSenderConfig(
-        provider=EmailProvider(sender.provider),
-        from_name=sender.from_name,
-        from_email=sender.from_email,
-        reply_to=sender.reply_to_email,
-        settings=sender.settings or {},
-    )
-
-
-def _build_adapter(
-    sender: EmailSenderModel, credentials: Dict[str, Any]
-) -> EmailAdapter:
-    provider = EmailProvider(sender.provider)
-    config = _sender_config(sender)
-    if provider is EmailProvider.SMTP:
-        return SmtpEmailAdapter(config, credentials)
-    if provider is EmailProvider.SES:
-        return SesEmailAdapter(config, credentials)
-    raise EmailConfigurationError(f"{provider.value} is not available yet")
 
 
 async def _validate_sender_settings(

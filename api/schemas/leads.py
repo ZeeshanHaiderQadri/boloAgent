@@ -305,6 +305,10 @@ class BulkLeadUpdateRequest(BaseModel):
         return self
 
 
+class BulkLeadDeleteRequest(BaseModel):
+    lead_ids: list[int] = Field(min_length=1, max_length=1000)
+
+
 class LeadEmailConsentUpdateRequest(BaseModel):
     """Record a marketing-email consent decision for a lead.
 

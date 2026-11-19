@@ -5,11 +5,13 @@ import pytest
 from api.db.models import EmailSuppressionModel, LeadModel, LeadProjectModel
 from api.enums import EmailSuppressionReason
 from api.services.email.audience import (
+    EXCLUSION_ORDER,
     MAX_EXPLICIT_LEAD_IDS,
     AudienceError,
     AudienceRule,
     mask_address,
     resolve_audience,
+    validate_audience_rule,
 )
 
 
@@ -371,3 +373,89 @@ async def test_unknown_consent_policy_is_rejected(db_session):
             AudienceRule(audience_type="leads", lead_ids=(1,)),
             consent_policy="opted_in_only-ish",
         )
+
+
+@pytest.mark.asyncio
+async def test_manually_excluded_lead_is_its_own_bucket(db_session):
+    """A lead that passes every gate but is in excluded_lead_ids lands in the
+    manually_excluded bucket, not eligible."""
+    _, org = await _user_and_org(db_session, "audience_manual")
+
+    async with db_session.async_session() as session:
+        a = await _lead(
+            session, org, "manual-a", email="a@acme-plumbing.com", consent="opted_in"
+        )
+        b = await _lead(
+            session, org, "manual-b", email="b@acme-plumbing.com", consent="opted_in"
+        )
+        c = await _lead(
+            session, org, "manual-c", email="c@acme-plumbing.com", consent="opted_in"
+        )
+        await session.commit()
+        ids = [a.id, b.id, c.id]
+
+    rule = AudienceRule(
+        audience_type="leads",
+        lead_ids=tuple(ids),
+        excluded_lead_ids=(b.id,),
+    )
+    result = await resolve_audience(org.id, rule, consent_policy="opted_in_only")
+
+    assert result.recipient_count == 3
+    assert result.eligible_count == 2
+    assert result.excluded_manual_count == 1
+    assert result.duplicates_collapsed_count == 0
+
+
+@pytest.mark.asyncio
+async def test_manual_exclusion_order_after_unknown_consent(db_session):
+    """An unknown-consent lead admitted by include_unknown is still manually
+    excludable; the exclusion takes precedence over eligibility."""
+    _, org = await _user_and_org(db_session, "audience_manual_unknown")
+
+    async with db_session.async_session() as session:
+        eligible = await _lead(
+            session, org, "mu-elig", email="e@acme-plumbing.com", consent="opted_in"
+        )
+        unknown = await _lead(
+            session, org, "mu-unknown", email="u@acme-plumbing.com", consent="unknown"
+        )
+        await session.commit()
+        ids = [eligible.id, unknown.id]
+
+    rule = AudienceRule(
+        audience_type="leads",
+        lead_ids=tuple(ids),
+        excluded_lead_ids=(unknown.id,),
+    )
+    result = await resolve_audience(org.id, rule, consent_policy="include_unknown")
+
+    assert result.eligible_count == 1
+    assert result.excluded_manual_count == 1
+    assert result.unknown_lead_count == 1
+    assert result.excluded_unknown_count == 0
+
+
+def test_exclusion_order_includes_manually_excluded():
+    """The documented EXCLUSION_ORDER has manually_excluded between unknown and eligible."""
+    assert (
+        EXCLUSION_ORDER.index("manually_excluded")
+        == EXCLUSION_ORDER.index("unknown") + 1
+    )
+    assert (
+        EXCLUSION_ORDER.index("manually_excluded")
+        == EXCLUSION_ORDER.index("eligible") - 1
+    )
+
+
+def test_manual_exclusion_cap():
+    """Excluded lead ids are capped at MAX_MANUAL_EXCLUSIONS."""
+    from api.services.email.audience import MAX_MANUAL_EXCLUSIONS
+
+    rule = AudienceRule(
+        audience_type="leads",
+        lead_ids=(1,),
+        excluded_lead_ids=tuple(range(MAX_MANUAL_EXCLUSIONS + 1)),
+    )
+    with pytest.raises(AudienceError, match="manually excluded"):
+        validate_audience_rule(rule)

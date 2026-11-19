@@ -78,7 +78,7 @@ export function LeadSearchEditDialog({
     const [location, setLocation] = useState("");
     const [countryCode, setCountryCode] = useState("US");
     const [language, setLanguage] = useState("en");
-    const [provider, setProvider] = useState("demo");
+    const [provider, setProvider] = useState("");
     const [targetResults, setTargetResults] = useState("25");
     const [websiteFilter, setWebsiteFilter] = useState<LeadWebsiteFilter>("any");
     const [emailExtraction, setEmailExtraction] = useState(false);
@@ -105,7 +105,7 @@ export function LeadSearchEditDialog({
         setLocation(search.location ?? "");
         setCountryCode(search.country_code ?? "US");
         setLanguage(search.language ?? "en");
-        setProvider(search.provider ?? "demo");
+        setProvider(search.provider ?? "");
         setTargetResults(String(search.target_results ?? 25));
         setWebsiteFilter(
             (params.website_filter as LeadWebsiteFilter | undefined) ?? "any",
@@ -151,7 +151,16 @@ export function LeadSearchEditDialog({
                     campaignResponse,
                 ]) => {
                     if (cancelled) return;
-                    if (metaResponse.data) setMeta(metaResponse.data);
+                    if (metaResponse.data) {
+                        setMeta(metaResponse.data);
+                        // The saved search may name a provider this deployment
+                        // has since disabled; never offer it as the selection.
+                        setProvider((current) =>
+                            metaResponse.data.providers.includes(current)
+                                ? current
+                                : metaResponse.data.default_provider,
+                        );
+                    }
                     setWorkflows(workflowResponse.data ?? []);
                     setTelephonyConfigs(
                         telephonyResponse.data?.configurations ?? [],
@@ -360,10 +369,11 @@ export function LeadSearchEditDialog({
                                 </SelectTrigger>
                                 <SelectContent>
                                     {Array.from(
-                                        new Set([
-                                            ...(meta?.providers ?? []),
-                                            search?.provider ?? "demo",
-                                        ]),
+                                        new Set(
+                                            [...(meta?.providers ?? []), provider].filter(
+                                                Boolean,
+                                            ),
+                                        ),
                                     ).map((name) => (
                                         <SelectItem key={name} value={name}>
                                             {name === "google_maps"
