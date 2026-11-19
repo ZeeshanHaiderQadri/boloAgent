@@ -131,7 +131,7 @@ export function AudiencePreviewPanel({ campaign, previewing = false, error, onRe
                             return (
                                 <div
                                     key={bucket.key}
-                                    style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+                                    style={{ animationDelay: `${Math.min(index, 8) * 70}ms` }}
                                     className={cn(
                                         "list-enter flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2",
                                         bucket.tone === "eligible" &&

@@ -79,7 +79,7 @@ export function CampaignStepper({ steps, currentStep }: Props) {
                                 >
                                     <div
                                         className={cn(
-                                            "h-full origin-left rounded-full bg-primary transition-transform duration-500 ease-out motion-reduce:transition-none",
+                                            "h-full origin-left rounded-full bg-primary transition-transform duration-700 ease-out motion-reduce:transition-none",
                                             completed ? "scale-x-100" : "scale-x-0",
                                         )}
                                     />

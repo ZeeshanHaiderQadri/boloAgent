@@ -271,7 +271,7 @@ export default function EmailTemplatesPage() {
                             {filtered.map((template, index) => (
                                 <div
                                     key={template.uuid}
-                                    style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
+                                    style={{ animationDelay: `${Math.min(index, 6) * 60}ms` }}
                                     className={`list-enter ${LIST_ROW_CLASS}`}
                                 >
                                     <div className="min-w-0 space-y-2">

@@ -15,7 +15,7 @@ interface Props {
  * the accessibility tree; the animated digits are aria-hidden so screen
  * readers never hear intermediate numbers.
  */
-export function CountUp({ value, duration = 480, className }: Props) {
+export function CountUp({ value, duration = 900, className }: Props) {
     const reduced = usePrefersReducedMotion();
     const [display, setDisplay] = useState(0);
 
@@ -29,7 +29,7 @@ export function CountUp({ value, duration = 480, className }: Props) {
         setDisplay(0);
         const tick = (now: number) => {
             const progress = Math.min(1, (now - start) / duration);
-            const eased = 1 - Math.pow(1 - progress, 3);
+            const eased = 1 - Math.pow(1 - progress, 5);
             setDisplay(Math.round(value * eased));
             if (progress < 1) frame = requestAnimationFrame(tick);
         };

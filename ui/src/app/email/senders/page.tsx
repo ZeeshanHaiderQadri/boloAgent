@@ -272,7 +272,7 @@ export default function EmailSendersPage() {
                             {filtered.map((sender, index) => (
                                 <div
                                     key={sender.uuid}
-                                    style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
+                                    style={{ animationDelay: `${Math.min(index, 6) * 60}ms` }}
                                     className={`list-enter ${LIST_ROW_CLASS}`}
                                 >
                                     <div className="min-w-0 space-y-2">

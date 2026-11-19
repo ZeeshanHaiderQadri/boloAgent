@@ -252,7 +252,7 @@ export function CampaignSendProgress({ campaign, onCampaignChange }: Props) {
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-muted">
                     <div
-                        className="h-full rounded-full bg-cta transition-[width] duration-500 motion-reduce:transition-none"
+                        className="h-full rounded-full bg-cta transition-[width] duration-700 ease-out motion-reduce:transition-none"
                         style={{ width: `${percent}%` }}
                     />
                 </div>
