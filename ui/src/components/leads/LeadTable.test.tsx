@@ -86,6 +86,30 @@ describe("LeadTable", () => {
         expect(onToggleAll).toHaveBeenCalled();
     });
 
+    it("links social icons to the stored business profiles", () => {
+        render(
+            <LeadTable
+                leads={[
+                    lead({
+                        social_links: {
+                            instagram: "https://www.instagram.com/apex/",
+                            youtube: "https://www.youtube.com/@apexlabs",
+                            website: "https://example.com/not-a-platform",
+                        },
+                    }),
+                ]}
+            />,
+        );
+
+        const instagram = screen.getByRole("link", { name: "Instagram profile" });
+        expect(instagram.getAttribute("href")).toBe(
+            "https://www.instagram.com/apex/",
+        );
+        expect(instagram.getAttribute("target")).toBe("_blank");
+        expect(screen.getByRole("link", { name: "YouTube profile" })).toBeTruthy();
+        expect(screen.queryByRole("link", { name: "X profile" })).toBeNull();
+    });
+
     it("shows the empty state instead of an empty table", () => {
         render(<LeadTable leads={[]} emptyMessage="Nothing matches" />);
 

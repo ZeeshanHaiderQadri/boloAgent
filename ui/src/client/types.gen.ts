@@ -4136,6 +4136,16 @@ export type LeadResponse = {
      */
     website?: string | null;
     /**
+     * Social Links
+     */
+    social_links?: {
+        [key: string]: string;
+    };
+    /**
+     * Socials Checked At
+     */
+    socials_checked_at?: string | null;
+    /**
      * Place Id
      */
     place_id?: string | null;
@@ -14761,6 +14771,50 @@ export type UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchResponses = {
 };
 
 export type UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchResponse = UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchResponses[keyof UpdateLeadEmailConsentApiV1LeadsLeadIdEmailConsentPatchResponses];
+
+export type RefreshLeadSocialsApiV1LeadsLeadIdRefreshSocialsPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Lead Id
+         */
+        lead_id: number;
+    };
+    query?: never;
+    url: '/api/v1/leads/{lead_id}/refresh-socials';
+};
+
+export type RefreshLeadSocialsApiV1LeadsLeadIdRefreshSocialsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RefreshLeadSocialsApiV1LeadsLeadIdRefreshSocialsPostError = RefreshLeadSocialsApiV1LeadsLeadIdRefreshSocialsPostErrors[keyof RefreshLeadSocialsApiV1LeadsLeadIdRefreshSocialsPostErrors];
+
+export type RefreshLeadSocialsApiV1LeadsLeadIdRefreshSocialsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadResponse;
+};
+
+export type RefreshLeadSocialsApiV1LeadsLeadIdRefreshSocialsPostResponse = RefreshLeadSocialsApiV1LeadsLeadIdRefreshSocialsPostResponses[keyof RefreshLeadSocialsApiV1LeadsLeadIdRefreshSocialsPostResponses];
 
 export type DeleteLeadApiV1LeadsLeadIdDeleteData = {
     body?: never;
