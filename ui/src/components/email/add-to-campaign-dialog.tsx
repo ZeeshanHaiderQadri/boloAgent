@@ -131,44 +131,55 @@ export function AddToCampaignDialog({
 
     function buildAudienceRule(): AudienceRuleRequest {
         if (audienceType === "leads") {
-            if (useAllFilter && filterState) {
-                const filters: CampaignFilters = {
-                    q: filterState.q ?? undefined,
-                    status: (filterState.status as CampaignFilters["status"]) ?? undefined,
-                    tag: filterState.tag ?? undefined,
-                    category: filterState.category ?? undefined,
-                    country: filterState.country ?? undefined,
-                    state: filterState.state ?? undefined,
-                    city: filterState.city ?? undefined,
-                    has_phone: filterState.has_phone ?? undefined,
-                    has_email: filterState.has_email ?? undefined,
-                };
+            if (useAllFilter) {
+                // Use filterState if available; fall back to has_email=true so the
+                // API always gets at least one filter field.
+                const filters: CampaignFilters =
+                    filterState && Object.values(filterState).some(Boolean)
+                        ? {
+                              q: filterState.q ?? undefined,
+                              status: (filterState.status as CampaignFilters["status"]) ?? undefined,
+                              tag: filterState.tag ?? undefined,
+                              category: filterState.category ?? undefined,
+                              country: filterState.country ?? undefined,
+                              state: filterState.state ?? undefined,
+                              city: filterState.city ?? undefined,
+                              has_phone: filterState.has_phone ?? undefined,
+                              has_email: filterState.has_email ?? undefined,
+                          }
+                        : { has_email: true };
                 return { audience_type: "filter", filters, all_matching: true };
             }
-            return { audience_type: "leads", lead_ids: leadIds ?? [] };
+            // If no leads are selected, fall back to all-email filter rather
+            // than sending an empty lead_ids array that the API rejects.
+            if (!leadIds || leadIds.length === 0) {
+                return { audience_type: "filter", filters: { has_email: true }, all_matching: true };
+            }
+            return { audience_type: "leads", lead_ids: leadIds };
         }
-        if (audienceType === "project") {
-            return { audience_type: "project", project_id: projectId ?? null };
+        if (audienceType === "project" && projectId != null) {
+            return { audience_type: "project", project_id: projectId };
         }
-        if (audienceType === "tag") {
-            return { audience_type: "tag", tag: tag ?? null };
+        if (audienceType === "tag" && tag) {
+            return { audience_type: "tag", tag };
         }
-        // filter
-        if (filterState) {
-            const filters: CampaignFilters = {
-                q: filterState.q ?? undefined,
-                status: (filterState.status as CampaignFilters["status"]) ?? undefined,
-                tag: filterState.tag ?? undefined,
-                category: filterState.category ?? undefined,
-                country: filterState.country ?? undefined,
-                state: filterState.state ?? undefined,
-                city: filterState.city ?? undefined,
-                has_phone: filterState.has_phone ?? undefined,
-                has_email: filterState.has_email ?? undefined,
-            };
-            return { audience_type: "filter", filters, all_matching: true };
-        }
-        return { audience_type: "filter", all_matching: true };
+        // filter or any fallback — always include at least has_email so the API
+        // never sees an empty filter object.
+        const filters: CampaignFilters =
+            filterState && Object.values(filterState).some(Boolean)
+                ? {
+                      q: filterState.q ?? undefined,
+                      status: (filterState.status as CampaignFilters["status"]) ?? undefined,
+                      tag: filterState.tag ?? undefined,
+                      category: filterState.category ?? undefined,
+                      country: filterState.country ?? undefined,
+                      state: filterState.state ?? undefined,
+                      city: filterState.city ?? undefined,
+                      has_phone: filterState.has_phone ?? undefined,
+                      has_email: filterState.has_email ?? undefined,
+                  }
+                : { has_email: true };
+        return { audience_type: "filter", filters, all_matching: true };
     }
 
     const handleCreate = async () => {
