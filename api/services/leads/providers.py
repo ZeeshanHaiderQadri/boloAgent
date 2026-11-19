@@ -20,6 +20,7 @@ import httpx
 from loguru import logger
 
 from api.constants import (
+    LEADS_DEFAULT_PROVIDER,
     LEADS_SCRAPER_TIMEOUT_SECONDS,
     LEADS_SCRAPER_URL,
 )
@@ -422,6 +423,16 @@ _PROVIDERS: dict[str, LeadProvider] = {
 
 def available_providers(include_demo: bool) -> list[str]:
     return [name for name in ("google_maps", "demo") if include_demo or name != "demo"]
+
+
+def default_provider_name(include_demo: bool) -> str:
+    """The configured default, or the first provider this deployment offers.
+
+    Prevents the API from advertising a default the operator disabled.
+    """
+    providers = available_providers(include_demo)
+    configured = (LEADS_DEFAULT_PROVIDER or "").strip()
+    return configured if configured in providers else providers[0]
 
 
 def get_provider(name: str, *, include_demo: bool = True) -> LeadProvider:

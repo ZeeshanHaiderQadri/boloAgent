@@ -66,6 +66,7 @@ from api.tasks.campaign_tasks import (
     process_campaign_batch,
     sync_campaign_source,
 )
+from api.tasks.email_campaign_tasks import send_email_campaign
 from api.tasks.knowledge_base_processing import process_knowledge_base_document
 from api.tasks.lead_tasks import (
     run_lead_auto_dispatch,
@@ -118,6 +119,7 @@ class WorkerSettings:
         deliver_webhook,
         complete_inactive_text_chat_session,
         finalize_completed_text_chat,
+        func(send_email_campaign, timeout=1800),
     ]
     cron_jobs = [
         cron(sweep_builder_runs, minute=set(range(60)), second=45, run_at_startup=True),

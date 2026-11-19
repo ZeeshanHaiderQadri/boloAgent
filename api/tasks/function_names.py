@@ -11,3 +11,4 @@ class FunctionNames:
     RUN_LEAD_SEARCH = "run_lead_search"
     RUN_LEAD_AUTO_DISPATCH = "run_lead_auto_dispatch"
     SYNC_LEAD_CALL_OUTCOMES = "sync_lead_call_outcomes"
+    SEND_EMAIL_CAMPAIGN = "send_email_campaign"

@@ -111,6 +111,11 @@ class EmailValidationError(ValueError):
         )
 
 
+def email_rejection_message(reason: str) -> str:
+    """Return the user-facing message for a :func:`classify_email` reason."""
+    return _REASON_MESSAGES.get(reason, "Enter a valid email address")
+
+
 def _strip_wrappers(value: str) -> str:
     text = value.strip()
     if text.lower().startswith("mailto:"):

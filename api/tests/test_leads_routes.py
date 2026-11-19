@@ -1122,3 +1122,63 @@ def test_editing_only_the_email_case_keeps_consent():
     values = db.update_lead.await_args.kwargs
     assert "email_consent" not in values
     assert values["activities"] is None
+
+
+def test_delete_search_rejects_active_search():
+    db = MagicMock()
+    db.get_lead_search = AsyncMock(return_value=_search(status="running"))
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().delete("/leads/searches/21")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Cancel this search before deleting it"
+    db.delete_lead_search.assert_not_called()
+
+
+def test_delete_search_removes_finished_search_for_org():
+    db = MagicMock()
+    db.get_lead_search = AsyncMock(return_value=_search(status="completed"))
+    db.delete_lead_search = AsyncMock(return_value=True)
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().delete("/leads/searches/21")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": True}
+    db.delete_lead_search.assert_awaited_once_with(21, USER.selected_organization_id)
+
+
+def test_delete_search_unknown_is_404():
+    db = MagicMock()
+    db.get_lead_search = AsyncMock(return_value=None)
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().delete("/leads/searches/21")
+
+    assert response.status_code == 404
+
+
+def test_bulk_delete_is_org_scoped_and_reports_count():
+    db = MagicMock()
+    db.delete_leads = AsyncMock(return_value=2)
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().post("/leads/bulk-delete", json={"lead_ids": [1, 1, 2]})
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": 2}
+    db.delete_leads.assert_awaited_once_with(
+        [1, 2], USER.selected_organization_id
+    )
+
+
+def test_bulk_delete_without_matches_is_404():
+    db = MagicMock()
+    db.delete_leads = AsyncMock(return_value=0)
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().post("/leads/bulk-delete", json={"lead_ids": [999]})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No matching leads"

@@ -52,6 +52,18 @@ class EmailCampaignClient(BaseDBClient):
             )
             return result.scalar_one_or_none()
 
+    async def get_email_campaign_by_id(
+        self, organization_id: int, campaign_id: int
+    ) -> Optional[EmailCampaignModel]:
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(EmailCampaignModel).where(
+                    EmailCampaignModel.organization_id == organization_id,
+                    EmailCampaignModel.id == campaign_id,
+                )
+            )
+            return result.scalar_one_or_none()
+
     async def create_email_campaign(
         self,
         *,

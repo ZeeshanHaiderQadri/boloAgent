@@ -1,4 +1,4 @@
-"""Recipients endpoint: paginated, bucket-classified, masked email list."""
+"""Recipients endpoint: paginated, bucket-classified, explained email list."""
 
 from types import SimpleNamespace
 
@@ -52,7 +52,7 @@ async def _create_campaign(client, lead_ids, *, name="Outreach", **overrides):
 
 
 @pytest.mark.asyncio
-async def test_recipients_returns_paginated_rows_with_masked_emails(
+async def test_recipients_returns_paginated_rows_with_full_emails(
     db_session, test_client_factory
 ):
     user, org = await _user_and_org(db_session, "recip_basic")
@@ -79,16 +79,48 @@ async def test_recipients_returns_paginated_rows_with_masked_emails(
     assert body["total"] == 2
     assert body["page"] == 1
     assert len(body["items"]) == 2
-    # Emails must be masked
+    # The operator must see the address the campaign will mail.
+    emails = {item["email"] for item in body["items"]}
+    assert emails == {"alice@acme.com", "bob@acme.com"}
     for item in body["items"]:
-        assert "@" in item["masked_email"]
-        assert "alice@acme.com" not in item["masked_email"]
-        assert "bob@acme.com" not in item["masked_email"]
-        assert item["masked_email"].count("*") >= 3
         assert item["bucket"] == "eligible"
-    # Raw emails must never appear anywhere in the response text
-    assert "alice@acme.com" not in res.text
-    assert "bob@acme.com" not in res.text
+        assert "Consent recorded" in item["reason"]
+
+
+@pytest.mark.asyncio
+async def test_recipients_paginates_without_loading_whole_audience(
+    db_session, test_client_factory
+):
+    user, org = await _user_and_org(db_session, "recip_paging")
+    async with db_session.async_session() as session:
+        ids = []
+        for index in range(3):
+            lead = await _lead(
+                session, org.id, f"page-{index}", email=f"page{index}@acme.com"
+            )
+            ids.append(lead.id)
+        await session.commit()
+
+    async with test_client_factory(user) as client:
+        campaign = await _create_campaign(client, ids, name="Paging")
+        uuid = campaign["uuid"]
+
+        first = await client.get(
+            f"/api/v1/email/campaigns/{uuid}/recipients?page=1&limit=2"
+        )
+        second = await client.get(
+            f"/api/v1/email/campaigns/{uuid}/recipients?page=2&limit=2"
+        )
+
+    assert first.status_code == 200 and second.status_code == 200
+    first_body, second_body = first.json(), second.json()
+    assert first_body["total"] == 3
+    assert [item["email"] for item in first_body["items"]] == [
+        "page0@acme.com",
+        "page1@acme.com",
+    ]
+    assert [item["email"] for item in second_body["items"]] == ["page2@acme.com"]
+    assert second_body["total"] == 3
 
 
 @pytest.mark.asyncio
@@ -137,6 +169,36 @@ async def test_recipients_bucket_filter_returns_only_matching_rows(
     assert no_email_res.status_code == 200
     assert no_email_res.json()["total"] == 1
     assert no_email_res.json()["items"][0]["bucket"] == "no_email"
+
+
+@pytest.mark.asyncio
+async def test_recipients_blank_bucket_returns_all_rows(
+    db_session, test_client_factory
+):
+    """`?bucket=` (empty) means "all buckets", not a bucket named ""."""
+    user, org = await _user_and_org(db_session, "recip_blank_bucket")
+    async with db_session.async_session() as session:
+        eligible = await _lead(
+            session, org.id, "rb-eligible", email="ok@acme.com", consent="opted_in"
+        )
+        opted_out = await _lead(
+            session, org.id, "rb-opted-out", email="out@acme.com", consent="opted_out"
+        )
+        await session.commit()
+        ids = [eligible.id, opted_out.id]
+
+    async with test_client_factory(user) as client:
+        campaign = await _create_campaign(client, ids, name="Blank bucket")
+        uuid = campaign["uuid"]
+
+        res = await client.get(
+            f"/api/v1/email/campaigns/{uuid}/recipients?page=1&limit=10&bucket="
+        )
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["total"] == 2
+    assert {item["bucket"] for item in body["items"]} == {"eligible", "opted_out"}
 
 
 @pytest.mark.asyncio
@@ -265,5 +327,76 @@ async def test_recipients_suppressed_leads_appear_in_suppressed_bucket(
     body = res.json()
     assert body["total"] == 1
     assert body["items"][0]["bucket"] == "suppressed"
-    # Email must be masked even for suppressed leads
-    assert "suppressed@suppressed-domain.com" not in res.text
+    assert body["items"][0]["email"] == "suppressed@suppressed-domain.com"
+    assert "suppression list" in body["items"][0]["reason"]
+
+
+@pytest.mark.asyncio
+async def test_recipients_unknown_consent_explains_opted_in_only_policy(
+    db_session, test_client_factory
+):
+    """The 7-leads-0-eligible case: unknown consent under opted_in_only."""
+    user, org = await _user_and_org(db_session, "recip_unknown_consent")
+    async with db_session.async_session() as session:
+        lead = await _lead(
+            session, org.id, "uc-lead", email="unknown@acme.com", consent="unknown"
+        )
+        await session.commit()
+        lead_id = lead.id
+
+    async with test_client_factory(user) as client:
+        campaign = await _create_campaign(client, [lead_id], name="Unknown consent")
+        uuid = campaign["uuid"]
+        res = await client.get(f"/api/v1/email/campaigns/{uuid}/recipients")
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["bucket"] == "unknown"
+    assert item["email"] == "unknown@acme.com"
+    assert "No consent recorded" in item["reason"]
+    assert "opted-in leads only" in item["reason"]
+
+
+@pytest.mark.asyncio
+async def test_recipients_invalid_email_explains_validator_rejection(
+    db_session, test_client_factory
+):
+    user, org = await _user_and_org(db_session, "recip_invalid_email")
+    async with db_session.async_session() as session:
+        lead = await _lead(
+            session, org.id, "inv-lead", email="logo@2x.webp", consent="opted_in"
+        )
+        await session.commit()
+        lead_id = lead.id
+
+    async with test_client_factory(user) as client:
+        campaign = await _create_campaign(client, [lead_id], name="Invalid email")
+        uuid = campaign["uuid"]
+        res = await client.get(f"/api/v1/email/campaigns/{uuid}/recipients")
+
+    assert res.status_code == 200, res.text
+    item = res.json()["items"][0]
+    assert item["bucket"] == "invalid_email"
+    assert "email validator" in item["reason"]
+    assert "file extension" in item["reason"]
+
+
+@pytest.mark.asyncio
+async def test_recipients_unknown_bucket_returns_422(
+    db_session, test_client_factory
+):
+    user, org = await _user_and_org(db_session, "recip_bad_bucket")
+    async with db_session.async_session() as session:
+        lead = await _lead(session, org.id, "bb-lead", email="bb@acme.com")
+        await session.commit()
+
+    async with test_client_factory(user) as client:
+        campaign = await _create_campaign(client, [lead.id])
+        uuid = campaign["uuid"]
+        res = await client.get(
+            f"/api/v1/email/campaigns/{uuid}/recipients?bucket=everyone"
+        )
+
+    assert res.status_code == 422

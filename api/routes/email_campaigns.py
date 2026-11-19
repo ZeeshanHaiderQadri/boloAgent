@@ -1,7 +1,8 @@
-"""Draft email campaigns: audience preview and CRUD.
+"""Email campaigns: audience preview, CRUD and launch.
 
-Nothing here sends email or creates recipient rows. Launch is a separate
-endpoint, and in this release it is disabled by default and sends nothing.
+Launch freezes the audience into recipient rows and hands them to the ARQ send
+worker; every other route here only reads or updates the draft. Sending is
+behind ``EMAIL_CAMPAIGN_SENDING_ENABLED`` and off by default.
 
 Every route is organization-scoped: a campaign, sender, template, project or
 lead id belonging to another organization is indistinguishable from a missing
@@ -11,10 +12,12 @@ one.
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
 from api import constants
@@ -31,6 +34,7 @@ from api.enums import (
     EmailCampaignAudienceType,
     EmailCampaignConsentPolicy,
     EmailCampaignStatus,
+    EmailSenderStatus,
 )
 from api.routes.email import _clean_text, _require_organization
 from api.schemas.leads import LeadProjectFilters
@@ -39,9 +43,12 @@ from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
 from api.services.email.audience import (
     AudienceError,
     AudienceRule,
+    normalized_manual_addresses,
+    mask_address,
     resolve_audience,
     validate_audience_rule,
 )
+from api.services.email.campaign_dispatch import freeze_and_queue_campaign
 from api.services.email.campaign_launch import check_launch_preconditions
 from api.services.email.campaign_rate_limits import (
     allow_campaign_launch_attempt,
@@ -50,8 +57,12 @@ from api.services.email.campaign_rate_limits import (
 from api.services.email.campaign_state import (
     CampaignStateError,
     assert_campaign_deletable,
+    assert_campaign_transition,
 )
 from api.services.email.limits import effective_limits
+from api.utils.email_buckets import EXCLUSION_ORDER
+from api.tasks.arq import enqueue_job
+from api.tasks.function_names import FunctionNames
 
 router = APIRouter(prefix="/email/campaigns")
 
@@ -87,6 +98,13 @@ class AudienceRuleRequest(BaseModel):
     # Manual exclusions from the recipients table. Stored inside the audience
     # JSON; the resolver re-applies them on every call. Capped at 5,000.
     excluded_lead_ids: list[int] = Field(default_factory=list)
+    # Operator-typed addresses (e.g. the sender's own inbox for a test send).
+    # They skip consent checks but still respect the suppression list.
+    manual_emails: list[str] = Field(default_factory=list, max_length=100)
+    # Individually appended leads for a filter/project/tag audience. Written by
+    # the add-leads endpoint; sent back unchanged when the wizard edits the
+    # audience so exclusions do not silently drop them.
+    extra_lead_ids: list[int] = Field(default_factory=list)
 
 
 class ConsentRequest(BaseModel):
@@ -153,6 +171,20 @@ class TemplateSummaryResponse(BaseModel):
     unsubscribe_warning: Optional[str]
 
 
+class CampaignProgressResponse(BaseModel):
+    """Delivery state of the frozen recipient rows, polled by the UI."""
+
+    total: int = 0
+    held: int = 0
+    queued: int = 0
+    sending: int = 0
+    sent: int = 0
+    failed: int = 0
+    cancelled: int = 0
+    bounced: int = 0
+    complained: int = 0
+
+
 class EmailCampaignResponse(BaseModel):
     uuid: str
     name: str
@@ -167,6 +199,7 @@ class EmailCampaignResponse(BaseModel):
     cancelled_at: Optional[datetime]
     failure_reason: Optional[str]
     counts: CampaignCountsResponse
+    progress: CampaignProgressResponse = CampaignProgressResponse()
     sender: Optional[SenderSummaryResponse]
     template: Optional[TemplateSummaryResponse]
     created_at: Optional[datetime]
@@ -191,21 +224,49 @@ class UpdateEmailCampaignRequest(BaseModel):
     template_uuid: Optional[str] = None
 
 
+class AddLeadsToCampaignRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lead_ids: list[int] = Field(min_length=1, max_length=1000)
+
+
 class LaunchResponse(BaseModel):
-    # The campaign's current status; launch never changes it in this release.
+    # The campaign's status after the attempt; ``sending`` once queued.
     status: str
     ready: bool
     # Plain-language reasons launch is blocked; empty when ready is true.
     preconditions: list[str]
     message: str
+    # Recipient rows frozen and released to the send worker; 0 when blocked.
+    queued_count: int = 0
+
+
+class CampaignMessageItem(BaseModel):
+    email: str
+    status: str
+    error_message: Optional[str]
+    sent_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+
+class CampaignMessagesResponse(BaseModel):
+    """Recent per-recipient delivery rows for one campaign."""
+
+    items: list[CampaignMessageItem]
+    total: int
+    page: int
+    limit: int
 
 
 class RecipientItem(BaseModel):
-    lead_id: int
+    # None for an address the operator typed by hand (no CRM record).
+    lead_id: Optional[int] = None
     title: str
-    masked_email: str
+    email: str
     email_consent: str
     bucket: str
+    # Why this address landed in its bucket (validator, suppression, consent).
+    reason: str
 
 
 class CampaignRecipientsResponse(BaseModel):
@@ -233,6 +294,10 @@ def _rule_from_request(request: AudienceRuleRequest) -> AudienceRule:
         tag=request.tag,
         filters=filters,
         excluded_lead_ids=tuple(request.excluded_lead_ids or ()),
+        manual_emails=tuple(
+            address.strip() for address in (request.manual_emails or ()) if address.strip()
+        ),
+        extra_lead_ids=tuple(request.extra_lead_ids or ()),
     )
 
 
@@ -249,35 +314,43 @@ def _stored_audience(rule: AudienceRule) -> dict[str, Any]:
     # needed. The resolver re-applies them on every call.
     if rule.excluded_lead_ids:
         result["excluded_lead_ids"] = list(rule.excluded_lead_ids)
+    if rule.manual_emails:
+        result["manual_emails"] = list(rule.manual_emails)
+    if rule.extra_lead_ids:
+        result["extra_lead_ids"] = list(rule.extra_lead_ids)
     return result
 
 
 def _rule_from_stored(campaign: EmailCampaignModel) -> AudienceRule:
     """Rebuild the resolver rule from what the campaign row stored."""
     audience = campaign.audience or {}
-    excluded = tuple(audience.get("excluded_lead_ids") or ())
+    shared: dict[str, Any] = {
+        "excluded_lead_ids": tuple(audience.get("excluded_lead_ids") or ()),
+        "manual_emails": tuple(audience.get("manual_emails") or ()),
+        "extra_lead_ids": tuple(audience.get("extra_lead_ids") or ()),
+    }
     if campaign.audience_type == EmailCampaignAudienceType.LEADS.value:
         return AudienceRule(
             audience_type=campaign.audience_type,
             lead_ids=tuple(audience.get("lead_ids") or ()),
-            excluded_lead_ids=excluded,
+            **shared,
         )
     if campaign.audience_type == EmailCampaignAudienceType.PROJECT.value:
         return AudienceRule(
             audience_type=campaign.audience_type,
             project_id=audience.get("project_id"),
-            excluded_lead_ids=excluded,
+            **shared,
         )
     if campaign.audience_type == EmailCampaignAudienceType.TAG.value:
         return AudienceRule(
             audience_type=campaign.audience_type,
             tag=audience.get("tag"),
-            excluded_lead_ids=excluded,
+            **shared,
         )
     return AudienceRule(
         audience_type=campaign.audience_type,
         filters=dict(audience.get("filters") or {}),
-        excluded_lead_ids=excluded,
+        **shared,
     )
 
 
@@ -415,6 +488,17 @@ async def _campaign_response(
         template = await db_client.get_email_template_by_id(
             campaign.organization_id, campaign.template_id
         )
+    message_counts = (
+        await db_client.count_campaign_messages(campaign.organization_id, campaign.id)
+    )
+    progress = CampaignProgressResponse(
+        total=sum(message_counts.values()),
+        **{
+            field: int(message_counts.get(field, 0))
+            for field in CampaignProgressResponse.model_fields
+            if field != "total"
+        },
+    )
     return EmailCampaignResponse(
         uuid=campaign.campaign_uuid,
         name=campaign.name,
@@ -429,6 +513,7 @@ async def _campaign_response(
         cancelled_at=campaign.cancelled_at,
         failure_reason=campaign.failure_reason,
         counts=_counts_response(campaign),
+        progress=progress,
         sender=(
             _sender_summary(sender, campaign.eligible_count)
             if sender is not None
@@ -695,6 +780,74 @@ async def update_email_campaign(
     return await _campaign_response(updated, sender=None, template=None)
 
 
+@router.post("/{campaign_uuid}/add-leads")
+async def add_leads_to_email_campaign(
+    campaign_uuid: str,
+    request: AddLeadsToCampaignRequest,
+    user: UserModel = Depends(get_user),
+) -> EmailCampaignResponse:
+    """Append individually selected CRM leads to a draft campaign's audience.
+
+    When the audience is already an explicit list the ids are merged into it.
+    For a filter, project or tag audience the ids are stored as
+    ``extra_lead_ids`` so the saved rule keeps selecting its own matches; the
+    resolver unions both sets at preview and launch.
+    """
+    organization_id = _require_organization(user)
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    if campaign.status not in _EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A campaign in {campaign.status!r} can no longer be edited; "
+                "only draft or ready campaigns are editable."
+            ),
+        )
+
+    unique_ids = list(dict.fromkeys(request.lead_ids))
+    found = await db_client.audience_lead_ids(organization_id, unique_ids)
+    missing = [lead_id for lead_id in unique_ids if lead_id not in found]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{len(missing)} selected lead(s) do not belong to this "
+                "organization; the audience was not changed."
+            ),
+        )
+
+    rule = _rule_from_stored(campaign)
+    if rule.audience_type == EmailCampaignAudienceType.LEADS.value:
+        merged = list(dict.fromkeys([*rule.lead_ids, *unique_ids]))
+        if len(merged) > 1000:
+            raise HTTPException(
+                status_code=422,
+                detail="A campaign may address at most 1000 selected leads.",
+            )
+        rule = replace(rule, lead_ids=tuple(merged))
+    else:
+        merged_extra = list(dict.fromkeys([*rule.extra_lead_ids, *unique_ids]))
+        if len(merged_extra) > 1000:
+            raise HTTPException(
+                status_code=422,
+                detail="At most 1000 leads may be added individually.",
+            )
+        rule = replace(rule, extra_lead_ids=tuple(merged_extra))
+    still_excluded = tuple(
+        lead_id for lead_id in rule.excluded_lead_ids if lead_id not in unique_ids
+    )
+    rule = replace(rule, excluded_lead_ids=still_excluded)
+
+    updated = await db_client.update_email_campaign(
+        organization_id,
+        campaign_uuid,
+        audience=_stored_audience(rule),
+    )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return await _campaign_response(updated, sender=None, template=None)
+
+
 @router.delete("/{campaign_uuid}")
 async def delete_email_campaign(
     campaign_uuid: str,
@@ -715,11 +868,13 @@ async def launch_email_campaign(
     campaign_uuid: str,
     user: UserModel = Depends(get_user),
 ) -> LaunchResponse:
-    """Check launch preconditions; never send or queue anything in this release.
+    """Freeze the audience and hand it to the send worker.
 
     ``EMAIL_CAMPAIGN_SENDING_ENABLED`` is off by default and the endpoint
-    answers 403. Even when it is on, this release only reports readiness: it
-    creates no recipient rows and sends no email.
+    answers 403. Preconditions are checked first; a blocked campaign reports
+    every failure and is left untouched. A ready campaign freezes its template
+    and audience into ``email_messages`` rows, moves to ``sending`` and enqueues
+    one ARQ job that delivers them.
     """
     organization_id = _require_organization(user)
 
@@ -787,22 +942,336 @@ async def launch_email_campaign(
         organization_id, campaign_uuid, counts=resolution.counters()
     )
 
-    if readiness.ready:
-        message = (
-            "All launch preconditions pass. Sending is not part of this "
-            "release, so no email was sent and nothing was queued."
+    if not readiness.ready:
+        return LaunchResponse(
+            status=campaign.status,
+            ready=False,
+            preconditions=list(readiness.failures),
+            message=(
+                "Launch is blocked. Fix the listed items, preview again, then "
+                "retry. No email was sent and nothing was queued."
+            ),
         )
-    else:
-        message = (
-            "Launch is blocked. Fix the listed items, preview again, then "
-            "retry. No email was sent and nothing was queued."
+
+    async def _mark_failed(reason: str) -> None:
+        await db_client.cancel_pending_messages(
+            organization_id, campaign.id, reason=reason
         )
-    return LaunchResponse(
-        status=campaign.status,
-        ready=readiness.ready,
-        preconditions=list(readiness.failures),
-        message=message,
+        await db_client.set_campaign_launch_fields(
+            organization_id,
+            campaign.id,
+            status=EmailCampaignStatus.FAILED.value,
+            failure_reason=reason,
+        )
+
+    # ``draft`` must pass through ``ready``; ``launching`` is the freeze step.
+    current_status = campaign.status
+    try:
+        if current_status == EmailCampaignStatus.DRAFT.value:
+            assert_campaign_transition(
+                current_status, EmailCampaignStatus.READY.value
+            )
+            current_status = EmailCampaignStatus.READY.value
+        assert_campaign_transition(
+            current_status, EmailCampaignStatus.LAUNCHING.value
+        )
+    except CampaignStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    await db_client.set_campaign_launch_fields(
+        organization_id,
+        campaign.id,
+        status=EmailCampaignStatus.LAUNCHING.value,
+        failure_reason=None,
     )
+
+    try:
+        queued_count = await freeze_and_queue_campaign(
+            organization_id=organization_id,
+            campaign=campaign,
+            sender=sender,
+            template=template,
+            rule=rule,
+            user_id=user.id,
+        )
+    except Exception as exc:
+        reason = f"Could not prepare the campaign for sending: {exc}"
+        logger.exception("Campaign {} freeze failed", campaign.id)
+        await _mark_failed(reason)
+        raise HTTPException(status_code=422, detail=reason) from exc
+
+    if queued_count == 0:
+        reason = "No eligible recipients were left when the audience was frozen."
+        await _mark_failed(reason)
+        raise HTTPException(status_code=409, detail=reason)
+
+    await db_client.set_campaign_launch_fields(
+        organization_id,
+        campaign.id,
+        status=EmailCampaignStatus.SENDING.value,
+    )
+
+    try:
+        await enqueue_job(
+            FunctionNames.SEND_EMAIL_CAMPAIGN, campaign.id, organization_id
+        )
+    except Exception as exc:
+        logger.exception("Campaign {} could not be queued", campaign.id)
+        reason = (
+            "The send queue is unavailable, so the campaign was stopped before "
+            "any email was sent. Retry the launch once the worker is back."
+        )
+        await _mark_failed(reason)
+        raise HTTPException(status_code=503, detail=reason) from exc
+
+    return LaunchResponse(
+        status=EmailCampaignStatus.SENDING.value,
+        ready=True,
+        preconditions=[],
+        message=(
+            f"Campaign launched: {queued_count} recipient(s) queued for "
+            "delivery."
+        ),
+        queued_count=queued_count,
+    )
+
+
+# ----------------------------------------------------------------------
+# Sending controls (pause / resume / stop)
+# ----------------------------------------------------------------------
+
+
+@router.post("/{campaign_uuid}/pause")
+async def pause_email_campaign(
+    campaign_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> EmailCampaignResponse:
+    """Stop the worker from claiming new rows. Queued rows stay queued."""
+    organization_id = _require_organization(user)
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    if campaign.status != EmailCampaignStatus.SENDING.value:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only a sending campaign can be paused (now {campaign.status!r}).",
+        )
+    try:
+        assert_campaign_transition(
+            campaign.status, EmailCampaignStatus.PAUSED.value
+        )
+    except CampaignStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await db_client.set_campaign_launch_fields(
+        organization_id, campaign.id, status=EmailCampaignStatus.PAUSED.value
+    )
+    refreshed = await _campaign_or_404(organization_id, campaign_uuid)
+    return await _campaign_response(refreshed, sender=None, template=None)
+
+
+@router.post("/{campaign_uuid}/resume")
+async def resume_email_campaign(
+    campaign_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> EmailCampaignResponse:
+    """Return a paused campaign to ``sending`` and hand it back to the worker."""
+    organization_id = _require_organization(user)
+    if not constants.EMAIL_CAMPAIGN_SENDING_ENABLED:
+        raise HTTPException(
+            status_code=403,
+            detail="Campaign sending is disabled on this deployment.",
+        )
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    if campaign.status != EmailCampaignStatus.PAUSED.value:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only a paused campaign can be resumed (now {campaign.status!r}).",
+        )
+    try:
+        assert_campaign_transition(
+            campaign.status, EmailCampaignStatus.SENDING.value
+        )
+    except CampaignStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await db_client.set_campaign_launch_fields(
+        organization_id, campaign.id, status=EmailCampaignStatus.SENDING.value
+    )
+    try:
+        await enqueue_job(
+            FunctionNames.SEND_EMAIL_CAMPAIGN, campaign.id, organization_id
+        )
+    except Exception as exc:
+        logger.exception("Campaign {} could not be re-queued", campaign.id)
+        raise HTTPException(
+            status_code=503,
+            detail="The send queue is unavailable; the campaign stays paused.",
+        ) from exc
+    refreshed = await _campaign_or_404(organization_id, campaign_uuid)
+    return await _campaign_response(refreshed, sender=None, template=None)
+
+
+@router.post("/{campaign_uuid}/stop")
+async def stop_email_campaign(
+    campaign_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> EmailCampaignResponse:
+    """Cancel a running campaign: queued rows are cancelled, delivered rows stay."""
+    organization_id = _require_organization(user)
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    if campaign.status not in {
+        EmailCampaignStatus.SENDING.value,
+        EmailCampaignStatus.PAUSED.value,
+        EmailCampaignStatus.LAUNCHING.value,
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot stop a campaign in {campaign.status!r} state.",
+        )
+    try:
+        assert_campaign_transition(
+            campaign.status, EmailCampaignStatus.CANCELLED.value
+        )
+    except CampaignStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    cancelled = await db_client.cancel_pending_messages(
+        organization_id,
+        campaign.id,
+        reason="Stopped by the operator before sending.",
+    )
+    await db_client.set_campaign_launch_fields(
+        organization_id,
+        campaign.id,
+        status=EmailCampaignStatus.CANCELLED.value,
+        cancelled_by=user.id,
+        cancelled_at=datetime.now(UTC),
+    )
+    logger.info(
+        "Campaign {} stopped by user {} ({} queued row(s) cancelled)",
+        campaign.id,
+        user.id,
+        cancelled,
+    )
+    refreshed = await _campaign_or_404(organization_id, campaign_uuid)
+    return await _campaign_response(refreshed, sender=None, template=None)
+
+
+@router.post("/{campaign_uuid}/restart")
+async def restart_email_campaign(
+    campaign_uuid: str,
+    user: UserModel = Depends(get_user),
+) -> EmailCampaignResponse:
+    """Restart a stopped or failed campaign without re-freezing the audience.
+
+    Rows the stop or failure cancelled are returned to ``queued`` and the
+    campaign goes back to ``sending``. Delivered rows stay terminal, so an
+    address that already received the email is never mailed twice.
+    """
+    organization_id = _require_organization(user)
+
+    if not constants.EMAIL_CAMPAIGN_SENDING_ENABLED:
+        raise HTTPException(
+            status_code=403,
+            detail="Campaign sending is disabled on this deployment.",
+        )
+
+    try:
+        allowed = await allow_campaign_launch_attempt(
+            user_id=user.id, organization_id=organization_id
+        )
+    except RateLimiterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Campaign restart is temporarily unavailable.",
+        ) from exc
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many launch attempts. Try again later.",
+        )
+
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    if campaign.status not in {
+        EmailCampaignStatus.CANCELLED.value,
+        EmailCampaignStatus.FAILED.value,
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Only a cancelled or failed campaign can be restarted "
+                f"(now {campaign.status!r})."
+            ),
+        )
+    try:
+        assert_campaign_transition(
+            campaign.status, EmailCampaignStatus.SENDING.value
+        )
+    except CampaignStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    sender = (
+        await db_client.get_email_sender_by_id(organization_id, campaign.sender_id)
+        if campaign.sender_id
+        else None
+    )
+    if sender is None or sender.status != EmailSenderStatus.VERIFIED.value:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "The campaign's sender is missing or no longer verified. "
+                "Verify the sender before restarting; nothing was requeued."
+            ),
+        )
+
+    requeued = await db_client.requeue_cancelled_messages(
+        organization_id, campaign.id
+    )
+    if requeued == 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Every recipient was already delivered or skipped; there is "
+                "nothing left to send."
+            ),
+        )
+
+    await db_client.set_campaign_launch_fields(
+        organization_id,
+        campaign.id,
+        status=EmailCampaignStatus.SENDING.value,
+        failure_reason=None,
+        cancelled_by=None,
+        cancelled_at=None,
+    )
+    try:
+        await enqueue_job(
+            FunctionNames.SEND_EMAIL_CAMPAIGN, campaign.id, organization_id
+        )
+    except Exception as exc:
+        logger.exception("Campaign {} could not be restarted", campaign.id)
+        await db_client.cancel_pending_messages(
+            organization_id,
+            campaign.id,
+            reason="Restart could not reach the send queue; nothing was sent.",
+        )
+        await db_client.set_campaign_launch_fields(
+            organization_id,
+            campaign.id,
+            status=campaign.status,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "The send queue is unavailable, so the campaign was not "
+                "restarted. Try again once the worker is back."
+            ),
+        ) from exc
+
+    logger.info(
+        "Campaign {} restarted by user {} ({} row(s) requeued)",
+        campaign.id,
+        user.id,
+        requeued,
+    )
+    refreshed = await _campaign_or_404(organization_id, campaign_uuid)
+    return await _campaign_response(refreshed, sender=None, template=None)
 
 
 # ----------------------------------------------------------------------
@@ -820,13 +1289,23 @@ async def list_campaign_recipients(
 ) -> CampaignRecipientsResponse:
     """Return a paginated, bucket-classified list of leads for a campaign.
 
-    Every email address is masked; the full address is never returned.
-    Rate-limited the same way as the preview endpoint.
+    Each row carries the address and a plain-language reason, so the operator
+    can see which check (validator, suppression list, consent, manual
+    exclusion) decided that row's bucket. Rate-limited like the preview.
     """
     if page < 1:
         raise HTTPException(status_code=422, detail="page must be >= 1")
     if not (1 <= limit <= 100):
         raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+
+    # An empty query value (`?bucket=`) means "all buckets"; only a non-empty
+    # value narrows the result.
+    bucket = (bucket or "").strip() or None
+    if bucket is not None and bucket not in EXCLUSION_ORDER:
+        raise HTTPException(
+            status_code=422,
+            detail="bucket must be one of: " + ", ".join(EXCLUSION_ORDER),
+        )
 
     organization_id = _require_organization(user)
 
@@ -859,14 +1338,22 @@ async def list_campaign_recipients(
         else:
             explicit_ids = []
 
-    from api.services.email.audience import _filter_kwargs  # noqa: PLC0415
+    from api.services.email.audience import filter_kwargs as _rule_filter_kwargs
 
-    filter_kwargs = _filter_kwargs(rule)
+    filter_kwargs = _rule_filter_kwargs(rule)
     audience_data = campaign.audience or {}
     excluded_ids = set(int(x) for x in (audience_data.get("excluded_lead_ids") or []))
     include_unknown = campaign.consent_policy == "include_unknown"
 
     offset = (page - 1) * limit
+    try:
+        manual_addresses = (
+            normalized_manual_addresses(rule.manual_emails)
+            if rule.manual_emails
+            else []
+        )
+    except AudienceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     items, total, bucket_counts = await db_client.stream_recipient_rows(
         organization_id,
         lead_ids=explicit_ids,
@@ -877,6 +1364,7 @@ async def list_campaign_recipients(
         bucket_filter=bucket,
         offset=offset,
         limit=limit,
+        manual_addresses=manual_addresses,
     )
 
     return CampaignRecipientsResponse(
@@ -885,4 +1373,41 @@ async def list_campaign_recipients(
         limit=limit,
         total=total,
         totals_per_bucket=bucket_counts,
+    )
+
+
+@router.get("/{campaign_uuid}/messages")
+async def list_campaign_messages(
+    campaign_uuid: str,
+    page: int = 1,
+    limit: int = 50,
+    user: UserModel = Depends(get_user),
+) -> CampaignMessagesResponse:
+    """Recent delivery rows for the live progress screen."""
+    if page < 1:
+        raise HTTPException(status_code=422, detail="page must be >= 1")
+    if not (1 <= limit <= 100):
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+    organization_id = _require_organization(user)
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    rows, total = await db_client.list_campaign_messages(
+        organization_id,
+        campaign.id,
+        limit=limit,
+        offset=(page - 1) * limit,
+    )
+    return CampaignMessagesResponse(
+        items=[
+            CampaignMessageItem(
+                email=row["to_email"],
+                status=row["status"],
+                error_message=row["error_message"],
+                sent_at=row["sent_at"],
+                updated_at=row["updated_at"],
+            )
+            for row in rows
+        ],
+        total=total,
+        page=page,
+        limit=limit,
     )

@@ -33,6 +33,8 @@ from api.services.email.campaign_state import (
         ("sending", "completed"),
         ("sending", "failed"),
         ("sending", "cancelled"),
+        ("cancelled", "sending"),
+        ("failed", "sending"),
     ],
 )
 def test_allowed_campaign_transitions(current, target):
@@ -112,27 +114,27 @@ def test_held_is_reserved_for_the_launch_step():
 
 def test_unknown_states_are_a_bug_not_a_denial():
     with pytest.raises(CampaignStateError, match="Unknown current state"):
-        can_transition_campaign("paused", "ready")
+        can_transition_campaign("archived", "ready")
     with pytest.raises(CampaignStateError, match="Unknown target state"):
         can_transition_message("queued", "delivered")
 
 
-@pytest.mark.parametrize("status", ["draft", "ready"])
-def test_only_unlaunched_campaigns_can_be_deleted(status):
+@pytest.mark.parametrize(
+    "status", ["draft", "ready", "completed", "cancelled", "failed"]
+)
+def test_finished_or_unlaunched_campaigns_can_be_deleted(status):
     assert can_delete_campaign(status)
     assert_campaign_deletable(status)
 
 
-@pytest.mark.parametrize(
-    "status", ["launching", "sending", "completed", "cancelled", "failed"]
-)
-def test_launched_campaigns_cannot_be_deleted(status):
+@pytest.mark.parametrize("status", ["launching", "sending", "paused"])
+def test_running_campaigns_cannot_be_deleted(status):
     assert not can_delete_campaign(status)
-    with pytest.raises(CampaignStateError, match="only draft or ready"):
+    with pytest.raises(CampaignStateError, match="stop it first"):
         assert_campaign_deletable(status)
 
 
-@pytest.mark.parametrize("status", ["draft", "ready", "launching", "sending"])
+@pytest.mark.parametrize("status", ["draft", "ready", "launching", "sending", "paused"])
 def test_active_campaigns_block_sender_deletion(status):
     assert campaign_blocks_sender_deletion(status)
 
@@ -146,12 +148,15 @@ def test_deletion_rules_cover_every_state_and_raise_on_unknown():
     all_states = {s.value for s in EmailCampaignStatus}
     assert DELETABLE_CAMPAIGN_STATUSES <= all_states
     assert SENDER_IN_USE_CAMPAIGN_STATUSES <= all_states
-    # Terminal states must never block a sender delete or invite a transition.
+    # Terminal states must never block a sender delete; only a restart path
+    # (cancelled/failed) may leave terminality, and completed never does.
     for terminal in ("completed", "cancelled", "failed"):
         assert not campaign_blocks_sender_deletion(terminal)
-        assert CAMPAIGN_TRANSITIONS[terminal] == frozenset()
+    assert CAMPAIGN_TRANSITIONS["completed"] == frozenset()
+    assert CAMPAIGN_TRANSITIONS["cancelled"] == frozenset({"sending"})
+    assert CAMPAIGN_TRANSITIONS["failed"] == frozenset({"sending"})
 
     with pytest.raises(CampaignStateError, match="Unknown campaign state"):
-        can_delete_campaign("paused")
+        can_delete_campaign("archived")
     with pytest.raises(CampaignStateError, match="Unknown campaign state"):
-        campaign_blocks_sender_deletion("paused")
+        campaign_blocks_sender_deletion("archived")

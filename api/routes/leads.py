@@ -11,7 +11,6 @@ from loguru import logger
 
 from api.constants import (
     EMAIL_CONSENT_WARNING,
-    LEADS_DEFAULT_PROVIDER,
     LEADS_DISPATCH_MAX_LEADS,
     LEADS_ENABLE_DEMO_PROVIDER,
     LEADS_EXPORT_MAX_ROWS,
@@ -21,6 +20,7 @@ from api.db import db_client
 from api.db.models import UserModel
 from api.schemas.leads import (
     LEAD_CRM_STATUSES,
+    BulkLeadDeleteRequest,
     BulkLeadEmailConsentRequest,
     BulkLeadEmailConsentResponse,
     BulkLeadUpdateRequest,
@@ -62,7 +62,10 @@ from api.services.leads.dispatch import (
 )
 from api.services.leads.exports import EXPORT_FORMATS, build_export
 from api.services.leads.normalization import normalize_lead_phone
-from api.services.leads.providers import available_providers
+from api.services.leads.providers import (
+    available_providers,
+    default_provider_name,
+)
 from api.tasks.arq import enqueue_job
 from api.tasks.function_names import FunctionNames
 
@@ -159,8 +162,11 @@ def _email_consent_activity(
 
 
 def _available_provider(provider: str | None) -> str:
-    resolved = (provider or LEADS_DEFAULT_PROVIDER).strip()
-    if resolved not in available_providers(LEADS_ENABLE_DEMO_PROVIDER):
+    providers = available_providers(LEADS_ENABLE_DEMO_PROVIDER)
+    resolved = (
+        provider or default_provider_name(LEADS_ENABLE_DEMO_PROVIDER)
+    ).strip()
+    if resolved not in providers:
         raise HTTPException(
             status_code=400,
             detail=f"Provider '{resolved}' is not available on this deployment",
@@ -209,7 +215,7 @@ async def get_leads_meta(user: UserModel = Depends(get_user)) -> LeadMetaRespons
     return LeadMetaResponse(
         statuses=LEAD_CRM_STATUSES,
         providers=available_providers(LEADS_ENABLE_DEMO_PROVIDER),
-        default_provider=LEADS_DEFAULT_PROVIDER,
+        default_provider=default_provider_name(LEADS_ENABLE_DEMO_PROVIDER),
         demo_enabled=LEADS_ENABLE_DEMO_PROVIDER,
         export_formats=list(EXPORT_FORMATS),
         max_dispatch_leads=LEADS_DISPATCH_MAX_LEADS,
@@ -343,6 +349,26 @@ async def stop_lead_search(
         search_id, organization_id, status="stopping"
     )
     return LeadSearchResponse.model_validate(updated or search)
+
+
+@router.delete("/searches/{search_id}")
+async def delete_lead_search(
+    search_id: int, user: UserModel = Depends(get_user)
+) -> dict[str, bool]:
+    """Delete a finished search record. Leads it found stay in the CRM."""
+    organization_id = _organization_id(user)
+    search = await db_client.get_lead_search(search_id, organization_id)
+    if search is None:
+        raise HTTPException(status_code=404, detail="Search not found")
+    if search.status in ACTIVE_SEARCH_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Cancel this search before deleting it",
+        )
+    deleted = await db_client.delete_lead_search(search_id, organization_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Search not found")
+    return {"deleted": True}
 
 
 @router.post("/searches/{search_id}/retry", response_model=LeadSearchResponse)
@@ -769,6 +795,19 @@ async def bulk_update_leads(
         await db_client.add_lead_activities_bulk(activities)
 
     return {"updated": updated}
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_leads(
+    request: BulkLeadDeleteRequest,
+    user: UserModel = Depends(get_user),
+) -> dict[str, int]:
+    organization_id = _organization_id(user)
+    lead_ids = list(dict.fromkeys(request.lead_ids))
+    deleted = await db_client.delete_leads(lead_ids, organization_id)
+    if deleted == 0:
+        raise HTTPException(status_code=404, detail="No matching leads")
+    return {"deleted": deleted}
 
 
 @router.post("/email-consent/bulk", response_model=BulkLeadEmailConsentResponse)

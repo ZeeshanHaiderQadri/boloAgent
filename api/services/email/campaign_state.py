@@ -7,8 +7,13 @@ every reachable next state is listed.
 Campaign states::
 
     draft -> ready -> launching -> sending -> completed
-      ^        |          |           |
-      +--------+          +-----------+--> failed / cancelled
+      ^        |          |           |  ^
+      +--------+          +-----------+  +---> paused
+                                |                 |
+                                +-----------------+--> failed / cancelled
+
+``paused`` is a reversible ``sending`` state: the worker stops claiming
+recipient rows, queued rows stay queued, and resume returns to ``sending``.
 
 ``ready`` may return to ``draft`` so the operator can change the sender,
 template or audience after a preview. ``launching`` is the freeze step; it
@@ -38,14 +43,14 @@ a valid transition, and writing it would overwrite the send worker's result.
 Deletion rules
 --------------
 
-* A user may delete a campaign only while it is ``draft`` or ``ready``. Once
-  it is ``launching``, recipient rows exist and the campaign is the record of
-  them; delete is refused. The database cascade from ``email_campaigns`` to
-  ``email_messages`` therefore remains only for organization teardown, never
-  as a user-facing delete path.
+* A user may delete a ``draft``, ``ready``, ``completed``, ``cancelled`` or
+  ``failed`` campaign. Once a campaign is ``launching``, ``sending`` or
+  ``paused`` it is refused: it must be stopped first. Deleting a terminal
+  campaign also deletes its ``email_messages`` rows through the FK cascade,
+  so the delivery audit for that campaign is removed with it.
 * A sender is "in use" while any campaign is ``draft``, ``ready``,
-  ``launching`` or ``sending``. The sender delete endpoint must refuse with a
-  conflict in that case. When every campaign referencing it is ``completed``,
+  ``launching``, ``sending`` or ``paused``. The sender delete endpoint must
+  refuse with a conflict in that case. When every campaign referencing it is ``completed``,
   ``cancelled`` or ``failed``, the endpoint may null those ``sender_id``
   values and then delete the sender: the campaign keeps its snapshot columns,
   and the foreign key is ``NO ACTION`` so no other code path can delete a
@@ -79,13 +84,27 @@ CAMPAIGN_TRANSITIONS: Final[Mapping[str, frozenset[str]]] = {
     EmailCampaignStatus.SENDING.value: frozenset(
         {
             EmailCampaignStatus.COMPLETED.value,
+            EmailCampaignStatus.PAUSED.value,
             EmailCampaignStatus.FAILED.value,
             EmailCampaignStatus.CANCELLED.value,
         }
     ),
+    EmailCampaignStatus.PAUSED.value: frozenset(
+        {
+            EmailCampaignStatus.SENDING.value,
+            EmailCampaignStatus.CANCELLED.value,
+            EmailCampaignStatus.FAILED.value,
+        }
+    ),
     EmailCampaignStatus.COMPLETED.value: frozenset(),
-    EmailCampaignStatus.CANCELLED.value: frozenset(),
-    EmailCampaignStatus.FAILED.value: frozenset(),
+    # A stopped or failed campaign may be restarted: its undelivered rows are
+    # requeued and handed back to the worker.
+    EmailCampaignStatus.CANCELLED.value: frozenset(
+        {EmailCampaignStatus.SENDING.value}
+    ),
+    EmailCampaignStatus.FAILED.value: frozenset(
+        {EmailCampaignStatus.SENDING.value}
+    ),
 }
 
 MESSAGE_TRANSITIONS: Final[Mapping[str, frozenset[str]]] = {
@@ -107,10 +126,20 @@ MESSAGE_TRANSITIONS: Final[Mapping[str, frozenset[str]]] = {
     EmailMessageStatus.CANCELLED.value: frozenset(),
 }
 
-# User-initiated deletion is limited to campaigns that have not frozen an
-# audience yet. See the module docstring.
+# User-initiated deletion is allowed for campaigns that are not running: a
+# draft or ready campaign has no frozen audience yet, and a terminal one is no
+# longer sending. Deleting a terminal campaign also removes its
+# ``email_messages`` rows through the FK cascade, so the delivery audit for
+# that campaign goes with it. ``launching``, ``sending`` and ``paused`` keep
+# their rows and refuse deletion.
 DELETABLE_CAMPAIGN_STATUSES: Final[frozenset[str]] = frozenset(
-    {EmailCampaignStatus.DRAFT.value, EmailCampaignStatus.READY.value}
+    {
+        EmailCampaignStatus.DRAFT.value,
+        EmailCampaignStatus.READY.value,
+        EmailCampaignStatus.COMPLETED.value,
+        EmailCampaignStatus.CANCELLED.value,
+        EmailCampaignStatus.FAILED.value,
+    }
 )
 
 # A sender referenced by any of these campaigns must not be deleted (the
@@ -122,6 +151,7 @@ SENDER_IN_USE_CAMPAIGN_STATUSES: Final[frozenset[str]] = frozenset(
         EmailCampaignStatus.READY.value,
         EmailCampaignStatus.LAUNCHING.value,
         EmailCampaignStatus.SENDING.value,
+        EmailCampaignStatus.PAUSED.value,
     }
 )
 
@@ -193,8 +223,8 @@ def assert_campaign_deletable(status: str) -> None:
     """Raise :class:`CampaignStateError` unless a user may delete the campaign."""
     if not can_delete_campaign(status):
         raise CampaignStateError(
-            f"Cannot delete a campaign in {status!r}; only draft or ready "
-            "campaigns may be deleted."
+            f"Cannot delete a campaign in {status!r}; stop it first, then "
+            "delete a draft, ready, completed, cancelled or failed campaign."
         )
 
 

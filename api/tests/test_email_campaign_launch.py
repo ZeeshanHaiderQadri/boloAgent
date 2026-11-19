@@ -1,9 +1,11 @@
-"""Launch preconditions and the disabled-by-default launch endpoint.
+"""Launch preconditions, freeze/queue behaviour, and the disabled-by-default gate.
 
-Nothing in this module sends email or creates recipient rows. These tests pin
-that promise: even with the feature flag on, launch only reports readiness.
+A blocked campaign is left untouched. A ready campaign freezes its audience
+into ``email_messages`` rows released as ``queued`` and enqueues exactly one
+send job; the SMTP delivery itself belongs to the worker tests, never here.
 """
 
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -17,10 +19,11 @@ from api.db.models import (
     ExternalCredentialModel,
     LeadModel,
 )
-from api.enums import CredentialPurpose, EmailSenderStatus
+from api.enums import CredentialPurpose, EmailMessageStatus, EmailSenderStatus
 from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
 from api.services.credentials.cipher import encrypt_credential_data
 from api.services.email.campaign_launch import check_launch_preconditions
+from api.tasks.function_names import FunctionNames
 
 UNSUBSCRIBE = '<p><a href="{{unsubscribe_link}}">Unsubscribe</a></p>'
 PUBLIC_URL = "https://app.apex-software-demo.com"
@@ -279,11 +282,21 @@ async def test_launch_is_403_while_sending_is_disabled(
 
 
 @pytest.mark.asyncio
-async def test_launch_reports_readiness_but_sends_nothing_when_enabled(
+async def test_launch_freezes_and_queues_when_enabled(
     db_session, test_client_factory, monkeypatch
 ):
     monkeypatch.setattr("api.constants.EMAIL_CAMPAIGN_SENDING_ENABLED", True)
     monkeypatch.setattr("api.constants.PUBLIC_BASE_URL", PUBLIC_URL)
+
+    enqueued: list[tuple] = []
+
+    async def record_enqueue(function_name, *args, **kwargs):
+        enqueued.append((function_name, args, kwargs))
+
+    monkeypatch.setattr(
+        "api.routes.email_campaigns.enqueue_job", record_enqueue
+    )
+
     user, org = await _user_and_org(db_session, "launch_ready")
     lead_id = await _lead(db_session, org.id)
     sender = await _sender(db_session, org.id, user.id)
@@ -301,12 +314,30 @@ async def test_launch_reports_readiness_but_sends_nothing_when_enabled(
     body = response.json()
     assert body["ready"] is True
     assert body["preconditions"] == []
-    assert body["status"] == "draft"
-    assert "nothing was queued" in body["message"]
-    # Counts are refreshed, but the campaign never advanced and no row exists.
-    assert fetched.json()["status"] == "draft"
-    assert fetched.json()["counts"]["eligible_count"] == 1
-    assert await _message_count(db_session, org.id) == 0
+    assert body["status"] == "sending"
+    assert body["queued_count"] == 1
+    assert fetched.json()["status"] == "sending"
+
+    async with db_session.async_session() as session:
+        messages = (
+            await session.execute(
+                select(EmailMessageModel).where(
+                    EmailMessageModel.organization_id == org.id
+                )
+            )
+        ).scalars().all()
+    assert len(messages) == 1
+    message = messages[0]
+    assert message.status == EmailMessageStatus.QUEUED.value
+    assert message.to_email == "owner@acme-plumbing.com"
+    assert message.campaign_id is not None
+    assert "unsubscribe" in message.html_body
+    assert message.headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+
+    assert len(enqueued) == 1
+    function_name, args, _ = enqueued[0]
+    assert function_name == FunctionNames.SEND_EMAIL_CAMPAIGN
+    assert args == (message.campaign_id, org.id)
 
 
 @pytest.mark.asyncio
@@ -398,3 +429,161 @@ async def test_launch_attempts_are_rate_limited_and_fail_closed(
     assert denied.status_code == 429
     assert down.status_code == 503
     assert await _message_count(db_session, org.id) == 0
+
+
+# ----------------------------------------------------------------------
+# Restart (cancelled / failed campaigns)
+# ----------------------------------------------------------------------
+
+
+async def _set_status(db_session, campaign_uuid, status):
+    async with db_session.async_session() as session:
+        row = (
+            await session.execute(
+                select(EmailCampaignModel).where(
+                    EmailCampaignModel.campaign_uuid == campaign_uuid
+                )
+            )
+        ).scalar_one()
+        row.status = status
+        await session.commit()
+        return row.id
+
+
+async def _set_message_status(db_session, organization_id, status):
+    async with db_session.async_session() as session:
+        messages = (
+            await session.execute(
+                select(EmailMessageModel).where(
+                    EmailMessageModel.organization_id == organization_id
+                )
+            )
+        ).scalars().all()
+        for message in messages:
+            message.status = status
+            message.error_message = "Stopped by the operator."
+        await session.commit()
+
+
+@asynccontextmanager
+async def _launched_campaign(db_session, test_client_factory, monkeypatch, slug):
+    enqueued: list[tuple] = []
+
+    async def record_enqueue(function_name, *args, **kwargs):
+        enqueued.append((function_name, args, kwargs))
+
+    monkeypatch.setattr("api.constants.EMAIL_CAMPAIGN_SENDING_ENABLED", True)
+    monkeypatch.setattr("api.constants.PUBLIC_BASE_URL", PUBLIC_URL)
+    monkeypatch.setattr("api.routes.email_campaigns.enqueue_job", record_enqueue)
+
+    user, org = await _user_and_org(db_session, slug)
+    lead_id = await _lead(db_session, org.id)
+    sender = await _sender(db_session, org.id, user.id)
+    template = await _template(db_session, org.id, user.id)
+    async with test_client_factory(user) as client:
+        created = await _campaign(
+            client, lead_id, sender_uuid=sender.uuid, template_uuid=template.uuid
+        )
+        campaign_uuid = created.json()["uuid"]
+        launched = await client.post(
+            f"/api/v1/email/campaigns/{campaign_uuid}/launch"
+        )
+        assert launched.status_code == 200, launched.text
+        yield client, user, org, campaign_uuid, enqueued
+
+
+@pytest.mark.asyncio
+async def test_restart_is_403_while_sending_is_disabled(
+    db_session, test_client_factory, monkeypatch
+):
+    user, org = await _user_and_org(db_session, "restart_disabled")
+    lead_id = await _lead(db_session, org.id)
+
+    async with test_client_factory(user) as client:
+        created = await _campaign(client, lead_id)
+        campaign_uuid = created.json()["uuid"]
+        await _set_status(db_session, campaign_uuid, "cancelled")
+        monkeypatch.setattr("api.constants.EMAIL_CAMPAIGN_SENDING_ENABLED", False)
+        response = await client.post(
+            f"/api/v1/email/campaigns/{campaign_uuid}/restart"
+        )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_restart_requeues_cancelled_rows_and_skips_delivered(
+    db_session, test_client_factory, monkeypatch
+):
+    async with _launched_campaign(
+        db_session, test_client_factory, monkeypatch, "restart_requeue"
+    ) as (client, user, org, campaign_uuid, enqueued):
+        await _set_status(db_session, campaign_uuid, "cancelled")
+        await _set_message_status(
+            db_session, org.id, EmailMessageStatus.CANCELLED.value
+        )
+        enqueued.clear()
+
+        response = await client.post(
+            f"/api/v1/email/campaigns/{campaign_uuid}/restart"
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "sending"
+
+        async with db_session.async_session() as session:
+            messages = (
+                await session.execute(
+                    select(EmailMessageModel).where(
+                        EmailMessageModel.organization_id == org.id
+                    )
+                )
+            ).scalars().all()
+
+    assert [m.status for m in messages] == [EmailMessageStatus.QUEUED.value]
+    assert all(m.error_message is None for m in messages)
+    assert len(enqueued) == 1
+    function_name, args, _ = enqueued[0]
+    assert function_name == FunctionNames.SEND_EMAIL_CAMPAIGN
+    assert args == (messages[0].campaign_id, org.id)
+
+
+@pytest.mark.asyncio
+async def test_restart_rejects_a_running_campaign(
+    db_session, test_client_factory, monkeypatch
+):
+    monkeypatch.setattr("api.constants.EMAIL_CAMPAIGN_SENDING_ENABLED", True)
+    user, org = await _user_and_org(db_session, "restart_running")
+    lead_id = await _lead(db_session, org.id)
+
+    async with test_client_factory(user) as client:
+        created = await _campaign(client, lead_id)
+        campaign_uuid = created.json()["uuid"]
+        await _set_status(db_session, campaign_uuid, "sending")
+        response = await client.post(
+            f"/api/v1/email/campaigns/{campaign_uuid}/restart"
+        )
+
+    assert response.status_code == 409
+    assert "cancelled or failed" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_restart_without_remaining_rows_is_409(
+    db_session, test_client_factory, monkeypatch
+):
+    async with _launched_campaign(
+        db_session, test_client_factory, monkeypatch, "restart_nothing_left"
+    ) as (client, user, org, campaign_uuid, enqueued):
+        await _set_status(db_session, campaign_uuid, "cancelled")
+        await _set_message_status(db_session, org.id, EmailMessageStatus.SENT.value)
+        enqueued.clear()
+
+        response = await client.post(
+            f"/api/v1/email/campaigns/{campaign_uuid}/restart"
+        )
+        fetched = await client.get(f"/api/v1/email/campaigns/{campaign_uuid}")
+
+    assert response.status_code == 409
+    assert "nothing left to send" in response.json()["detail"]
+    assert fetched.json()["status"] == "cancelled"
+    assert enqueued == []

@@ -261,6 +261,18 @@ class LeadClient(BaseDBClient):
             completed_at=datetime.now(UTC),
         )
 
+    async def delete_lead_search(self, search_id: int, organization_id: int) -> bool:
+        """Remove a search and its result links. The leads themselves stay."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                delete(LeadSearchModel).where(
+                    LeadSearchModel.id == search_id,
+                    LeadSearchModel.organization_id == organization_id,
+                )
+            )
+            await session.commit()
+            return bool(result.rowcount)
+
     # ------------------------------------------------------------------
     # Leads / result ingestion
     # ------------------------------------------------------------------
@@ -567,6 +579,19 @@ class LeadClient(BaseDBClient):
             )
             await session.commit()
             return bool(result.rowcount)
+
+    async def delete_leads(self, lead_ids: list[int], organization_id: int) -> int:
+        if not lead_ids:
+            return 0
+        async with self.async_session() as session:
+            result = await session.execute(
+                delete(LeadModel).where(
+                    LeadModel.organization_id == organization_id,
+                    LeadModel.id.in_(lead_ids),
+                )
+            )
+            await session.commit()
+            return int(result.rowcount or 0)
 
     # ------------------------------------------------------------------
     # Saved projects (lists)

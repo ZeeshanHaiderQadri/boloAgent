@@ -384,3 +384,30 @@ async def test_patch_include_unknown_reuses_stored_reason(
             json={"consent_policy": "include_unknown"},
         )
         assert no_reason.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_terminal_campaigns_can_be_deleted(db_session, test_client_factory):
+    user, org = await _user_and_org(db_session, "campaign_delete_terminal")
+    ids = await _leads(db_session, org.id, count=1)
+
+    async with test_client_factory(user) as client:
+        for status in ("completed", "cancelled", "failed"):
+            created = await _create(client, ids, name=f"Finished {status}")
+            campaign_uuid = created.json()["uuid"]
+            async with db_session.async_session() as session:
+                row = (
+                    await session.execute(
+                        select(EmailCampaignModel).where(
+                            EmailCampaignModel.campaign_uuid == campaign_uuid
+                        )
+                    )
+                ).scalar_one()
+                row.status = status
+                await session.commit()
+            deleted = await client.delete(
+                f"/api/v1/email/campaigns/{campaign_uuid}"
+            )
+            assert deleted.status_code == 200, deleted.text
+            fetched = await client.get(f"/api/v1/email/campaigns/{campaign_uuid}")
+            assert fetched.status_code == 404

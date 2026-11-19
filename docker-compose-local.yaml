@@ -61,14 +61,18 @@ services:
       - app-network
 
   # Lead Generation discovery. The API talks to its unauthenticated web API
-  # (POST /api/v1/jobs) at LEADS_SCRAPER_URL. Start it only when you want real
-  # Google Maps results:
+  # (POST /api/v1/jobs) at LEADS_SCRAPER_URL. Google Maps is the default
+  # provider, so start this service for lead searches to work:
   #   docker compose -f docker-compose-local.yaml up -d google-maps-scraper
-  # Without it the "demo" provider still populates the Leads UI.
+  # The sample-data "demo" provider is opt-in via LEADS_ENABLE_DEMO_PROVIDER.
   google-maps-scraper:
     image: gosom/google-maps-scraper:latest
     container_name: google-maps-scraper
-    command: ["-web", "-addr", ":8080", "-data-folder", "/data"]
+    # -c sets crawl concurrency. The upstream default is 1, which serializes
+    # every search behind the previous job's email-site visits (each up to a
+    # 30s networkidle timeout), so a new search can sit at 0 results for a long
+    # time. Four contexts keeps a fresh search moving.
+    command: ["-web", "-addr", ":8080", "-data-folder", "/data", "-c", "4"]
     ports:
       - "127.0.0.1:8080:8080" # localhost only; the API runs on the host
     volumes:
