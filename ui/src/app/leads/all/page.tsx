@@ -5,6 +5,7 @@ import {
     Filter,
     FolderPlus,
     Loader2,
+    Mail,
     Megaphone,
     Pencil,
     RefreshCw,
@@ -32,6 +33,7 @@ import type {
     LeadProjectResponse,
     LeadStatsResponse,
 } from "@/client/types.gen";
+import { AddToCampaignDialog } from "@/components/email/add-to-campaign-dialog";
 import { PageLayout, PageSection } from "@/components/layout/PageLayout";
 import { DispatchLeadsDialog } from "@/components/leads/DispatchLeadsDialog";
 import { EmailConsentDialog } from "@/components/leads/EmailConsentDialog";
@@ -198,6 +200,7 @@ export default function AllLeadsPage() {
     const [bulkBusy, setBulkBusy] = useState(false);
     const [dispatchOpen, setDispatchOpen] = useState(false);
     const [consentOpen, setConsentOpen] = useState(false);
+    const [emailCampaignOpen, setEmailCampaignOpen] = useState(false);
 
     // Projects are saved lists of these same CRM rows (one project per lead).
     const [projects, setProjects] = useState<LeadProjectResponse[]>([]);
@@ -986,6 +989,15 @@ export default function AllLeadsPage() {
                             <Megaphone className="h-3.5 w-3.5" />
                             Send to campaign
                         </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={bulkBusy}
+                            onClick={() => setEmailCampaignOpen(true)}
+                        >
+                            <Mail className="h-3.5 w-3.5" />
+                            Add to email campaign
+                        </Button>
                         {projects.length > 0 && (
                             <>
                                 <Select
@@ -1118,6 +1130,25 @@ export default function AllLeadsPage() {
                 open={consentOpen}
                 onOpenChange={setConsentOpen}
                 onSaved={() => fetchLeads()}
+            />
+
+            <AddToCampaignDialog
+                open={emailCampaignOpen}
+                onOpenChange={setEmailCampaignOpen}
+                audienceType="leads"
+                leadIds={selectedIds}
+                filterState={{
+                    q: appliedQuery || undefined,
+                    status: status !== "all" ? status : undefined,
+                    tag: tag || undefined,
+                    category: category || undefined,
+                    country: country || undefined,
+                    state: stateFilter || undefined,
+                    city: city || undefined,
+                    has_phone: hasPhone || undefined,
+                    has_email: hasEmail || undefined,
+                }}
+                pageVisibleCount={selectedIds.length}
             />
 
             <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
