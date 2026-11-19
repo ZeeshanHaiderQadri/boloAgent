@@ -101,14 +101,13 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
         void fetchPage(p, bucket);
     };
 
-    const handleExclude = async (leadId: number) => {
-        // Toggle: add to excluded_lead_ids if not there, remove if already there
+    const handleExclude = async (leadId: number, currentlyEligible: boolean) => {
         const aud = campaign.audience as Record<string, unknown>;
         const existing = (aud.excluded_lead_ids as number[] | undefined) ?? [];
-        const alreadyExcluded = existing.includes(leadId);
-        const newExcluded = alreadyExcluded
-            ? existing.filter((id) => id !== leadId)
-            : [...existing, leadId];
+        // If eligible -> exclude (add to list). If excluded -> re-include (remove from list).
+        const newExcluded = currentlyEligible
+            ? [...existing, leadId]
+            : existing.filter((id) => id !== leadId);
         try {
             const token = await getAccessToken();
             const res =
@@ -127,7 +126,6 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                 });
             if (!res.error && res.data) {
                 onCampaignChange(res.data);
-                // Refresh the table
                 void fetchPage(page, bucket);
             }
         } catch {
@@ -232,7 +230,7 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                                                     <Checkbox
                                                         checked={true}
                                                         onCheckedChange={() =>
-                                                            void handleExclude(item.lead_id)
+                                                            void handleExclude(item.lead_id, true)
                                                         }
                                                         aria-label={`Exclude ${item.title}`}
                                                         className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
@@ -241,7 +239,7 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                                                     <Checkbox
                                                         checked={false}
                                                         onCheckedChange={() =>
-                                                            void handleExclude(item.lead_id)
+                                                            void handleExclude(item.lead_id, false)
                                                         }
                                                         aria-label={`Re-include ${item.title}`}
                                                     />

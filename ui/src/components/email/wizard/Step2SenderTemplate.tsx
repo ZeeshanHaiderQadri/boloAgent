@@ -1,7 +1,11 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Eye, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
+import {
+    getEmailTemplateApiV1EmailTemplatesTemplateUuidGet,
+} from "@/client";
 import type { EmailCampaignResponse, EmailSenderResponse, EmailTemplateSummary } from "@/client/types.gen";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -12,6 +16,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { detailFromError } from "@/lib/apiError";
+import { useAuth } from "@/lib/auth";
 
 interface Props {
     campaign: EmailCampaignResponse;
@@ -38,8 +44,52 @@ export function Step2SenderTemplate({
     onNext,
     fieldErrors,
 }: Props) {
+    const { getAccessToken } = useAuth();
     const selectedSender = senders.find((s) => s.uuid === senderUuid) ?? null;
     const selectedTemplate = templates.find((t) => t.uuid === templateUuid) ?? null;
+
+    // Template HTML preview state
+    const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+    const [previewSubject, setPreviewSubject] = useState<string>("");
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewError, setPreviewError] = useState<string | null>(null);
+
+    // Fetch template HTML when a template is selected
+    useEffect(() => {
+        if (!templateUuid) {
+            setPreviewHtml(null);
+            setPreviewSubject("");
+            setPreviewError(null);
+            return;
+        }
+        let cancelled = false;
+        const loadPreview = async () => {
+            setPreviewLoading(true);
+            setPreviewError(null);
+            try {
+                const token = await getAccessToken();
+                const res = await getEmailTemplateApiV1EmailTemplatesTemplateUuidGet({
+                    headers: { Authorization: `Bearer ${token}` },
+                    path: { template_uuid: templateUuid },
+                });
+                if (res.error) {
+                    throw new Error(detailFromError(res.error, "Failed to load template"));
+                }
+                if (!cancelled && res.data) {
+                    setPreviewHtml(res.data.html_body ?? "");
+                    setPreviewSubject(res.data.subject ?? "");
+                }
+            } catch (cause) {
+                if (!cancelled) {
+                    setPreviewError(cause instanceof Error ? cause.message : "Failed to load template");
+                }
+            } finally {
+                if (!cancelled) setPreviewLoading(false);
+            }
+        };
+        void loadPreview();
+        return () => { cancelled = true; };
+    }, [templateUuid, getAccessToken]);
 
     // Determine which warnings to show
     const missingUnsubscribe =
@@ -116,14 +166,41 @@ export function Step2SenderTemplate({
                 )}
             </div>
 
-            {/* Template HTML preview (sandboxed) */}
+            {/* Template HTML preview */}
             {selectedTemplate && (
-                <div className="rounded-lg border bg-muted/20 p-3">
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">
-                        Template: {selectedTemplate.name} — {selectedTemplate.subject}
+                <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+                    <div className="flex items-center gap-2">
+                        <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                        <p className="text-xs font-medium text-muted-foreground">
+                            Email preview: {selectedTemplate.name}
+                        </p>
+                    </div>
+                    <p className="text-xs font-medium text-muted-foreground">
+                        Subject: {previewSubject || selectedTemplate.subject}
                     </p>
-                    <p className="text-xs text-muted-foreground italic">
-                        HTML preview available after selecting the template on the Templates page.
+                    {previewLoading && (
+                        <div className="flex items-center justify-center py-6">
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                    )}
+                    {previewError && (
+                        <p className="text-xs text-destructive">{previewError}</p>
+                    )}
+                    {previewHtml && !previewLoading && (
+                        <div className="overflow-hidden rounded-md border bg-white">
+                            <iframe
+                                srcDoc={previewHtml}
+                                title="Email template preview"
+                                className="h-64 w-full border-0"
+                                sandbox="allow-same-origin"
+                            />
+                        </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                        Merge fields like{" "}
+                        <code className="text-xs">{`{{business_name}}`}</code>{" "}
+                        show as placeholder text. The final email fills them
+                        from each recipient&rsquo;s lead record.
                     </p>
                 </div>
             )}
@@ -145,7 +222,8 @@ export function Step2SenderTemplate({
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                     <p>
                         Plain SMTP does not report bounces or spam complaints. Monitor the
-                        sending mailbox manually.
+                        sending mailbox manually. Use a separate sending domain or mailbox
+                        for cold outreach to protect your primary domain.
                     </p>
                 </div>
             )}
