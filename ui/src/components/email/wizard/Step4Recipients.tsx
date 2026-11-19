@@ -21,6 +21,7 @@ import type {
     CampaignRecipientsResponse,
     EmailCampaignResponse,
 } from "@/client/types.gen";
+import { AudiencePreviewPanel } from "@/components/email/wizard/AudiencePreviewPanel";
 import {
     AlertDialog,
     AlertDialogCancel,
@@ -53,6 +54,9 @@ interface Props {
     onCampaignChange: (c: EmailCampaignResponse) => void;
     onBack: () => void;
     onNext: () => void;
+    previewing?: boolean;
+    previewError?: string | null;
+    onRetryPreview?: () => void;
 }
 
 function audienceRuleForRequest(
@@ -82,7 +86,15 @@ function audienceRuleForRequest(
     return rule;
 }
 
-export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: Props) {
+export function Step4Recipients({
+    campaign,
+    onCampaignChange,
+    onBack,
+    onNext,
+    previewing = false,
+    previewError,
+    onRetryPreview,
+}: Props) {
     const { getAccessToken } = useAuth();
     const [bucket, setBucket] = useState("all");
     const [page, setPage] = useState(1);
@@ -328,6 +340,13 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                     the lead from your CRM.
                 </p>
             </div>
+
+            <AudiencePreviewPanel
+                campaign={campaign}
+                previewing={previewing}
+                error={previewError}
+                onRetry={onRetryPreview}
+            />
 
             {/* Manual addresses: lets the operator send a test copy to their own
                 inbox without creating a lead record. */}

@@ -13,6 +13,7 @@ import type {
     LaunchResponse,
 } from "@/client/types.gen";
 import { Button } from "@/components/ui/button";
+import { CountUp } from "@/components/ui/count-up";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 
@@ -208,9 +209,10 @@ export function Step5Review({ campaign, onCampaignChange, onBack }: Props) {
                                         }`}
                                     >
                                         <p className="text-xs text-muted-foreground">{label}</p>
-                                        <p className="mt-0.5 text-base font-semibold tabular-nums">
-                                            {value.toLocaleString()}
-                                        </p>
+                                        <CountUp
+                                            value={value}
+                                            className="mt-0.5 block text-base font-semibold"
+                                        />
                                     </div>
                                 );
                             })}

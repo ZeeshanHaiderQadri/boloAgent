@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import EmailCampaignDetailPage from './page';
@@ -350,6 +350,51 @@ describe('email campaign wizard', () => {
         expect(body.audience.all_matching).toBe(true);
         expect(body.audience.filters).toEqual({ city: 'Austin', has_email: true });
         expect(state.previewAudience.mock.calls[0][0].body.audience.filters).not.toHaveProperty('all_matching');
+    });
+
+    it('audience preview shows an honest in-flight state, then real bucket counts', async () => {
+        state.getCampaign.mockResolvedValue({ data: campaignWithSenderAndTemplate });
+        let resolvePreview!: (value: unknown) => void;
+        state.previewAudience.mockReturnValue(
+            new Promise((resolve) => {
+                resolvePreview = resolve;
+            }),
+        );
+
+        render(<EmailCampaignDetailPage />);
+        await screen.findByText('November outreach');
+        await atStep(3);
+
+        clickNext();
+
+        // The status is driven by the unresolved request, not a timer.
+        expect(await screen.findByText('Resolving audience')).toBeDefined();
+        expect(screen.getByRole('button', { name: /resolving/i })).toBeDefined();
+
+        resolvePreview({
+            data: { counts: mockCounts, masked_sample: [], unknown_lead_count: 0, warnings: [] },
+        });
+
+        await atStep(4);
+        const panel = screen.getByRole('region', { name: 'Audience preview' });
+        expect(within(panel).getByText('Eligible')).toBeDefined();
+        expect(within(panel).getByText('Suppressed')).toBeDefined();
+    });
+
+    it('audience preview failure keeps the user on consent with a retryable error', async () => {
+        state.getCampaign.mockResolvedValue({ data: campaignWithSenderAndTemplate });
+        state.previewAudience.mockRejectedValue(new Error('Preview service unavailable'));
+
+        render(<EmailCampaignDetailPage />);
+        await screen.findByText('November outreach');
+        await atStep(3);
+
+        clickNext();
+
+        const alert = await screen.findByText('Could not resolve the audience');
+        expect(alert).toBeDefined();
+        expect(screen.getByText('Preview service unavailable')).toBeDefined();
+        expect(screen.getByRole('heading', { name: /Step 3/i })).toBeDefined();
     });
 
     it('recipients step: initial fetch asks for all buckets instead of an empty bucket', async () => {

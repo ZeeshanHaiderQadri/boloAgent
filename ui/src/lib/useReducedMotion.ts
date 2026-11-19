@@ -9,6 +9,8 @@ export function usePrefersReducedMotion(): boolean {
     const [reduced, setReduced] = useState(false);
 
     useEffect(() => {
+        // jsdom and some embedded webviews do not implement matchMedia.
+        if (typeof window.matchMedia !== "function") return;
         const media = window.matchMedia(QUERY);
         setReduced(media.matches);
         const onChange = (event: MediaQueryListEvent) => setReduced(event.matches);

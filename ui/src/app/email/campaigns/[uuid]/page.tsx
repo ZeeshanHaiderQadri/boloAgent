@@ -133,6 +133,11 @@ export default function EmailCampaignDetailPage() {
     // Field errors
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+    // Real audience-preview request state. Every progress indicator in the
+    // wizard reads from this; nothing advances on a timer.
+    const [previewing, setPreviewing] = useState(false);
+    const [previewError, setPreviewError] = useState<string | null>(null);
+
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [reloadKey, setReloadKey] = useState(0);
@@ -199,30 +204,48 @@ export default function EmailCampaignDetailPage() {
         return response;
     };
 
-    const autoPreview = async () => {
-        if (!campaign) return;
-        const token = await getAccessToken();
-        const response = await previewCampaignAudienceApiV1EmailCampaignsPreviewPost({
-            headers: { Authorization: `Bearer ${token}` },
-            body: {
-                audience: audienceRuleForRequest(campaign),
-                consent_policy: consentPolicy as "opted_in_only" | "include_unknown",
-                consent_override_reason:
-                    consentPolicy === "include_unknown" ? overrideReason.trim() || null : null,
-            },
-        });
-        if (response.error) {
-            toast.error(detailFromError(response.error, "Failed to preview audience"));
-            return;
+    const autoPreview = async (): Promise<boolean> => {
+        if (!campaign) return false;
+        setPreviewError(null);
+        try {
+            const token = await getAccessToken();
+            const response = await previewCampaignAudienceApiV1EmailCampaignsPreviewPost({
+                headers: { Authorization: `Bearer ${token}` },
+                body: {
+                    audience: audienceRuleForRequest(campaign),
+                    consent_policy: consentPolicy as "opted_in_only" | "include_unknown",
+                    consent_override_reason:
+                        consentPolicy === "include_unknown" ? overrideReason.trim() || null : null,
+                },
+            });
+            if (response.error) {
+                const message = detailFromError(response.error, "Failed to preview audience");
+                setPreviewError(message);
+                toast.error(message);
+                return false;
+            }
+            if (response.data) {
+                // Store the preview counts on the campaign so step 5 shows real data
+                const updated = {
+                    ...campaign,
+                    counts: response.data.counts,
+                };
+                setCampaign(updated);
+            }
+            return true;
+        } catch (cause) {
+            const message =
+                cause instanceof Error ? cause.message : "Failed to preview audience";
+            setPreviewError(message);
+            toast.error(message);
+            return false;
         }
-        if (response.data) {
-            // Store the preview counts on the campaign so step 5 shows real data
-            const updated = {
-                ...campaign,
-                counts: response.data.counts,
-            };
-            setCampaign(updated);
-        }
+    };
+
+    const retryPreview = async () => {
+        setPreviewing(true);
+        await autoPreview();
+        setPreviewing(false);
     };
 
     const handleStep1Next = () => {
@@ -250,16 +273,22 @@ export default function EmailCampaignDetailPage() {
             consent_override_reason:
                 consentPolicy === "include_unknown" ? overrideReason.trim() || null : null,
         });
-        // Auto-run preview to populate counts for step 5
-        await autoPreview();
-        goToStep(3);
+        // Auto-run preview to populate counts for step 5. Stay on this step
+        // while the real request is in flight so the status below the form
+        // reflects it, and stay put if it fails so the error is visible.
+        setPreviewing(true);
+        const previewed = await autoPreview();
+        setPreviewing(false);
+        if (previewed) goToStep(3);
     };
 
     const handleStep4Next = async () => {
         // Exclusions reset the stored counts via PATCH; refresh them so step 5
         // reviews the audience as it currently stands.
-        await autoPreview();
-        goToStep(4);
+        setPreviewing(true);
+        const previewed = await autoPreview();
+        setPreviewing(false);
+        if (previewed) goToStep(4);
     };
 
     const deleteCampaign = async () => {
@@ -415,6 +444,8 @@ export default function EmailCampaignDetailPage() {
                                         onBack={() => goToStep(1)}
                                         onNext={() => void handleStep3Next()}
                                         fieldErrors={fieldErrors}
+                                        previewing={previewing}
+                                        previewError={previewError}
                                     />
                                 )}
                                 {currentStep === 3 && (
@@ -423,6 +454,9 @@ export default function EmailCampaignDetailPage() {
                                         onCampaignChange={setCampaign}
                                         onBack={() => goToStep(2)}
                                         onNext={() => void handleStep4Next()}
+                                        previewing={previewing}
+                                        previewError={previewError}
+                                        onRetryPreview={() => void retryPreview()}
                                     />
                                 )}
                                 {currentStep === 4 && (
