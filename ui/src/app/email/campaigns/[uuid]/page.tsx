@@ -259,7 +259,18 @@ export default function EmailCampaignDetailPage() {
         setPreview(null);
         try {
             const token = await getAccessToken();
-            const audience = campaign.audience as AudienceRuleRequest;
+            // campaign.audience_type is a separate field on the response;
+            // campaign.audience only holds the detail payload (lead_ids, project_id,
+            // etc.). Merge them here so the preview receives a valid AudienceRuleRequest.
+            const storedDetail = (campaign.audience ?? {}) as Record<string, unknown>;
+            const audience: AudienceRuleRequest = {
+                audience_type: campaign.audience_type as AudienceRuleRequest["audience_type"],
+                lead_ids: storedDetail.lead_ids as number[] | undefined,
+                project_id: storedDetail.project_id as number | undefined,
+                tag: storedDetail.tag as string | undefined,
+                filters: storedDetail.filters as AudienceRuleRequest["filters"] | undefined,
+                all_matching: storedDetail.all_matching as boolean | undefined,
+            };
             const response = await previewCampaignAudienceApiV1EmailCampaignsPreviewPost({
                 headers: { Authorization: `Bearer ${token}` },
                 body: {
