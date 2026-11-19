@@ -182,4 +182,40 @@ describe('email campaign detail page', () => {
             await screen.findByText(/can no longer be edited/i)
         ).toBeDefined();
     });
+
+    it('shows "Not calculated yet" when stored counts are all zero', async () => {
+        const zeroCounts = {
+            recipient_count: 0, eligible_count: 0,
+            excluded_no_email_count: 0, excluded_invalid_email_count: 0,
+            excluded_suppressed_count: 0, excluded_opted_out_count: 0,
+            excluded_unknown_count: 0, duplicates_collapsed_count: 0,
+        };
+        state.getCampaign.mockResolvedValue({
+            data: { ...draftCampaign, counts: zeroCounts },
+        });
+        render(<EmailCampaignDetailPage />);
+        expect(await screen.findByText(/not calculated yet/i)).toBeDefined();
+        expect(screen.getByText(/run a preview to see your audience/i)).toBeDefined();
+    });
+
+    it('shows field-level error next to the written reason when include-unknown is selected without a reason', async () => {
+        // Start with a campaign already in include-unknown mode with no reason
+        state.getCampaign.mockResolvedValue({
+            data: { ...draftCampaign, consent_policy: 'include_unknown', consent_override_reason: null },
+        });
+        render(<EmailCampaignDetailPage />);
+        await screen.findByText('November outreach');
+
+        // Click Preview without filling in the reason
+        fireEvent.click(screen.getByRole('button', { name: /preview audience/i }));
+
+        // Field-level error appears as a role=alert; API is never called
+        await waitFor(() => {
+            const alerts = screen.getAllByRole('alert');
+            expect(alerts.length).toBeGreaterThan(0);
+        });
+        const alertText = screen.getAllByRole('alert').map((el) => el.textContent).join(' ');
+        expect(alertText).toMatch(/reason/i);
+        expect(state.previewAudience).not.toHaveBeenCalled();
+    });
 });

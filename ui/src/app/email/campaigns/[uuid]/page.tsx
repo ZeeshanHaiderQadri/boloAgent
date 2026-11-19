@@ -126,13 +126,12 @@ export default function EmailCampaignDetailPage() {
     );
     const [overrideReason, setOverrideReason] = useState("");
     const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState<string | null>(null);
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
     // Preview state
     const [preview, setPreview] = useState<CampaignPreviewResponse | null>(null);
     const [previewing, setPreviewing] = useState(false);
     const [previewError, setPreviewError] = useState<string | null>(null);
-    const [reasonRequired, setReasonRequired] = useState(false);
 
     // Launch dialog (always disabled in this release)
     const [launchOpen, setLaunchOpen] = useState(false);
@@ -194,13 +193,13 @@ export default function EmailCampaignDetailPage() {
         if (!campaign || saving || !name.trim()) return;
         // Validate consent override before hitting the API
         if (consentPolicy === "include_unknown" && !overrideReason.trim()) {
-            setSaveError(
-                "A written reason is required when including unknown-consent leads.",
-            );
+            setFieldErrors({ consent_override_reason: "Add a written reason to include unknown-consent leads." });
+            setFieldErrors({ consent_override_reason: "Add a written reason to include unknown-consent leads." });
             return;
         }
         setSaving(true);
-        setSaveError(null);
+        setFieldErrors({});
+        setFieldErrors((prev) => ({ ...prev, consent_override_reason: "" }));
         try {
             const token = await getAccessToken();
             const response = await updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch({
@@ -218,7 +217,28 @@ export default function EmailCampaignDetailPage() {
                 },
             });
             if (response.error) {
-                throw new Error(detailFromError(response.error, "Failed to save campaign"));
+                const detail = detailFromError(response.error, "Failed to save campaign");
+                // Map API 422 details to specific fields
+                const errors: Record<string, string> = {};
+                if (detail.includes("reason") || detail.includes("consent")) {
+                    errors.consent_override_reason = "Add a written reason to include unknown-consent leads.";
+                }
+                if (detail.includes("name") || detail.includes("already exists")) {
+                    errors.name = detail;
+                }
+                if (detail.includes("sender")) {
+                    errors.sender = detail;
+                }
+                if (detail.includes("template")) {
+                    errors.template = detail;
+                }
+                if (Object.keys(errors).length > 0) {
+                    setFieldErrors(errors);
+                } else {
+                    // Non-field error (e.g. 409 conflict, 403 forbidden) — show as toast
+                    toast.error(detail);
+                }
+                return;
             }
             if (response.data) {
                 const updated = response.data;
@@ -235,9 +255,7 @@ export default function EmailCampaignDetailPage() {
             }
             toast.success("Campaign saved");
         } catch (cause) {
-            setSaveError(
-                cause instanceof Error ? cause.message : "Failed to save campaign",
-            );
+            toast.error(cause instanceof Error ? cause.message : "Failed to save campaign");
         } finally {
             setSaving(false);
         }
@@ -245,15 +263,14 @@ export default function EmailCampaignDetailPage() {
 
     const runPreview = async () => {
         if (!campaign || previewing) return;
-        // Validate before calling the API
+        // Validate before calling the API — show the message next to the field
         if (consentPolicy === "include_unknown" && !overrideReason.trim()) {
-            setReasonRequired(true);
-            setPreviewError(
-                "A written reason is required to preview with the include-unknown policy.",
-            );
+            setFieldErrors({ consent_override_reason: "Add a written reason to include unknown-consent leads." });
+            setFieldErrors({ consent_override_reason: "Add a written reason to preview with the include-unknown policy." });
             return;
         }
-        setReasonRequired(false);
+        setFieldErrors((prev) => ({ ...prev, consent_override_reason: "" }));
+        setFieldErrors({});
         setPreviewing(true);
         setPreviewError(null);
         setPreview(null);
@@ -286,6 +303,11 @@ export default function EmailCampaignDetailPage() {
                 const detail = detailFromError(response.error, "Preview failed");
                 if (detail.includes("rate limit") || detail.includes("429")) {
                     throw new Error("Too many previews — wait a moment and try again.");
+                }
+                if (detail.includes("reason") || detail.includes("consent")) {
+                    setFieldErrors({ consent_override_reason: "Add a written reason to include unknown-consent leads." });
+                    setFieldErrors({ consent_override_reason: "Add a written reason to include unknown-consent leads." });
+                    return;
                 }
                 throw new Error(detail);
             }
@@ -424,25 +446,25 @@ export default function EmailCampaignDetailPage() {
                     <div className="space-y-5 rounded-xl border bg-card p-5">
                         <h2 className="text-base font-semibold">Campaign settings</h2>
 
-                        {saveError && (
-                            <div
-                                role="alert"
-                                className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
-                            >
-                                {saveError}
-                            </div>
-                        )}
-
                         {/* Name */}
                         <div className="grid gap-2">
                             <Label htmlFor="campaign-name">Name</Label>
                             <Input
                                 id="campaign-name"
                                 value={name}
-                                onChange={(e) => setName(e.target.value)}
+                                onChange={(e) => {
+                                    setName(e.target.value);
+                                    if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: "" }));
+                                }}
                                 disabled={!isDraft}
                                 placeholder="e.g. Spring outreach"
+                                className={fieldErrors.name ? "border-destructive" : ""}
                             />
+                            {fieldErrors.name && (
+                                <p role="alert" className="text-xs text-destructive">
+                                    {fieldErrors.name}
+                                </p>
+                            )}
                         </div>
 
                         {/* Sender */}
@@ -450,10 +472,13 @@ export default function EmailCampaignDetailPage() {
                             <Label htmlFor="sender-select">Sender</Label>
                             <Select
                                 value={senderUuid}
-                                onValueChange={setSenderUuid}
+                                onValueChange={(v) => {
+                                    setSenderUuid(v);
+                                    if (fieldErrors.sender) setFieldErrors((prev) => ({ ...prev, sender: "" }));
+                                }}
                                 disabled={!isDraft}
                             >
-                                <SelectTrigger id="sender-select">
+                                <SelectTrigger id="sender-select" className={fieldErrors.sender ? "border-destructive" : ""}>
                                     <SelectValue placeholder="Select a sender…" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -465,6 +490,11 @@ export default function EmailCampaignDetailPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {fieldErrors.sender && (
+                                <p role="alert" className="text-xs text-destructive">
+                                    {fieldErrors.sender}
+                                </p>
+                            )}
                             {senderGuidance && (
                                 <p className="text-xs text-muted-foreground">{senderGuidance}</p>
                             )}
@@ -480,10 +510,13 @@ export default function EmailCampaignDetailPage() {
                             <Label htmlFor="template-select">Template</Label>
                             <Select
                                 value={templateUuid}
-                                onValueChange={setTemplateUuid}
+                                onValueChange={(v) => {
+                                    setTemplateUuid(v);
+                                    if (fieldErrors.template) setFieldErrors((prev) => ({ ...prev, template: "" }));
+                                }}
                                 disabled={!isDraft}
                             >
-                                <SelectTrigger id="template-select">
+                                <SelectTrigger id="template-select" className={fieldErrors.template ? "border-destructive" : ""}>
                                     <SelectValue placeholder="Select a template…" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -497,6 +530,11 @@ export default function EmailCampaignDetailPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {fieldErrors.template && (
+                                <p role="alert" className="text-xs text-destructive">
+                                    {fieldErrors.template}
+                                </p>
+                            )}
                             {selectedTemplate &&
                                 !selectedTemplate.has_unsubscribe_placeholder && (
                                     <p className="text-xs text-destructive">
@@ -516,7 +554,7 @@ export default function EmailCampaignDetailPage() {
                                     setConsentPolicy(
                                         v as "opted_in_only" | "include_unknown",
                                     );
-                                    setReasonRequired(false);
+                                    setFieldErrors((prev) => ({ ...prev, consent_override_reason: "" }));
                                     setPreviewError(null);
                                 }}
                                 disabled={!isDraft}
@@ -545,7 +583,7 @@ export default function EmailCampaignDetailPage() {
                                 <div className="grid gap-1.5">
                                     <Label
                                         htmlFor="override-reason"
-                                        className={reasonRequired ? "text-destructive" : ""}
+                                        className={fieldErrors.consent_override_reason ? "text-destructive" : ""}
                                     >
                                         Written reason (required)
                                     </Label>
@@ -555,7 +593,8 @@ export default function EmailCampaignDetailPage() {
                                         onChange={(e) => {
                                             setOverrideReason(e.target.value);
                                             if (e.target.value.trim()) {
-                                                setReasonRequired(false);
+                                                setFieldErrors((prev) => ({ ...prev, consent_override_reason: "" }));
+                                                setFieldErrors((prev) => ({ ...prev, consent_override_reason: "" }));
                                                 setPreviewError(null);
                                             }
                                         }}
@@ -563,17 +602,14 @@ export default function EmailCampaignDetailPage() {
                                         placeholder="e.g. These are existing customers from before the consent system was introduced on 2026-01-01."
                                         rows={3}
                                         className={
-                                            reasonRequired
+                                            fieldErrors.consent_override_reason
                                                 ? "border-destructive focus-visible:ring-destructive"
                                                 : ""
                                         }
                                     />
-                                    {reasonRequired && (
-                                        <p
-                                            role="alert"
-                                            className="text-xs text-destructive"
-                                        >
-                                            Enter a reason before previewing or saving.
+                                    {fieldErrors.consent_override_reason && (
+                                        <p role="alert" className="text-xs text-destructive">
+                                            {fieldErrors.consent_override_reason}
                                         </p>
                                     )}
                                 </div>
@@ -696,19 +732,31 @@ export default function EmailCampaignDetailPage() {
                                     — last saved
                                 </span>
                             </h2>
-                            <div className="grid grid-cols-2 gap-3">
-                                {BUCKET_LABELS.map(([key, label]) => (
-                                    <div
-                                        key={key}
-                                        className={`rounded-lg border p-3 ${key === "eligible_count" ? "border-emerald-500/30 bg-emerald-500/5" : "bg-muted/30"}`}
-                                    >
-                                        <p className="text-xs text-muted-foreground">{label}</p>
-                                        <p className="mt-1 text-lg font-semibold tabular-nums">
-                                            {campaign.counts[key].toLocaleString()}
-                                        </p>
-                                    </div>
-                                ))}
-                            </div>
+                            {campaign.counts.recipient_count === 0 ? (
+                                <div className="flex flex-col items-center gap-2 py-4 text-center">
+                                    <RefreshCw className="h-6 w-6 text-muted-foreground/40" />
+                                    <p className="text-sm text-muted-foreground">
+                                        Not calculated yet.
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Run a preview to see your audience breakdown.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {BUCKET_LABELS.map(([key, label]) => (
+                                        <div
+                                            key={key}
+                                            className={`rounded-lg border p-3 ${key === "eligible_count" ? "border-emerald-500/30 bg-emerald-500/5" : "bg-muted/30"}`}
+                                        >
+                                            <p className="text-xs text-muted-foreground">{label}</p>
+                                            <p className="mt-1 text-lg font-semibold tabular-nums">
+                                                {campaign.counts[key].toLocaleString()}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         {/* Failure reason */}
