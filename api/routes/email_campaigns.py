@@ -200,6 +200,22 @@ class LaunchResponse(BaseModel):
     message: str
 
 
+class RecipientItem(BaseModel):
+    lead_id: int
+    title: str
+    masked_email: str
+    email_consent: str
+    bucket: str
+
+
+class CampaignRecipientsResponse(BaseModel):
+    items: list[RecipientItem]
+    page: int
+    limit: int
+    total: int
+    totals_per_bucket: dict[str, int]
+
+
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -786,4 +802,87 @@ async def launch_email_campaign(
         ready=readiness.ready,
         preconditions=list(readiness.failures),
         message=message,
+    )
+
+
+# ----------------------------------------------------------------------
+# Recipients (paginated lead table with bucket classification)
+# ----------------------------------------------------------------------
+
+
+@router.get("/{campaign_uuid}/recipients")
+async def list_campaign_recipients(
+    campaign_uuid: str,
+    bucket: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
+    user: UserModel = Depends(get_user),
+) -> CampaignRecipientsResponse:
+    """Return a paginated, bucket-classified list of leads for a campaign.
+
+    Every email address is masked; the full address is never returned.
+    Rate-limited the same way as the preview endpoint.
+    """
+    if page < 1:
+        raise HTTPException(status_code=422, detail="page must be >= 1")
+    if not (1 <= limit <= 100):
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+
+    organization_id = _require_organization(user)
+
+    try:
+        allowed = await allow_campaign_preview(
+            user_id=user.id, organization_id=organization_id
+        )
+    except RateLimiterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Campaign recipients is temporarily unavailable.",
+        ) from exc
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Try again later.",
+        )
+
+    campaign = await _campaign_or_404(organization_id, campaign_uuid)
+    suppressed = await db_client.suppressed_audience_addresses(organization_id)
+    rule = _rule_from_stored(campaign)
+
+    explicit_ids: list[int] | None = None
+    if campaign.audience_type == "leads":
+        audience = campaign.audience or {}
+        ids = [int(x) for x in (audience.get("lead_ids") or [])]
+        if ids:
+            found = await db_client.audience_lead_ids(organization_id, ids)
+            explicit_ids = [i for i in ids if i in found]
+        else:
+            explicit_ids = []
+
+    from api.services.email.audience import _filter_kwargs  # noqa: PLC0415
+
+    filter_kwargs = _filter_kwargs(rule)
+    audience_data = campaign.audience or {}
+    excluded_ids = set(int(x) for x in (audience_data.get("excluded_lead_ids") or []))
+    include_unknown = campaign.consent_policy == "include_unknown"
+
+    offset = (page - 1) * limit
+    items, total, bucket_counts = await db_client.stream_recipient_rows(
+        organization_id,
+        lead_ids=explicit_ids,
+        filter_kwargs=filter_kwargs,
+        suppressed=suppressed,
+        excluded_ids=excluded_ids,
+        include_unknown=include_unknown,
+        bucket_filter=bucket,
+        offset=offset,
+        limit=limit,
+    )
+
+    return CampaignRecipientsResponse(
+        items=[RecipientItem(**item) for item in items],
+        page=page,
+        limit=limit,
+        total=total,
+        totals_per_bucket=bucket_counts,
     )
