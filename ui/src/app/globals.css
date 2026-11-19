@@ -418,3 +418,110 @@
 [data-event-banner] [class~="min-h-svh"] {
   min-height: calc(100svh - var(--event-banner-h, 0px));
 }
+
+/* ------------------------------------------------------------------
+   Motion primitives
+
+   Every animation here is triggered by a real state change (route
+   navigation, wizard step change, data arriving). Nothing is timed to
+   fake progress. All of them are disabled under
+   `prefers-reduced-motion: reduce`; loading spinners are left alone
+   because they communicate state rather than decorate it.
+   ------------------------------------------------------------------ */
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.app-page-enter {
+  animation: page-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes step-in-forward {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes step-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.step-enter-forward {
+  animation: step-in-forward 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.step-enter-back {
+  animation: step-in-back 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes list-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.list-enter {
+  animation: list-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes success-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.success-enter {
+  animation: success-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Focus ring for controls that do not use the shadcn Button ring. */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-page-enter,
+  .step-enter-forward,
+  .step-enter-back,
+  .list-enter,
+  .success-enter {
+    animation: none;
+  }
+
+  /* Tailwind's pulse is decorative; keep a static placeholder instead. */
+  .animate-pulse {
+    animation: none !important;
+    opacity: 0.65;
+  }
+}

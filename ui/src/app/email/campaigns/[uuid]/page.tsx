@@ -113,6 +113,12 @@ export default function EmailCampaignDetailPage() {
 
     // Wizard step
     const [currentStep, setCurrentStep] = useState(0);
+    const [stepDirection, setStepDirection] = useState<"forward" | "back">("forward");
+
+    const goToStep = (next: number) => {
+        setStepDirection(next < currentStep ? "back" : "forward");
+        setCurrentStep(next);
+    };
 
     // Step 2 form state
     const [senderUuid, setSenderUuid] = useState("");
@@ -220,13 +226,13 @@ export default function EmailCampaignDetailPage() {
     };
 
     const handleStep1Next = () => {
-        setCurrentStep(1);
+        goToStep(1);
     };
 
     const handleStep2Next = async () => {
         // Auto-save sender + template
         await autoSave({ sender_uuid: senderUuid || null, template_uuid: templateUuid || null });
-        setCurrentStep(2);
+        goToStep(2);
     };
 
     const handleStep3Next = async () => {
@@ -246,14 +252,14 @@ export default function EmailCampaignDetailPage() {
         });
         // Auto-run preview to populate counts for step 5
         await autoPreview();
-        setCurrentStep(3);
+        goToStep(3);
     };
 
     const handleStep4Next = async () => {
         // Exclusions reset the stored counts via PATCH; refresh them so step 5
         // reviews the audience as it currently stands.
         await autoPreview();
-        setCurrentStep(4);
+        goToStep(4);
     };
 
     const deleteCampaign = async () => {
@@ -366,58 +372,67 @@ export default function EmailCampaignDetailPage() {
                     {/* Two-column layout: wizard content + sticky summary */}
                     <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
                         <div className="min-w-0 rounded-xl border bg-card p-5">
-                            {currentStep === 0 && (
-                                <Step1Audience
-                                    campaign={campaign}
-                                    onNext={handleStep1Next}
-                                />
-                            )}
-                            {currentStep === 1 && (
-                                <Step2SenderTemplate
-                                    campaign={campaign}
-                                    senders={senders}
-                                    templates={templates}
-                                    senderUuid={senderUuid}
-                                    templateUuid={templateUuid}
-                                    onSenderChange={setSenderUuid}
-                                    onTemplateChange={setTemplateUuid}
-                                    onBack={() => setCurrentStep(0)}
-                                    onNext={() => void handleStep2Next()}
-                                    fieldErrors={fieldErrors}
-                                />
-                            )}
-                            {currentStep === 2 && (
-                                <Step3Consent
-                                    consentPolicy={consentPolicy}
-                                    overrideReason={overrideReason}
-                                    onConsentChange={(p) => {
-                                        setConsentPolicy(p);
-                                        setFieldErrors({});
-                                    }}
-                                    onReasonChange={(r) => {
-                                        setOverrideReason(r);
-                                        if (r.trim()) setFieldErrors({});
-                                    }}
-                                    onBack={() => setCurrentStep(1)}
-                                    onNext={() => void handleStep3Next()}
-                                    fieldErrors={fieldErrors}
-                                />
-                            )}
-                            {currentStep === 3 && (
-                                <Step4Recipients
-                                    campaign={campaign}
-                                    onCampaignChange={setCampaign}
-                                    onBack={() => setCurrentStep(2)}
-                                    onNext={() => void handleStep4Next()}
-                                />
-                            )}
-                            {currentStep === 4 && (
-                                <Step5Review
-                                    campaign={campaign}
-                                    onCampaignChange={setCampaign}
-                                    onBack={() => setCurrentStep(3)}
-                                />
-                            )}
+                            <div
+                                key={currentStep}
+                                    className={
+                                        stepDirection === "forward"
+                                            ? "step-enter-forward"
+                                            : "step-enter-back"
+                                    }
+                                >
+                                {currentStep === 0 && (
+                                    <Step1Audience
+                                        campaign={campaign}
+                                        onNext={handleStep1Next}
+                                    />
+                                )}
+                                {currentStep === 1 && (
+                                    <Step2SenderTemplate
+                                        campaign={campaign}
+                                        senders={senders}
+                                        templates={templates}
+                                        senderUuid={senderUuid}
+                                        templateUuid={templateUuid}
+                                        onSenderChange={setSenderUuid}
+                                        onTemplateChange={setTemplateUuid}
+                                        onBack={() => goToStep(0)}
+                                        onNext={() => void handleStep2Next()}
+                                        fieldErrors={fieldErrors}
+                                    />
+                                )}
+                                {currentStep === 2 && (
+                                    <Step3Consent
+                                        consentPolicy={consentPolicy}
+                                        overrideReason={overrideReason}
+                                        onConsentChange={(p) => {
+                                            setConsentPolicy(p);
+                                            setFieldErrors({});
+                                        }}
+                                        onReasonChange={(r) => {
+                                            setOverrideReason(r);
+                                            if (r.trim()) setFieldErrors({});
+                                        }}
+                                        onBack={() => goToStep(1)}
+                                        onNext={() => void handleStep3Next()}
+                                        fieldErrors={fieldErrors}
+                                    />
+                                )}
+                                {currentStep === 3 && (
+                                    <Step4Recipients
+                                        campaign={campaign}
+                                        onCampaignChange={setCampaign}
+                                        onBack={() => goToStep(2)}
+                                        onNext={() => void handleStep4Next()}
+                                    />
+                                )}
+                                {currentStep === 4 && (
+                                    <Step5Review
+                                        campaign={campaign}
+                                        onCampaignChange={setCampaign}
+                                        onBack={() => goToStep(3)}
+                                    />
+                                )}
+                            </div>
                         </div>
 
                         {/* Sticky summary */}

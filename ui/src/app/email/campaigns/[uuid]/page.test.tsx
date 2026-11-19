@@ -193,6 +193,22 @@ describe('email campaign wizard', () => {
         await atStep(2);
     });
 
+    it('stepper marks exactly one current step and moves it on navigation', async () => {
+        render(<EmailCampaignDetailPage />);
+        await atStep(1);
+
+        const nav = screen.getByRole('navigation', { name: /campaign wizard steps/i });
+        const current = () => nav.querySelectorAll('[aria-current="step"]');
+        expect(current()).toHaveLength(1);
+        expect(current()[0].textContent).toMatch(/1/);
+
+        clickNext();
+        await atStep(2);
+
+        expect(current()).toHaveLength(1);
+        expect(current()[0].textContent).toMatch(/2/);
+    });
+
     it('step 3 consent: switching to include-unknown shows the reason textarea', async () => {
         render(<EmailCampaignDetailPage />);
         await atStep(1);

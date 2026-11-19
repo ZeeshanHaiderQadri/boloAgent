@@ -2,6 +2,8 @@
 
 import { Check } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+
 export interface Step {
     label: string;
 }
@@ -11,53 +13,86 @@ interface Props {
     currentStep: number;
 }
 
+/**
+ * Wizard progress. Display-only by design: steps are not clickable, so the
+ * only interaction is the Back/Next buttons inside each step. The step the
+ * user is on is exposed with aria-current, and step changes are announced
+ * through the visually hidden live region.
+ */
 export function CampaignStepper({ steps, currentStep }: Props) {
+    const activeLabel = steps[currentStep]?.label ?? "";
+
     return (
         <nav aria-label="Campaign wizard steps" className="mb-6">
-            <ol className="flex items-center gap-0">
+            <ol className="flex items-start gap-1">
                 {steps.map((step, i) => {
                     const completed = i < currentStep;
                     const active = i === currentStep;
                     return (
-                        <li key={i} className="flex flex-1 items-center">
-                            <div className="flex flex-col items-center gap-1 flex-1">
-                                <div
-                                    className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-semibold transition-colors ${
-                                        completed
-                                            ? "border-primary bg-primary text-primary-foreground"
-                                            : active
-                                              ? "border-primary bg-background text-primary"
-                                              : "border-muted bg-muted/40 text-muted-foreground"
-                                    }`}
-                                    aria-current={active ? "step" : undefined}
+                        <li
+                            key={step.label}
+                            aria-current={active ? "step" : undefined}
+                            className="flex flex-1 items-start"
+                        >
+                            <div className="flex w-16 shrink-0 flex-col items-center gap-1.5 sm:w-24">
+                                <span
+                                    className={cn(
+                                        "flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm font-semibold transition-colors duration-300 motion-reduce:transition-none",
+                                        completed &&
+                                            "border-primary bg-primary text-primary-foreground",
+                                        active &&
+                                            "border-primary bg-background text-primary ring-4 ring-primary/15",
+                                        !completed &&
+                                            !active &&
+                                            "border-border bg-muted/40 text-muted-foreground",
+                                    )}
                                 >
                                     {completed ? (
-                                        <Check className="h-4 w-4" />
+                                        <Check className="success-enter h-4 w-4" aria-hidden />
                                     ) : (
-                                        <span>{i + 1}</span>
+                                        <span aria-hidden>{i + 1}</span>
                                     )}
-                                </div>
+                                    <span className="sr-only">
+                                        {completed
+                                            ? "completed"
+                                            : active
+                                              ? "current step"
+                                              : "upcoming"}
+                                    </span>
+                                </span>
                                 <span
-                                    className={`hidden text-xs md:block ${
-                                        active
-                                            ? "font-medium text-foreground"
-                                            : "text-muted-foreground"
-                                    }`}
+                                    className={cn(
+                                        "hidden w-full truncate text-center text-xs transition-colors duration-300 motion-reduce:transition-none sm:block",
+                                        active && "font-semibold text-foreground",
+                                        completed && "text-foreground/80",
+                                        !completed && !active && "text-muted-foreground",
+                                    )}
+                                    title={step.label}
                                 >
                                     {step.label}
                                 </span>
                             </div>
                             {i < steps.length - 1 && (
                                 <div
-                                    className={`h-0.5 flex-1 transition-colors ${
-                                        completed ? "bg-primary" : "bg-muted"
-                                    }`}
-                                />
+                                    aria-hidden
+                                    className="mt-4 h-0.5 flex-1 overflow-hidden rounded-full bg-muted"
+                                >
+                                    <div
+                                        className={cn(
+                                            "h-full origin-left rounded-full bg-primary transition-transform duration-500 ease-out motion-reduce:transition-none",
+                                            completed ? "scale-x-100" : "scale-x-0",
+                                        )}
+                                    />
+                                </div>
                             )}
                         </li>
                     );
                 })}
             </ol>
+            <p aria-live="polite" className="sr-only">
+                Step {currentStep + 1} of {steps.length}
+                {activeLabel ? `: ${activeLabel}` : ""}
+            </p>
         </nav>
     );
 }
