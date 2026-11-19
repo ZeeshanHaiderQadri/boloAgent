@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
     listTemplates: vi.fn(),
     listRecipients: vi.fn(),
     listCampaigns: vi.fn(),
+    previewAudience: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ useAuth: () => state.auth }));
@@ -26,6 +27,7 @@ vi.mock('@/client', () => ({
     listEmailTemplatesApiV1EmailTemplatesGet: state.listTemplates,
     listCampaignRecipientsApiV1EmailCampaignsCampaignUuidRecipientsGet: state.listRecipients,
     listEmailCampaignsApiV1EmailCampaignsGet: state.listCampaigns,
+    previewCampaignAudienceApiV1EmailCampaignsPreviewPost: state.previewAudience,
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock('next/navigation', () => ({
@@ -159,6 +161,7 @@ beforeEach(() => {
     state.listRecipients.mockResolvedValue({ data: mockRecipientsData });
     state.updateCampaign.mockResolvedValue({ data: freshCampaign });
     state.listCampaigns.mockResolvedValue({ data: [] });
+    state.previewAudience.mockResolvedValue({ data: { counts: mockCounts, masked_sample: [], unknown_lead_count: 0, warnings: [] } });
 });
 
 /** Click the "Next" button inside the wizard content area. */

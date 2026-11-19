@@ -11,13 +11,6 @@ import type { CampaignRecipientsResponse, EmailCampaignResponse } from "@/client
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 import { emailConsentClass, emailConsentLabel } from "@/lib/emailConsent";
@@ -156,28 +149,40 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                 </p>
             </div>
 
-            <div className="flex items-center gap-3">
-                <Select value={bucket} onValueChange={handleBucketChange}>
-                    <SelectTrigger className="w-48">
-                        <SelectValue placeholder="All buckets" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {BUCKET_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                                {data?.totals_per_bucket &&
-                                    opt.value &&
-                                    data.totals_per_bucket[opt.value] !== undefined && (
-                                        <span className="ml-2 text-xs text-muted-foreground">
-                                            ({data.totals_per_bucket[opt.value]})
-                                        </span>
-                                    )}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-                {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            {/* Bucket tabs */}
+            <div className="flex flex-wrap gap-2">
+                {BUCKET_OPTIONS.map((opt) => {
+                    const count = opt.value === "all"
+                        ? (data?.total ?? 0)
+                        : (data?.totals_per_bucket?.[opt.value] ?? 0);
+                    const isActive = bucket === opt.value;
+                    return (
+                        <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => handleBucketChange(opt.value)}
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                                isActive
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : "border-border text-muted-foreground hover:border-muted-foreground"
+                            }`}
+                        >
+                            {opt.label}
+                            {count > 0 && (
+                                <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums">
+                                    {count.toLocaleString()}
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
             </div>
+
+            {loading && (
+                <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+            )}
 
             {error && (
                 <div
@@ -200,40 +205,78 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                             <table className="w-full text-sm">
                                 <thead className="border-b bg-muted/40">
                                     <tr>
-                                        <th className="w-8 px-3 py-2 text-left" />
-                                        <th className="px-3 py-2 text-left font-medium">Business</th>
-                                        <th className="px-3 py-2 text-left font-medium">Masked email</th>
-                                        <th className="px-3 py-2 text-left font-medium">Consent</th>
-                                        <th className="px-3 py-2 text-left font-medium">Bucket</th>
+                                        <th className="w-10 px-3 py-2.5 text-left">
+                                            <span className="sr-only">Include</span>
+                                        </th>
+                                        <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                            Business
+                                        </th>
+                                        <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                            Masked email
+                                        </th>
+                                        <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                            Consent
+                                        </th>
+                                        <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                            Status
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {data.items.map((item) => (
-                                        <tr key={item.lead_id} className="border-b last:border-0">
-                                            <td className="px-3 py-2">
-                                                {item.bucket === "eligible" && (
+                                        <tr
+                                            key={item.lead_id}
+                                            className="border-b transition-colors last:border-0 hover:bg-muted/30"
+                                        >
+                                            <td className="px-3 py-2.5">
+                                                {item.bucket === "eligible" ? (
                                                     <Checkbox
                                                         checked={true}
-                                                        onCheckedChange={() => void handleExclude(item.lead_id)}
+                                                        onCheckedChange={() =>
+                                                            void handleExclude(item.lead_id)
+                                                        }
                                                         aria-label={`Exclude ${item.title}`}
+                                                        className="data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
                                                     />
-                                                )}
+                                                ) : item.bucket === "manually_excluded" ? (
+                                                    <Checkbox
+                                                        checked={false}
+                                                        onCheckedChange={() =>
+                                                            void handleExclude(item.lead_id)
+                                                        }
+                                                        aria-label={`Re-include ${item.title}`}
+                                                    />
+                                                ) : null}
                                             </td>
-                                            <td className="px-3 py-2 font-medium">{item.title}</td>
-                                            <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                                                {item.masked_email || "—"}
+                                            <td className="px-3 py-2.5">
+                                                <span className="font-medium">{item.title}</span>
                                             </td>
-                                            <td className="px-3 py-2">
+                                            <td className="px-3 py-2.5">
+                                                <span className="font-mono text-xs text-muted-foreground">
+                                                    {item.masked_email || "—"}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 py-2.5">
                                                 <span
                                                     className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${emailConsentClass(item.email_consent)}`}
                                                 >
                                                     {emailConsentLabel(item.email_consent)}
                                                 </span>
                                             </td>
-                                            <td className="px-3 py-2">
-                                                <Badge variant="outline" className="text-xs">
-                                                    {item.bucket}
-                                                </Badge>
+                                            <td className="px-3 py-2.5">
+                                                <span
+                                                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                                        item.bucket === "eligible"
+                                                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300"
+                                                            : item.bucket === "manually_excluded"
+                                                              ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                                                              : "bg-muted text-muted-foreground"
+                                                    }`}
+                                                >
+                                                    {item.bucket === "manually_excluded"
+                                                        ? "excluded"
+                                                        : item.bucket}
+                                                </span>
                                             </td>
                                         </tr>
                                     ))}
@@ -257,7 +300,7 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                                 >
                                     <ChevronLeft className="h-4 w-4" />
                                 </Button>
-                                <span>
+                                <span className="tabular-nums">
                                     {page} / {totalPages}
                                 </span>
                                 <Button

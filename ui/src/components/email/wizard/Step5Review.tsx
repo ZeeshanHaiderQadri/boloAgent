@@ -117,27 +117,38 @@ export function Step5Review({ campaign, onBack }: Props) {
                 {/* Stored counts */}
                 <div className="space-y-2">
                     <h3 className="text-sm font-semibold">Stored counts</h3>
-                    <div className="grid grid-cols-2 gap-2">
-                        {BUCKET_LABELS.map(([key, label]) => {
-                            const counts = campaign.counts as unknown as Record<string, number>;
-                            const value = counts[key] ?? 0;
-                            return (
-                                <div
-                                    key={key}
-                                    className={`rounded-lg border p-2 ${
-                                        key === "eligible_count"
-                                            ? "border-emerald-500/30 bg-emerald-500/5"
-                                            : "bg-muted/30"
-                                    }`}
-                                >
-                                    <p className="text-xs text-muted-foreground">{label}</p>
-                                    <p className="mt-0.5 text-base font-semibold tabular-nums">
-                                        {value.toLocaleString()}
-                                    </p>
-                                </div>
-                            );
-                        })}
-                    </div>
+                    {campaign.counts.recipient_count === 0 ? (
+                        <div className="rounded-lg border bg-muted/30 p-4 text-center">
+                            <p className="text-sm text-muted-foreground">
+                                Not calculated yet.
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Run a preview from step 4 to see your counts here.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                            {BUCKET_LABELS.map(([key, label]) => {
+                                const counts = campaign.counts as unknown as Record<string, number>;
+                                const value = counts[key] ?? 0;
+                                return (
+                                    <div
+                                        key={key}
+                                        className={`rounded-lg border p-2 ${
+                                            key === "eligible_count"
+                                                ? "border-emerald-500/30 bg-emerald-500/5"
+                                                : "bg-muted/30"
+                                        }`}
+                                    >
+                                        <p className="text-xs text-muted-foreground">{label}</p>
+                                        <p className="mt-0.5 text-base font-semibold tabular-nums">
+                                            {value.toLocaleString()}
+                                        </p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                     <p className="text-xs text-muted-foreground">
                         Daily sending estimate: {guidance}
                     </p>

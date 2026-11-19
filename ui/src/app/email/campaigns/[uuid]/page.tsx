@@ -9,6 +9,7 @@ import {
     getEmailCampaignApiV1EmailCampaignsCampaignUuidGet,
     listEmailSendersApiV1EmailSendersGet,
     listEmailTemplatesApiV1EmailTemplatesGet,
+    previewCampaignAudienceApiV1EmailCampaignsPreviewPost,
     updateEmailCampaignApiV1EmailCampaignsCampaignUuidPatch,
 } from "@/client";
 import type {
@@ -139,6 +140,36 @@ export default function EmailCampaignDetailPage() {
             body: fields,
         });
         if (!response.error && response.data) setCampaign(response.data);
+        return response;
+    };
+
+    const autoPreview = async () => {
+        if (!campaign) return;
+        const token = await getAccessToken();
+        const audience = campaign.audience as Record<string, unknown>;
+        const response = await previewCampaignAudienceApiV1EmailCampaignsPreviewPost({
+            headers: { Authorization: `Bearer ${token}` },
+            body: {
+                audience: {
+                    audience_type: campaign.audience_type as "leads" | "project" | "tag" | "filter",
+                    lead_ids: audience.lead_ids as number[] | undefined,
+                    project_id: audience.project_id as number | undefined,
+                    tag: audience.tag as string | undefined,
+                    excluded_lead_ids: audience.excluded_lead_ids as number[] | undefined,
+                },
+                consent_policy: consentPolicy as "opted_in_only" | "include_unknown",
+                consent_override_reason:
+                    consentPolicy === "include_unknown" ? overrideReason.trim() || null : null,
+            },
+        });
+        if (response.data) {
+            // Store the preview counts on the campaign so step 5 shows real data
+            const updated = {
+                ...campaign,
+                counts: response.data.counts,
+            };
+            setCampaign(updated);
+        }
     };
 
     const handleStep1Next = () => {
@@ -166,6 +197,8 @@ export default function EmailCampaignDetailPage() {
             consent_override_reason:
                 consentPolicy === "include_unknown" ? overrideReason.trim() || null : null,
         });
+        // Auto-run preview to populate counts for step 5
+        await autoPreview();
         setCurrentStep(3);
     };
 
