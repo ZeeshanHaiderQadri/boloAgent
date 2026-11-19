@@ -40,7 +40,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ListRowSkeleton } from "@/components/ui/skeleton";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 
@@ -113,6 +113,12 @@ export default function EmailCampaignDetailPage() {
 
     // Wizard step
     const [currentStep, setCurrentStep] = useState(0);
+    const [stepDirection, setStepDirection] = useState<"forward" | "back">("forward");
+
+    const goToStep = (next: number) => {
+        setStepDirection(next < currentStep ? "back" : "forward");
+        setCurrentStep(next);
+    };
 
     // Step 2 form state
     const [senderUuid, setSenderUuid] = useState("");
@@ -126,6 +132,11 @@ export default function EmailCampaignDetailPage() {
 
     // Field errors
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+    // Real audience-preview request state. Every progress indicator in the
+    // wizard reads from this; nothing advances on a timer.
+    const [previewing, setPreviewing] = useState(false);
+    const [previewError, setPreviewError] = useState<string | null>(null);
 
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -193,40 +204,58 @@ export default function EmailCampaignDetailPage() {
         return response;
     };
 
-    const autoPreview = async () => {
-        if (!campaign) return;
-        const token = await getAccessToken();
-        const response = await previewCampaignAudienceApiV1EmailCampaignsPreviewPost({
-            headers: { Authorization: `Bearer ${token}` },
-            body: {
-                audience: audienceRuleForRequest(campaign),
-                consent_policy: consentPolicy as "opted_in_only" | "include_unknown",
-                consent_override_reason:
-                    consentPolicy === "include_unknown" ? overrideReason.trim() || null : null,
-            },
-        });
-        if (response.error) {
-            toast.error(detailFromError(response.error, "Failed to preview audience"));
-            return;
-        }
-        if (response.data) {
-            // Store the preview counts on the campaign so step 5 shows real data
-            const updated = {
-                ...campaign,
-                counts: response.data.counts,
-            };
-            setCampaign(updated);
+    const autoPreview = async (): Promise<boolean> => {
+        if (!campaign) return false;
+        setPreviewError(null);
+        try {
+            const token = await getAccessToken();
+            const response = await previewCampaignAudienceApiV1EmailCampaignsPreviewPost({
+                headers: { Authorization: `Bearer ${token}` },
+                body: {
+                    audience: audienceRuleForRequest(campaign),
+                    consent_policy: consentPolicy as "opted_in_only" | "include_unknown",
+                    consent_override_reason:
+                        consentPolicy === "include_unknown" ? overrideReason.trim() || null : null,
+                },
+            });
+            if (response.error) {
+                const message = detailFromError(response.error, "Failed to preview audience");
+                setPreviewError(message);
+                toast.error(message);
+                return false;
+            }
+            if (response.data) {
+                // Store the preview counts on the campaign so step 5 shows real data
+                const updated = {
+                    ...campaign,
+                    counts: response.data.counts,
+                };
+                setCampaign(updated);
+            }
+            return true;
+        } catch (cause) {
+            const message =
+                cause instanceof Error ? cause.message : "Failed to preview audience";
+            setPreviewError(message);
+            toast.error(message);
+            return false;
         }
     };
 
+    const retryPreview = async () => {
+        setPreviewing(true);
+        await autoPreview();
+        setPreviewing(false);
+    };
+
     const handleStep1Next = () => {
-        setCurrentStep(1);
+        goToStep(1);
     };
 
     const handleStep2Next = async () => {
         // Auto-save sender + template
         await autoSave({ sender_uuid: senderUuid || null, template_uuid: templateUuid || null });
-        setCurrentStep(2);
+        goToStep(2);
     };
 
     const handleStep3Next = async () => {
@@ -244,16 +273,22 @@ export default function EmailCampaignDetailPage() {
             consent_override_reason:
                 consentPolicy === "include_unknown" ? overrideReason.trim() || null : null,
         });
-        // Auto-run preview to populate counts for step 5
-        await autoPreview();
-        setCurrentStep(3);
+        // Auto-run preview to populate counts for step 5. Stay on this step
+        // while the real request is in flight so the status below the form
+        // reflects it, and stay put if it fails so the error is visible.
+        setPreviewing(true);
+        const previewed = await autoPreview();
+        setPreviewing(false);
+        if (previewed) goToStep(3);
     };
 
     const handleStep4Next = async () => {
         // Exclusions reset the stored counts via PATCH; refresh them so step 5
         // reviews the audience as it currently stands.
-        await autoPreview();
-        setCurrentStep(4);
+        setPreviewing(true);
+        const previewed = await autoPreview();
+        setPreviewing(false);
+        if (previewed) goToStep(4);
     };
 
     const deleteCampaign = async () => {
@@ -288,7 +323,7 @@ export default function EmailCampaignDetailPage() {
             <PageLayout title="Email campaign" description="Loading...">
                 <div className="space-y-4" role="status" aria-label="Loading campaign">
                     {[1, 2, 3].map((item) => (
-                        <Skeleton key={item} className="h-24 w-full rounded-lg" />
+                        <ListRowSkeleton key={item} />
                     ))}
                 </div>
             </PageLayout>
@@ -338,7 +373,7 @@ export default function EmailCampaignDetailPage() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                 <Link
                     href="/email/campaigns"
-                    className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                    className="focus-ring inline-flex items-center gap-1 rounded text-sm text-muted-foreground hover:text-foreground"
                 >
                     <ChevronLeft className="h-3.5 w-3.5" />
                     All campaigns
@@ -366,58 +401,72 @@ export default function EmailCampaignDetailPage() {
                     {/* Two-column layout: wizard content + sticky summary */}
                     <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
                         <div className="min-w-0 rounded-xl border bg-card p-5">
-                            {currentStep === 0 && (
-                                <Step1Audience
-                                    campaign={campaign}
-                                    onNext={handleStep1Next}
-                                />
-                            )}
-                            {currentStep === 1 && (
-                                <Step2SenderTemplate
-                                    campaign={campaign}
-                                    senders={senders}
-                                    templates={templates}
-                                    senderUuid={senderUuid}
-                                    templateUuid={templateUuid}
-                                    onSenderChange={setSenderUuid}
-                                    onTemplateChange={setTemplateUuid}
-                                    onBack={() => setCurrentStep(0)}
-                                    onNext={() => void handleStep2Next()}
-                                    fieldErrors={fieldErrors}
-                                />
-                            )}
-                            {currentStep === 2 && (
-                                <Step3Consent
-                                    consentPolicy={consentPolicy}
-                                    overrideReason={overrideReason}
-                                    onConsentChange={(p) => {
-                                        setConsentPolicy(p);
-                                        setFieldErrors({});
-                                    }}
-                                    onReasonChange={(r) => {
-                                        setOverrideReason(r);
-                                        if (r.trim()) setFieldErrors({});
-                                    }}
-                                    onBack={() => setCurrentStep(1)}
-                                    onNext={() => void handleStep3Next()}
-                                    fieldErrors={fieldErrors}
-                                />
-                            )}
-                            {currentStep === 3 && (
-                                <Step4Recipients
-                                    campaign={campaign}
-                                    onCampaignChange={setCampaign}
-                                    onBack={() => setCurrentStep(2)}
-                                    onNext={() => void handleStep4Next()}
-                                />
-                            )}
-                            {currentStep === 4 && (
-                                <Step5Review
-                                    campaign={campaign}
-                                    onCampaignChange={setCampaign}
-                                    onBack={() => setCurrentStep(3)}
-                                />
-                            )}
+                            <div
+                                key={currentStep}
+                                    className={
+                                        stepDirection === "forward"
+                                            ? "step-enter-forward"
+                                            : "step-enter-back"
+                                    }
+                                >
+                                {currentStep === 0 && (
+                                    <Step1Audience
+                                        campaign={campaign}
+                                        onNext={handleStep1Next}
+                                    />
+                                )}
+                                {currentStep === 1 && (
+                                    <Step2SenderTemplate
+                                        campaign={campaign}
+                                        senders={senders}
+                                        templates={templates}
+                                        senderUuid={senderUuid}
+                                        templateUuid={templateUuid}
+                                        onSenderChange={setSenderUuid}
+                                        onTemplateChange={setTemplateUuid}
+                                        onBack={() => goToStep(0)}
+                                        onNext={() => void handleStep2Next()}
+                                        fieldErrors={fieldErrors}
+                                    />
+                                )}
+                                {currentStep === 2 && (
+                                    <Step3Consent
+                                        consentPolicy={consentPolicy}
+                                        overrideReason={overrideReason}
+                                        onConsentChange={(p) => {
+                                            setConsentPolicy(p);
+                                            setFieldErrors({});
+                                        }}
+                                        onReasonChange={(r) => {
+                                            setOverrideReason(r);
+                                            if (r.trim()) setFieldErrors({});
+                                        }}
+                                        onBack={() => goToStep(1)}
+                                        onNext={() => void handleStep3Next()}
+                                        fieldErrors={fieldErrors}
+                                        previewing={previewing}
+                                        previewError={previewError}
+                                    />
+                                )}
+                                {currentStep === 3 && (
+                                    <Step4Recipients
+                                        campaign={campaign}
+                                        onCampaignChange={setCampaign}
+                                        onBack={() => goToStep(2)}
+                                        onNext={() => void handleStep4Next()}
+                                        previewing={previewing}
+                                        previewError={previewError}
+                                        onRetryPreview={() => void retryPreview()}
+                                    />
+                                )}
+                                {currentStep === 4 && (
+                                    <Step5Review
+                                        campaign={campaign}
+                                        onCampaignChange={setCampaign}
+                                        onBack={() => goToStep(3)}
+                                    />
+                                )}
+                            </div>
                         </div>
 
                         {/* Sticky summary */}

@@ -75,10 +75,10 @@ export function Step1Audience({ campaign, onNext }: Props) {
                     return (
                         <div
                             key={card.type}
-                            className={`rounded-lg border p-4 ${
+                            className={`rounded-lg border p-4 transition-colors duration-300 motion-reduce:transition-none ${
                                 active
                                     ? "border-primary bg-primary/5"
-                                    : "border-border bg-card opacity-50"
+                                    : "border-border bg-muted/20"
                             }`}
                         >
                             <p className="font-medium text-sm">{card.label}</p>

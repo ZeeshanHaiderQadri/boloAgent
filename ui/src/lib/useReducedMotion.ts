@@ -1,0 +1,22 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+const QUERY = "(prefers-reduced-motion: reduce)";
+
+/** Tracks the OS reduced-motion setting for JS-driven effects. */
+export function usePrefersReducedMotion(): boolean {
+    const [reduced, setReduced] = useState(false);
+
+    useEffect(() => {
+        // jsdom and some embedded webviews do not implement matchMedia.
+        if (typeof window.matchMedia !== "function") return;
+        const media = window.matchMedia(QUERY);
+        setReduced(media.matches);
+        const onChange = (event: MediaQueryListEvent) => setReduced(event.matches);
+        media.addEventListener("change", onChange);
+        return () => media.removeEventListener("change", onChange);
+    }, []);
+
+    return reduced;
+}

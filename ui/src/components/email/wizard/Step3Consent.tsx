@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,9 @@ interface Props {
     onBack: () => void;
     onNext: () => void;
     fieldErrors: Record<string, string>;
+    /** True while the real audience-preview request is in flight. */
+    previewing?: boolean;
+    previewError?: string | null;
 }
 
 export function Step3Consent({
@@ -25,6 +28,8 @@ export function Step3Consent({
     onBack,
     onNext,
     fieldErrors,
+    previewing = false,
+    previewError,
 }: Props) {
     return (
         <div className="space-y-5">
@@ -41,7 +46,7 @@ export function Step3Consent({
                 <button
                     type="button"
                     onClick={() => onConsentChange("opted_in_only")}
-                    className={`rounded-lg border p-4 text-left transition-colors ${
+                    className={`focus-ring rounded-lg border p-4 text-left transition-colors ${
                         consentPolicy === "opted_in_only"
                             ? "border-primary bg-primary/5"
                             : "border-border hover:border-muted-foreground"
@@ -56,7 +61,7 @@ export function Step3Consent({
                 <button
                     type="button"
                     onClick={() => onConsentChange("include_unknown")}
-                    className={`rounded-lg border p-4 text-left transition-colors ${
+                    className={`focus-ring rounded-lg border p-4 text-left transition-colors ${
                         consentPolicy === "include_unknown"
                             ? "border-amber-500 bg-amber-500/5"
                             : "border-border hover:border-muted-foreground"
@@ -107,12 +112,43 @@ export function Step3Consent({
                 </div>
             )}
 
+            {previewing && (
+                <div
+                    role="status"
+                    className="space-y-1.5 rounded-lg border bg-muted/20 p-3 text-sm"
+                >
+                    {["Resolving audience", "Checking suppression and consent"].map((label) => (
+                        <p key={label} className="flex items-center gap-2 text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                            {label}
+                        </p>
+                    ))}
+                    <p className="text-xs text-muted-foreground">
+                        Counts appear on the next step as soon as the preview responds.
+                    </p>
+                </div>
+            )}
+
+            {previewError && !previewing && (
+                <div
+                    role="alert"
+                    className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+                >
+                    <p className="font-medium">Could not resolve the audience</p>
+                    <p className="mt-0.5">{previewError}</p>
+                    <p className="mt-1 text-xs">
+                        Your consent choice is saved. Press Next to retry the preview.
+                    </p>
+                </div>
+            )}
+
             <div className="flex gap-3">
-                <Button variant="outline" size="sm" onClick={onBack}>
+                <Button variant="outline" size="sm" onClick={onBack} disabled={previewing}>
                     Back
                 </Button>
-                <Button size="sm" onClick={onNext}>
-                    Next
+                <Button size="sm" onClick={onNext} disabled={previewing}>
+                    {previewing && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                    {previewing ? "Resolving…" : "Next"}
                 </Button>
             </div>
         </div>

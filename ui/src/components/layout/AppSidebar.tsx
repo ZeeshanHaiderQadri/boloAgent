@@ -262,7 +262,7 @@ export function AppSidebar() {
         asChild
         tooltip={tooltip}
         className={cn(
-          "rounded-xl transition-colors hover:bg-accent hover:text-accent-foreground",
+          "sidebar-neon rounded-xl transition-colors hover:bg-accent hover:text-accent-foreground",
           isItemActive &&
             "bg-cta/15 font-semibold text-foreground hover:bg-cta/20 hover:text-foreground"
         )}
@@ -323,7 +323,7 @@ export function AppSidebar() {
             <SidebarMenuButton
               tooltip={{ children: item.title }}
               className={cn(
-                "rounded-xl transition-colors hover:bg-accent hover:text-accent-foreground",
+                "sidebar-neon rounded-xl transition-colors hover:bg-accent hover:text-accent-foreground",
                 parentActive &&
                   "bg-cta/15 font-semibold text-foreground hover:bg-cta/20 hover:text-foreground"
               )}
@@ -348,6 +348,7 @@ export function AppSidebar() {
                   <SidebarMenuSubButton
                     asChild
                     isActive={isSubItemActive(child.url)}
+                    className="sidebar-neon"
                   >
                     <Link
                       href={child.url}

@@ -21,6 +21,7 @@ import type {
     CampaignRecipientsResponse,
     EmailCampaignResponse,
 } from "@/client/types.gen";
+import { AudiencePreviewPanel } from "@/components/email/wizard/AudiencePreviewPanel";
 import {
     AlertDialog,
     AlertDialogCancel,
@@ -33,6 +34,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 import { emailConsentClass, emailConsentLabel } from "@/lib/emailConsent";
@@ -53,6 +55,9 @@ interface Props {
     onCampaignChange: (c: EmailCampaignResponse) => void;
     onBack: () => void;
     onNext: () => void;
+    previewing?: boolean;
+    previewError?: string | null;
+    onRetryPreview?: () => void;
 }
 
 function audienceRuleForRequest(
@@ -82,7 +87,15 @@ function audienceRuleForRequest(
     return rule;
 }
 
-export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: Props) {
+export function Step4Recipients({
+    campaign,
+    onCampaignChange,
+    onBack,
+    onNext,
+    previewing = false,
+    previewError,
+    onRetryPreview,
+}: Props) {
     const { getAccessToken } = useAuth();
     const [bucket, setBucket] = useState("all");
     const [page, setPage] = useState(1);
@@ -329,6 +342,13 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                 </p>
             </div>
 
+            <AudiencePreviewPanel
+                campaign={campaign}
+                previewing={previewing}
+                error={previewError}
+                onRetry={onRetryPreview}
+            />
+
             {/* Manual addresses: lets the operator send a test copy to their own
                 inbox without creating a lead record. */}
             <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
@@ -382,7 +402,7 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                                     onClick={() => void removeManualEmail(address)}
                                     disabled={manualBusy}
                                     aria-label={`Remove ${address}`}
-                                    className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
+                                    className="focus-ring rounded-full p-0.5 text-muted-foreground hover:text-destructive"
                                 >
                                     <X className="h-3 w-3" />
                                 </button>
@@ -404,7 +424,7 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
                             key={opt.value}
                             type="button"
                             onClick={() => handleBucketChange(opt.value)}
-                            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                            className={`focus-ring inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                                 isActive
                                     ? "border-primary bg-primary/10 text-primary"
                                     : "border-border text-muted-foreground hover:border-muted-foreground"
@@ -477,8 +497,14 @@ export function Step4Recipients({ campaign, onCampaignChange, onBack, onNext }: 
             )}
 
             {loading && (
-                <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <div
+                    className="space-y-2"
+                    role="status"
+                    aria-label="Loading recipients"
+                >
+                    {[1, 2, 3, 4, 5].map((item) => (
+                        <Skeleton key={item} className="h-10 w-full rounded-md" />
+                    ))}
                 </div>
             )}
 

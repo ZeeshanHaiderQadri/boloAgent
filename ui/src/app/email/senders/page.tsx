@@ -50,7 +50,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ListRowSkeleton } from "@/components/ui/skeleton";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 
@@ -216,7 +216,7 @@ export default function EmailSendersPage() {
                     {authLoading || !user || loading ? (
                         <div className="space-y-4" role="status" aria-label="Loading senders">
                             {[1, 2, 3].map((item) => (
-                                <Skeleton key={item} className="h-28 w-full rounded-lg" />
+                                <ListRowSkeleton key={item} />
                             ))}
                         </div>
                     ) : error ? (
@@ -235,19 +235,29 @@ export default function EmailSendersPage() {
                             </Button>
                         </div>
                     ) : filtered.length === 0 ? (
-                        <div className="py-12 text-center">
-                            <Mail className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-                            <p className="mb-4 text-muted-foreground">
+                        <div className="list-enter rounded-xl border border-dashed py-14 text-center">
+                            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                                <Mail className="h-6 w-6 text-primary" aria-hidden />
+                            </div>
+                            <h3 className="text-base font-semibold text-foreground">
+                                {query ? "No senders match your search" : "No email senders yet"}
+                            </h3>
+                            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
                                 {query
-                                    ? "No senders match your search"
-                                    : "No email senders yet"}
+                                    ? "Try a different name, address, or provider."
+                                    : "Add an SMTP or Amazon SES sender to deliver campaigns from your own domain."}
                             </p>
                             {query ? (
-                                <Button variant="outline" onClick={() => setSearch("")}>
+                                <Button
+                                    variant="outline"
+                                    className="mt-5"
+                                    onClick={() => setSearch("")}
+                                >
                                     Clear search
                                 </Button>
                             ) : (
                                 <Button
+                                    className="mt-5"
                                     onClick={() => {
                                         setEditTarget(null);
                                         setDialogOpen(true);
@@ -259,8 +269,12 @@ export default function EmailSendersPage() {
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {filtered.map((sender) => (
-                                <div key={sender.uuid} className={LIST_ROW_CLASS}>
+                            {filtered.map((sender, index) => (
+                                <div
+                                    key={sender.uuid}
+                                    style={{ animationDelay: `${Math.min(index, 6) * 60}ms` }}
+                                    className={`list-enter ${LIST_ROW_CLASS}`}
+                                >
                                     <div className="min-w-0 space-y-2">
                                         <div className="flex flex-wrap items-center gap-2">
                                             <h3 className="break-words font-medium">

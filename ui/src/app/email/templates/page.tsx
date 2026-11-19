@@ -38,7 +38,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ListRowSkeleton } from "@/components/ui/skeleton";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 
@@ -221,7 +221,7 @@ export default function EmailTemplatesPage() {
                     {authLoading || !user || loading ? (
                         <div className="space-y-4" role="status" aria-label="Loading templates">
                             {[1, 2, 3].map((item) => (
-                                <Skeleton key={item} className="h-24 w-full rounded-lg" />
+                                <ListRowSkeleton key={item} />
                             ))}
                         </div>
                     ) : error ? (
@@ -240,25 +240,40 @@ export default function EmailTemplatesPage() {
                             </Button>
                         </div>
                     ) : filtered.length === 0 ? (
-                        <div className="py-12 text-center">
-                            <FileText className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-                            <p className="mb-4 text-muted-foreground">
+                        <div className="list-enter rounded-xl border border-dashed py-14 text-center">
+                            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                                <FileText className="h-6 w-6 text-primary" aria-hidden />
+                            </div>
+                            <h3 className="text-base font-semibold text-foreground">
+                                {query ? "No templates match your search" : "No email templates yet"}
+                            </h3>
+                            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
                                 {query
-                                    ? "No templates match your search"
-                                    : "No email templates yet"}
+                                    ? "Try a different subject or template name."
+                                    : "Create a reusable email body with a subject and an unsubscribe link."}
                             </p>
                             {query ? (
-                                <Button variant="outline" onClick={() => setSearch("")}>
+                                <Button
+                                    variant="outline"
+                                    className="mt-5"
+                                    onClick={() => setSearch("")}
+                                >
                                     Clear search
                                 </Button>
                             ) : (
-                                <Button onClick={openCreate}>Create your first template</Button>
+                                <Button className="mt-5" onClick={openCreate}>
+                                    Create your first template
+                                </Button>
                             )}
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {filtered.map((template) => (
-                                <div key={template.uuid} className={LIST_ROW_CLASS}>
+                            {filtered.map((template, index) => (
+                                <div
+                                    key={template.uuid}
+                                    style={{ animationDelay: `${Math.min(index, 6) * 60}ms` }}
+                                    className={`list-enter ${LIST_ROW_CLASS}`}
+                                >
                                     <div className="min-w-0 space-y-2">
                                         <div className="flex flex-wrap items-center gap-2">
                                             <h3 className="break-words font-medium">
