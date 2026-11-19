@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from api.db.models import (
+    EmailCampaignModel,
     EmailMessageModel,
     EmailSenderModel,
     ExternalCredentialModel,
@@ -279,6 +280,98 @@ async def test_sender_with_message_history_cannot_be_deleted(
 
 
 @pytest.mark.asyncio
+async def test_sender_used_by_an_active_campaign_cannot_be_deleted(
+    db_session, test_client_factory
+):
+    user, org = await _make_user_and_org(db_session, "sender_campaign_active")
+    async with test_client_factory(user) as client:
+        created = await _create_sender(client)
+        sender_uuid = created.json()["uuid"]
+        sender = await db_session.get_email_sender(org.id, sender_uuid)
+        async with db_session.async_session() as session:
+            session.add(
+                EmailCampaignModel(
+                    organization_id=org.id,
+                    name="Active campaign",
+                    sender_id=sender.id,
+                    status="draft",
+                )
+            )
+            await session.flush()
+
+        response = await client.delete(f"/api/v1/email/senders/{sender_uuid}")
+        still_there = await client.get(f"/api/v1/email/senders/{sender_uuid}")
+
+        async with db_session.async_session() as session:
+            campaign = (
+                await session.execute(
+                    select(EmailCampaignModel).where(
+                        EmailCampaignModel.organization_id == org.id
+                    )
+                )
+            ).scalar_one()
+
+    assert response.status_code == 409
+    assert "campaign" in response.json()["detail"]
+    assert still_there.status_code == 200
+    assert campaign.sender_id == sender.id
+
+
+@pytest.mark.asyncio
+async def test_finished_campaigns_are_detached_before_the_sender_is_deleted(
+    db_session, test_client_factory
+):
+    user, org = await _make_user_and_org(db_session, "sender_campaign_detach")
+    async with test_client_factory(user) as client:
+        created = await _create_sender(client)
+        sender_uuid = created.json()["uuid"]
+        sender = await db_session.get_email_sender(org.id, sender_uuid)
+        async with db_session.async_session() as session:
+            session.add_all(
+                [
+                    EmailCampaignModel(
+                        organization_id=org.id,
+                        name="Completed campaign",
+                        sender_id=sender.id,
+                        status="completed",
+                        sender_from_name="Bolo Support",
+                        sender_from_email="support@example.com",
+                    ),
+                    EmailCampaignModel(
+                        organization_id=org.id,
+                        name="Cancelled campaign",
+                        sender_id=sender.id,
+                        status="cancelled",
+                    ),
+                ]
+            )
+            await session.flush()
+
+        deleted = await client.delete(f"/api/v1/email/senders/{sender_uuid}")
+        missing = await client.get(f"/api/v1/email/senders/{sender_uuid}")
+
+        async with db_session.async_session() as session:
+            campaigns = (
+                (
+                    await session.execute(
+                        select(EmailCampaignModel)
+                        .where(EmailCampaignModel.organization_id == org.id)
+                        .order_by(EmailCampaignModel.name)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+    assert deleted.status_code == 200, deleted.text
+    assert missing.status_code == 404
+    assert [campaign.sender_id for campaign in campaigns] == [None, None]
+    # The identity snapshot survives the detach.
+    assert campaigns[1].sender_from_name == "Bolo Support"
+    assert campaigns[1].sender_from_email == "support@example.com"
+
+
+@pytest.mark.asyncio
 async def test_verify_marks_the_sender_verified(
     monkeypatch, db_session, test_client_factory
 ):
@@ -344,3 +437,46 @@ async def test_test_send_returns_the_provider_message_id(
     assert response.json()["provider_message_id"] == "smtp-message-1"
     assert sent["to"] == "reviewer@example.net"
     assert invalid.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_race_created_campaign_returns_409_not_500(
+    db_session, test_client_factory, monkeypatch
+):
+    """If a campaign is inserted between the active-count check and the
+    commit, the IntegrityError must be caught and surfaced as 409."""
+    user, org = await _make_user_and_org(db_session, "sender_race_delete")
+    async with test_client_factory(user) as client:
+        created = await _create_sender(client)
+        sender_uuid = created.json()["uuid"]
+        sender = await db_session.get_email_sender(org.id, sender_uuid)
+
+        original_delete = db_session.__class__.delete_email_sender
+
+        async def _race_delete(self, organization_id, sender_uuid_arg):
+            # Insert a draft campaign referencing this sender just before
+            # the real call, so the FK prevents the commit.
+            async with db_session.async_session() as session:
+                from api.db.models import EmailCampaignModel
+
+                session.add(
+                    EmailCampaignModel(
+                        organization_id=org.id,
+                        name="Race campaign",
+                        sender_id=sender.id,
+                        status="draft",
+                    )
+                )
+                await session.commit()
+            # Restore and delegate so the real delete attempt fires.
+            monkeypatch.setattr(
+                db_session.__class__, "delete_email_sender", original_delete
+            )
+            return await original_delete(self, organization_id, sender_uuid_arg)
+
+        monkeypatch.setattr(db_session.__class__, "delete_email_sender", _race_delete)
+
+        response = await client.delete(f"/api/v1/email/senders/{sender_uuid}")
+
+    assert response.status_code == 409
+    assert "campaign" in response.json()["detail"]

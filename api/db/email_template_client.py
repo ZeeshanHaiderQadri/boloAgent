@@ -52,6 +52,19 @@ class EmailTemplateClient(BaseDBClient):
             )
             return result.scalar_one_or_none()
 
+    async def get_email_template_by_id(
+        self, organization_id: int, template_id: int
+    ) -> Optional[EmailTemplateModel]:
+        """Load a template by primary key for campaign response rendering."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(EmailTemplateModel).where(
+                    EmailTemplateModel.organization_id == organization_id,
+                    EmailTemplateModel.id == template_id,
+                )
+            )
+            return result.scalar_one_or_none()
+
     async def create_email_template(
         self,
         *,

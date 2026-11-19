@@ -10,6 +10,7 @@ from api.routes.auth import router as auth_router
 from api.routes.campaign import router as campaign_router
 from api.routes.credentials import router as credentials_router
 from api.routes.email import router as email_router
+from api.routes.email_campaigns import router as email_campaigns_router
 from api.routes.folder import router as folder_router
 from api.routes.knowledge_base import router as knowledge_base_router
 from api.routes.lead_projects import router as lead_projects_router
@@ -55,6 +56,7 @@ router.include_router(leads_router)
 router.include_router(lead_projects_router)
 router.include_router(credentials_router)
 router.include_router(email_router)
+router.include_router(email_campaigns_router)
 router.include_router(tool_router)
 router.include_router(organization_router)
 router.include_router(model_connections_router)

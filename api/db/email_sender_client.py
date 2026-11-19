@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from api.db.base_client import BaseDBClient
 from api.db.models import (
+    EmailCampaignModel,
     EmailMessageModel,
     EmailSenderModel,
     ExternalCredentialModel,
@@ -23,6 +24,7 @@ from api.services.credentials.cipher import (
     decrypt_credential_data,
     encrypt_credential_data,
 )
+from api.services.email.campaign_state import SENDER_IN_USE_CAMPAIGN_STATUSES
 
 # Distinguishes "leave this field alone" from "set it to NULL" in updates.
 UNSET: Any = object()
@@ -46,6 +48,18 @@ class EmailSenderInUseError(Exception):
         )
 
 
+class EmailSenderCampaignInUseError(Exception):
+    """A draft, ready, launching or sending campaign still uses the sender."""
+
+    def __init__(self, campaign_count: int):
+        self.campaign_count = campaign_count
+        super().__init__(
+            f"This sender is used by {campaign_count} campaign(s) that are "
+            "still draft, ready, launching or sending. Cancel or finish them "
+            "before deleting the sender."
+        )
+
+
 class EmailSenderClient(BaseDBClient):
     """Organization-scoped email sender operations."""
 
@@ -66,6 +80,19 @@ class EmailSenderClient(BaseDBClient):
                 select(EmailSenderModel).where(
                     EmailSenderModel.organization_id == organization_id,
                     EmailSenderModel.sender_uuid == sender_uuid,
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def get_email_sender_by_id(
+        self, organization_id: int, sender_id: int
+    ) -> Optional[EmailSenderModel]:
+        """Load a sender by primary key for campaign response rendering."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(EmailSenderModel).where(
+                    EmailSenderModel.organization_id == organization_id,
+                    EmailSenderModel.id == sender_id,
                 )
             )
             return result.scalar_one_or_none()
@@ -283,12 +310,19 @@ class EmailSenderClient(BaseDBClient):
             return await self._reload_sender(session, organization_id, sender_uuid)
 
     async def delete_email_sender(self, organization_id: int, sender_uuid: str) -> bool:
-        """Delete a sender that has no message history.
+        """Delete a sender that no active campaign and no message history uses.
 
         Messages keep a RESTRICT foreign key to their sender so delivery
         history can never lose its origin. A sender with history is therefore
         rejected here with :class:`EmailSenderInUseError`; the UI should offer
         "disable" instead.
+
+        A sender referenced by a ``draft``, ``ready``, ``launching`` or
+        ``sending`` campaign is rejected with :class:`EmailSenderCampaignInUseError`.
+        Otherwise the finished campaigns are detached (``sender_id`` becomes
+        NULL) and the sender is deleted in the same transaction, so the
+        campaign keeps its identity snapshot columns and no other code path can
+        leave a dangling reference behind.
         """
         async with self.async_session() as session:
             sender = await self._get_sender_in_session(
@@ -307,6 +341,31 @@ class EmailSenderClient(BaseDBClient):
             if message_count:
                 raise EmailSenderInUseError(int(message_count))
 
+            active_campaign_count = (
+                await session.execute(
+                    select(func.count(EmailCampaignModel.id)).where(
+                        EmailCampaignModel.organization_id == organization_id,
+                        EmailCampaignModel.sender_id == sender.id,
+                        EmailCampaignModel.status.in_(
+                            list(SENDER_IN_USE_CAMPAIGN_STATUSES)
+                        ),
+                    )
+                )
+            ).scalar_one()
+            if active_campaign_count:
+                raise EmailSenderCampaignInUseError(int(active_campaign_count))
+
+            # Detach finished campaigns first; NO ACTION would otherwise refuse
+            # the delete. Snapshot columns keep the identity the campaign used.
+            await session.execute(
+                update(EmailCampaignModel)
+                .where(
+                    EmailCampaignModel.organization_id == organization_id,
+                    EmailCampaignModel.sender_id == sender.id,
+                )
+                .values(sender_id=None)
+            )
+
             credential = await session.get(
                 ExternalCredentialModel, sender.credential_id
             )
@@ -314,7 +373,13 @@ class EmailSenderClient(BaseDBClient):
             if credential is not None and credential.organization_id == organization_id:
                 credential.is_active = False
                 credential.updated_at = datetime.now(UTC)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                # A campaign was created between the active-count check and the
+                # delete; surface the same clear 409 as the explicit check.
+                raise EmailSenderCampaignInUseError(0) from exc
 
             logger.info(
                 f"Deleted email sender {sender_uuid} for organization {organization_id}"

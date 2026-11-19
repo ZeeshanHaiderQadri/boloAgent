@@ -198,6 +198,30 @@ export type AppendTextChatMessageRequest = {
 };
 
 /**
+ * AudienceRuleRequest
+ */
+export type AudienceRuleRequest = {
+    audience_type: EmailCampaignAudienceType;
+    /**
+     * Lead Ids
+     */
+    lead_ids?: Array<number>;
+    /**
+     * Project Id
+     */
+    project_id?: number | null;
+    /**
+     * Tag
+     */
+    tag?: string | null;
+    filters?: CampaignFilters | null;
+    /**
+     * All Matching
+     */
+    all_matching?: boolean;
+};
+
+/**
  * AuthResponse
  */
 export type AuthResponse = {
@@ -810,6 +834,44 @@ export type CallEventsSettings = {
 export type CallType = 'inbound' | 'outbound';
 
 /**
+ * CampaignCountsResponse
+ */
+export type CampaignCountsResponse = {
+    /**
+     * Recipient Count
+     */
+    recipient_count: number;
+    /**
+     * Eligible Count
+     */
+    eligible_count: number;
+    /**
+     * Excluded No Email Count
+     */
+    excluded_no_email_count: number;
+    /**
+     * Excluded Invalid Email Count
+     */
+    excluded_invalid_email_count: number;
+    /**
+     * Excluded Suppressed Count
+     */
+    excluded_suppressed_count: number;
+    /**
+     * Excluded Opted Out Count
+     */
+    excluded_opted_out_count: number;
+    /**
+     * Excluded Unknown Count
+     */
+    excluded_unknown_count: number;
+    /**
+     * Duplicates Collapsed Count
+     */
+    duplicates_collapsed_count: number;
+};
+
+/**
  * CampaignDefaultsResponse
  */
 export type CampaignDefaultsResponse = {
@@ -823,6 +885,62 @@ export type CampaignDefaultsResponse = {
     from_numbers_count: number;
     default_retry_config: RetryConfigResponse;
     last_campaign_settings?: LastCampaignSettingsResponse | null;
+};
+
+/**
+ * CampaignFilters
+ *
+ * The leads-list filter, strict so a typo is rejected instead of ignored.
+ */
+export type CampaignFilters = {
+    /**
+     * Search Id
+     */
+    search_id?: number | null;
+    /**
+     * Status
+     */
+    status?: 'new' | 'contacted' | 'interested' | 'not_interested' | 'won' | 'lost' | 'do_not_call' | null;
+    /**
+     * Q
+     */
+    q?: string | null;
+    /**
+     * Has Phone
+     */
+    has_phone?: boolean | null;
+    /**
+     * Has Website
+     */
+    has_website?: boolean | null;
+    /**
+     * Has Email
+     */
+    has_email?: boolean | null;
+    /**
+     * Country
+     */
+    country?: string | null;
+    /**
+     * State
+     */
+    state?: string | null;
+    /**
+     * City
+     */
+    city?: string | null;
+    /**
+     * Category
+     */
+    category?: string | null;
+    /**
+     * Tag
+     */
+    tag?: string | null;
+    /**
+     * Email Consent
+     */
+    email_consent?: 'unknown' | 'opted_in' | 'opted_out' | null;
 };
 
 /**
@@ -856,6 +974,43 @@ export type CampaignLogEntryResponse = {
     details?: {
         [key: string]: unknown;
     } | null;
+};
+
+/**
+ * CampaignPreviewRequest
+ */
+export type CampaignPreviewRequest = {
+    consent_policy?: EmailCampaignConsentPolicy;
+    /**
+     * Consent Override Reason
+     */
+    consent_override_reason?: string | null;
+    audience: AudienceRuleRequest;
+    /**
+     * Campaign Uuid
+     *
+     * Deprecated: rejected with 422. Use PATCH to update counts.
+     */
+    campaign_uuid?: string | null;
+};
+
+/**
+ * CampaignPreviewResponse
+ */
+export type CampaignPreviewResponse = {
+    counts: CampaignCountsResponse;
+    /**
+     * Masked Sample
+     */
+    masked_sample: Array<string>;
+    /**
+     * Unknown Lead Count
+     */
+    unknown_lead_count: number;
+    /**
+     * Warnings
+     */
+    warnings: Array<string>;
 };
 
 /**
@@ -1417,6 +1572,30 @@ export type CreateCredentialRequest = {
     credential_data: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * CreateEmailCampaignRequest
+ */
+export type CreateEmailCampaignRequest = {
+    consent_policy?: EmailCampaignConsentPolicy;
+    /**
+     * Consent Override Reason
+     */
+    consent_override_reason?: string | null;
+    /**
+     * Name
+     */
+    name: string;
+    audience: AudienceRuleRequest;
+    /**
+     * Sender Uuid
+     */
+    sender_uuid?: string | null;
+    /**
+     * Template Uuid
+     */
+    template_uuid?: string | null;
 };
 
 /**
@@ -2257,6 +2436,87 @@ export type DuplicateTemplateRequest = {
      * Workflow Name
      */
     workflow_name: string;
+};
+
+/**
+ * EmailCampaignAudienceType
+ *
+ * How a campaign's audience rule refers to leads.
+ */
+export type EmailCampaignAudienceType = 'leads' | 'project' | 'tag' | 'filter';
+
+/**
+ * EmailCampaignConsentPolicy
+ *
+ * Which consent states an audience may include.
+ */
+export type EmailCampaignConsentPolicy = 'opted_in_only' | 'include_unknown';
+
+/**
+ * EmailCampaignResponse
+ */
+export type EmailCampaignResponse = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Audience Type
+     */
+    audience_type: string;
+    /**
+     * Audience
+     */
+    audience: {
+        [key: string]: unknown;
+    };
+    /**
+     * Consent Policy
+     */
+    consent_policy: string;
+    /**
+     * Consent Override Reason
+     */
+    consent_override_reason: string | null;
+    /**
+     * Consent Override At
+     */
+    consent_override_at: string | null;
+    /**
+     * Scheduled At
+     */
+    scheduled_at: string | null;
+    /**
+     * Launched At
+     */
+    launched_at: string | null;
+    /**
+     * Cancelled At
+     */
+    cancelled_at: string | null;
+    /**
+     * Failure Reason
+     */
+    failure_reason: string | null;
+    counts: CampaignCountsResponse;
+    sender: SenderSummaryResponse | null;
+    template: TemplateSummaryResponse | null;
+    /**
+     * Created At
+     */
+    created_at: string | null;
+    /**
+     * Updated At
+     */
+    updated_at: string | null;
 };
 
 /**
@@ -3279,6 +3539,28 @@ export type LastCampaignSettingsResponse = {
     rate_limit_per_second?: number;
     schedule_config?: ScheduleConfigResponse | null;
     circuit_breaker?: CircuitBreakerConfigResponse | null;
+};
+
+/**
+ * LaunchResponse
+ */
+export type LaunchResponse = {
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Ready
+     */
+    ready: boolean;
+    /**
+     * Preconditions
+     */
+    preconditions: Array<string>;
+    /**
+     * Message
+     */
+    message: string;
 };
 
 /**
@@ -6357,6 +6639,52 @@ export type SenderLimitsResponse = {
 };
 
 /**
+ * SenderSummaryResponse
+ */
+export type SenderSummaryResponse = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * From Name
+     */
+    from_name: string;
+    /**
+     * From Email
+     */
+    from_email: string;
+    /**
+     * Reply To Email
+     */
+    reply_to_email: string | null;
+    /**
+     * Daily Cap
+     */
+    daily_cap: number;
+    /**
+     * Rate Per Second
+     */
+    rate_per_second: number;
+    /**
+     * Estimated Days
+     */
+    estimated_days: number | null;
+    /**
+     * Guidance
+     */
+    guidance: string;
+};
+
+/**
  * ServiceKeyResponse
  */
 export type ServiceKeyResponse = {
@@ -7040,6 +7368,32 @@ export type TelnyxConfigurationRequest = {
      * Webhook public key from Mission Control Portal → Keys & Credentials → Public Key. Used to verify Telnyx webhook signatures.
      */
     webhook_public_key?: string | null;
+};
+
+/**
+ * TemplateSummaryResponse
+ */
+export type TemplateSummaryResponse = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Has Unsubscribe Placeholder
+     */
+    has_unsubscribe_placeholder: boolean;
+    /**
+     * Unsubscribe Warning
+     */
+    unsubscribe_warning: string | null;
 };
 
 /**
@@ -7996,6 +8350,30 @@ export type UpdateCredentialRequest = {
     credential_data?: {
         [key: string]: unknown;
     } | null;
+};
+
+/**
+ * UpdateEmailCampaignRequest
+ */
+export type UpdateEmailCampaignRequest = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    audience?: AudienceRuleRequest | null;
+    consent_policy?: EmailCampaignConsentPolicy | null;
+    /**
+     * Consent Override Reason
+     */
+    consent_override_reason?: string | null;
+    /**
+     * Sender Uuid
+     */
+    sender_uuid?: string | null;
+    /**
+     * Template Uuid
+     */
+    template_uuid?: string | null;
 };
 
 /**
@@ -15822,6 +16200,305 @@ export type TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostResp
 };
 
 export type TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostResponse = TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostResponses[keyof TestSendEmailTemplateApiV1EmailTemplatesTemplateUuidTestSendPostResponses];
+
+export type PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostData = {
+    body: CampaignPreviewRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/campaigns/preview';
+};
+
+export type PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostError = PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostErrors[keyof PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostErrors];
+
+export type PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CampaignPreviewResponse;
+};
+
+export type PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostResponse = PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostResponses[keyof PreviewCampaignAudienceApiV1EmailCampaignsPreviewPostResponses];
+
+export type ListEmailCampaignsApiV1EmailCampaignsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/campaigns';
+};
+
+export type ListEmailCampaignsApiV1EmailCampaignsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEmailCampaignsApiV1EmailCampaignsGetError = ListEmailCampaignsApiV1EmailCampaignsGetErrors[keyof ListEmailCampaignsApiV1EmailCampaignsGetErrors];
+
+export type ListEmailCampaignsApiV1EmailCampaignsGetResponses = {
+    /**
+     * Response List Email Campaigns Api V1 Email Campaigns Get
+     *
+     * Successful Response
+     */
+    200: Array<EmailCampaignResponse>;
+};
+
+export type ListEmailCampaignsApiV1EmailCampaignsGetResponse = ListEmailCampaignsApiV1EmailCampaignsGetResponses[keyof ListEmailCampaignsApiV1EmailCampaignsGetResponses];
+
+export type CreateEmailCampaignApiV1EmailCampaignsPostData = {
+    body: CreateEmailCampaignRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/email/campaigns';
+};
+
+export type CreateEmailCampaignApiV1EmailCampaignsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateEmailCampaignApiV1EmailCampaignsPostError = CreateEmailCampaignApiV1EmailCampaignsPostErrors[keyof CreateEmailCampaignApiV1EmailCampaignsPostErrors];
+
+export type CreateEmailCampaignApiV1EmailCampaignsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: EmailCampaignResponse;
+};
+
+export type CreateEmailCampaignApiV1EmailCampaignsPostResponse = CreateEmailCampaignApiV1EmailCampaignsPostResponses[keyof CreateEmailCampaignApiV1EmailCampaignsPostResponses];
+
+export type DeleteEmailCampaignApiV1EmailCampaignsCampaignUuidDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/campaigns/{campaign_uuid}';
+};
+
+export type DeleteEmailCampaignApiV1EmailCampaignsCampaignUuidDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteEmailCampaignApiV1EmailCampaignsCampaignUuidDeleteError = DeleteEmailCampaignApiV1EmailCampaignsCampaignUuidDeleteErrors[keyof DeleteEmailCampaignApiV1EmailCampaignsCampaignUuidDeleteErrors];
+
+export type DeleteEmailCampaignApiV1EmailCampaignsCampaignUuidDeleteResponses = {
+    /**
+     * Response Delete Email Campaign Api V1 Email Campaigns  Campaign Uuid  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DeleteEmailCampaignApiV1EmailCampaignsCampaignUuidDeleteResponse = DeleteEmailCampaignApiV1EmailCampaignsCampaignUuidDeleteResponses[keyof DeleteEmailCampaignApiV1EmailCampaignsCampaignUuidDeleteResponses];
+
+export type GetEmailCampaignApiV1EmailCampaignsCampaignUuidGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/campaigns/{campaign_uuid}';
+};
+
+export type GetEmailCampaignApiV1EmailCampaignsCampaignUuidGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetEmailCampaignApiV1EmailCampaignsCampaignUuidGetError = GetEmailCampaignApiV1EmailCampaignsCampaignUuidGetErrors[keyof GetEmailCampaignApiV1EmailCampaignsCampaignUuidGetErrors];
+
+export type GetEmailCampaignApiV1EmailCampaignsCampaignUuidGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailCampaignResponse;
+};
+
+export type GetEmailCampaignApiV1EmailCampaignsCampaignUuidGetResponse = GetEmailCampaignApiV1EmailCampaignsCampaignUuidGetResponses[keyof GetEmailCampaignApiV1EmailCampaignsCampaignUuidGetResponses];
+
+export type UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchData = {
+    body: UpdateEmailCampaignRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/campaigns/{campaign_uuid}';
+};
+
+export type UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchError = UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchErrors[keyof UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchErrors];
+
+export type UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: EmailCampaignResponse;
+};
+
+export type UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchResponse = UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchResponses[keyof UpdateEmailCampaignApiV1EmailCampaignsCampaignUuidPatchResponses];
+
+export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Campaign Uuid
+         */
+        campaign_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/email/campaigns/{campaign_uuid}/launch';
+};
+
+export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostError = LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostErrors[keyof LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostErrors];
+
+export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LaunchResponse;
+};
+
+export type LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponse = LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponses[keyof LaunchEmailCampaignApiV1EmailCampaignsCampaignUuidLaunchPostResponses];
 
 export type ListToolsApiV1ToolsGetData = {
     body?: never;

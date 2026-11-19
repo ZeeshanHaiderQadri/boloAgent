@@ -21,6 +21,13 @@ EMAIL_CONSENT_WARNING = (
     "breach anti-spam law and damage your sending domain."
 )
 
+# Campaign sending is off by default. The launch endpoint answers 403 while
+# this is false. Turning it on only enables the precondition check in this
+# release: nothing is sent and no recipient rows are queued.
+EMAIL_CAMPAIGN_SENDING_ENABLED = os.getenv(
+    "EMAIL_CAMPAIGN_SENDING_ENABLED", "false"
+).strip().lower() in {"1", "true", "yes"}
+
 # Langfuse Configuration
 LANGFUSE_HOST = os.getenv("LANGFUSE_HOST")
 LANGFUSE_PUBLIC_KEY = os.getenv("LANGFUSE_PUBLIC_KEY")

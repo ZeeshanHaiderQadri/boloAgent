@@ -2,6 +2,8 @@ from api.db.agent_trigger_client import AgentTriggerClient
 from api.db.api_key_client import APIKeyClient
 from api.db.builder_run_client import BuilderRunClient
 from api.db.campaign_client import CampaignClient
+from api.db.email_audience_client import EmailAudienceClient
+from api.db.email_campaign_client import EmailCampaignClient
 from api.db.email_domain_client import EmailDomainClient
 from api.db.email_sender_client import EmailSenderClient
 from api.db.email_template_client import EmailTemplateClient
@@ -52,6 +54,8 @@ class DBClient(
     EmailSenderClient,
     EmailTemplateClient,
     EmailDomainClient,
+    EmailCampaignClient,
+    EmailAudienceClient,
     AgentTriggerClient,
     WebhookCredentialClient,
     WebhookDeliveryClient,

@@ -1,0 +1,135 @@
+---
+title: "Email campaigns"
+description: "Draft a campaign, preview its audience and understand what launch checks"
+---
+
+An email campaign is a saved plan: a sender, a template, an audience rule and a
+consent policy. Creating and previewing a campaign never sends email.
+
+<Warning>
+  Sending is off by default. `EMAIL_CAMPAIGN_SENDING_ENABLED=false` makes the
+  launch endpoint answer `403`, and this release sends nothing and queues no
+  recipient rows even when the flag is on. See
+  [Environment Variables](/developer/environment-variables#email-campaigns).
+</Warning>
+
+## Choosing the audience
+
+A campaign addresses one of four things:
+
+- **Selected leads** — up to 1,000 lead ids. Ids from another organization are
+  rejected; they are reported the same way as ids that do not exist.
+- **A lead project** — every lead in that saved project.
+- **A tag** — every lead carrying that tag.
+- **A filter** — the same filters as the leads list, applied to *all* matching
+  leads. A campaign cannot capture just one page; save a project for that.
+
+## The exclusion order
+
+Every lead the rule matches lands in **exactly one** bucket, checked in this
+order:
+
+1. `no_email` — the lead has no address.
+2. `invalid_email` — the shared validator rejects it (syntax, placeholder
+   domain, image extension, too long, and so on).
+3. `suppressed` — the address is on the organization's suppression list.
+4. `opted_out` — the lead's marketing consent is opted out.
+5. `unknown` — consent is unknown. Excluded by default; admitted only with the
+   include-unknown override.
+6. `eligible` — consent is opted in (or unknown under the override).
+
+A lead that fits several buckets is counted in the first one only. For example,
+an opted-out lead whose address is suppressed counts as `suppressed`.
+
+Consent is bound to the address: the resolver judges the lead's **current**
+address and **current** consent, because consent is evidence about the address
+the person agreed to.
+
+## Duplicates
+
+Once a lead is eligible, its normalized address identifies the recipient.
+When several eligible leads share one address, one of them represents it —
+preferring an opted-in lead over an unknown one, then the newest record. The
+extra leads are reported as `duplicates_collapsed_count` and are not
+recipients.
+
+## Preview
+
+**Preview** resolves the rule and returns every count plus a five-address
+sample. Sample addresses are masked (`o***@example.com`); a preview never
+returns a full address. Previews of a large filter stream leads from the
+database in batches and never load them all into memory.
+
+Previews are rate limited per organization and user. If the rate limiter's
+Redis is unreachable the endpoint answers `503` rather than allowing the work.
+
+## Consent override
+
+The default policy addresses opted-in leads only. Including unknown-consent
+leads requires a written reason. The reason is stored on the campaign with the
+user, the timestamp and the consent warning shown in the UI, so the decision is
+auditable later.
+
+## Sender guidance
+
+The campaign response shows the sender's daily cap and, once the audience is
+previewed, a plain estimate such as "100 per day, this campaign will take 3
+days." The cap is guidance for planning; it is not a promise about provider
+throughput.
+
+## Deleting a campaign or a sender
+
+- A campaign can be deleted only while it is **draft** or **ready**. Anything
+  further along answers `409`; cancel it instead.
+- A sender cannot be deleted while a **draft**, **ready**, **launching** or
+  **sending** campaign uses it (`409`). Once every campaign using it is
+  completed, cancelled or failed, those campaigns are detached (the sender link
+  becomes empty, the identity snapshot stays) and the sender is deleted in one
+  transaction.
+- A sender with message history is never hard-deleted; disable it instead so
+  delivery records keep their origin.
+
+## What launch checks
+
+Launch is one shared check, used by the API and shown by the UI:
+
+- a sender is chosen and verified;
+- a template is chosen, its saved unsubscribe flag is true, **and** the
+  sanitized HTML still contains the `{{unsubscribe_link}}` placeholder;
+- `PUBLIC_BASE_URL` is set to an absolute public `http(s)` origin, not
+  `localhost`;
+- at least one recipient is eligible;
+- if the include-unknown override admits unknown-consent leads, a written
+  reason is stored.
+
+Every failing check is reported at once, in plain language.
+
+## Launch must persist the winning recipient
+
+The launch step must call the resolver again — it must not read the counts
+that were stored by PATCH. For each eligible address, the resolver returns a
+single *winning* lead: the opted-in lead before an unknown one, then the
+newest record. The launch engine must write one `email_messages` row carrying
+that exact lead id.
+
+This matters because the opted-in-over-unknown / newest preference is only
+observable and enforceable once the winning lead id is recorded in the
+outgoing message row. If the engine reads stored counts instead of calling
+the resolver, it cannot know which lead won, and the consent guarantee
+breaks.
+
+## Bounce ordering
+
+A provider bounce or complaint can arrive while a message is still marked
+**sending**. Apply it in order: first record the delivery result
+(`sending → sent`), then apply provider feedback (`sent → bounced` or
+`sent → complained`). Moving `sending` straight to `bounced` is not a valid
+transition and would overwrite the send worker's result.
+
+## Data retention
+
+Delivery records are kept as the audit trail: each `email_messages` row retains
+the rendered subject and bodies, the recipient address and the delivery
+outcome. Deleting a draft campaign does not create or remove delivery history,
+and finished campaigns are not purged automatically. Deleting an organization
+removes its records with it.
