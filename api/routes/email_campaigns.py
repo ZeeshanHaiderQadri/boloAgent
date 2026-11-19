@@ -84,6 +84,9 @@ class AudienceRuleRequest(BaseModel):
     # audience_type=filter: the leads-list filter, applied to every match.
     filters: Optional[CampaignFilters] = None
     all_matching: bool = True
+    # Manual exclusions from the recipients table. Stored inside the audience
+    # JSON; the resolver re-applies them on every call. Capped at 5,000.
+    excluded_lead_ids: list[int] = Field(default_factory=list)
 
 
 class ConsentRequest(BaseModel):
@@ -114,6 +117,8 @@ class CampaignCountsResponse(BaseModel):
     excluded_suppressed_count: int
     excluded_opted_out_count: int
     excluded_unknown_count: int
+    # Derived from len(audience.excluded_lead_ids) — no migration needed.
+    excluded_manual_count: int = 0
     duplicates_collapsed_count: int
 
 
@@ -211,39 +216,52 @@ def _rule_from_request(request: AudienceRuleRequest) -> AudienceRule:
         project_id=request.project_id,
         tag=request.tag,
         filters=filters,
+        excluded_lead_ids=tuple(request.excluded_lead_ids or ()),
     )
 
 
 def _stored_audience(rule: AudienceRule) -> dict[str, Any]:
     if rule.audience_type == EmailCampaignAudienceType.LEADS.value:
-        return {"lead_ids": list(rule.lead_ids)}
-    if rule.audience_type == EmailCampaignAudienceType.PROJECT.value:
-        return {"project_id": rule.project_id}
-    if rule.audience_type == EmailCampaignAudienceType.TAG.value:
-        return {"tag": rule.tag}
-    return {"filters": dict(rule.filters), "all_matching": True}
+        result: dict[str, Any] = {"lead_ids": list(rule.lead_ids)}
+    elif rule.audience_type == EmailCampaignAudienceType.PROJECT.value:
+        result = {"project_id": rule.project_id}
+    elif rule.audience_type == EmailCampaignAudienceType.TAG.value:
+        result = {"tag": rule.tag}
+    else:
+        result = {"filters": dict(rule.filters), "all_matching": True}
+    # Manual exclusions are stored inside the audience JSON so no migration is
+    # needed. The resolver re-applies them on every call.
+    if rule.excluded_lead_ids:
+        result["excluded_lead_ids"] = list(rule.excluded_lead_ids)
+    return result
 
 
 def _rule_from_stored(campaign: EmailCampaignModel) -> AudienceRule:
     """Rebuild the resolver rule from what the campaign row stored."""
     audience = campaign.audience or {}
+    excluded = tuple(audience.get("excluded_lead_ids") or ())
     if campaign.audience_type == EmailCampaignAudienceType.LEADS.value:
         return AudienceRule(
             audience_type=campaign.audience_type,
             lead_ids=tuple(audience.get("lead_ids") or ()),
+            excluded_lead_ids=excluded,
         )
     if campaign.audience_type == EmailCampaignAudienceType.PROJECT.value:
         return AudienceRule(
             audience_type=campaign.audience_type,
             project_id=audience.get("project_id"),
+            excluded_lead_ids=excluded,
         )
     if campaign.audience_type == EmailCampaignAudienceType.TAG.value:
         return AudienceRule(
-            audience_type=campaign.audience_type, tag=audience.get("tag")
+            audience_type=campaign.audience_type,
+            tag=audience.get("tag"),
+            excluded_lead_ids=excluded,
         )
     return AudienceRule(
         audience_type=campaign.audience_type,
         filters=dict(audience.get("filters") or {}),
+        excluded_lead_ids=excluded,
     )
 
 
@@ -276,6 +294,9 @@ def _consent_values(
 
 
 def _counts_response(campaign: EmailCampaignModel) -> CampaignCountsResponse:
+    # excluded_manual_count is derived from the audience JSON, not a column.
+    audience = campaign.audience or {}
+    manual_count = len(audience.get("excluded_lead_ids") or [])
     return CampaignCountsResponse(
         recipient_count=campaign.recipient_count,
         eligible_count=campaign.eligible_count,
@@ -284,6 +305,7 @@ def _counts_response(campaign: EmailCampaignModel) -> CampaignCountsResponse:
         excluded_suppressed_count=campaign.excluded_suppressed_count,
         excluded_opted_out_count=campaign.excluded_opted_out_count,
         excluded_unknown_count=campaign.excluded_unknown_count,
+        excluded_manual_count=manual_count,
         duplicates_collapsed_count=campaign.duplicates_collapsed_count,
     )
 

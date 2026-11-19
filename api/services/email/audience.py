@@ -19,7 +19,11 @@ in this order:
 5. ``unknown`` — consent is ``unknown``. Excluded under the default
    ``opted_in_only`` policy; admitted only with the ``include_unknown``
    override, which requires a written reason.
-6. ``eligible`` — consent is ``opted_in`` (or ``unknown`` under the override).
+6. ``manually_excluded`` — the operator unchecked the lead in the recipients
+   table. The id lives in ``excluded_lead_ids`` inside the audience JSON, so
+   no migration is needed. The resolver re-applies the list on every call.
+7. ``eligible`` — consent is ``opted_in`` (or ``unknown`` under the override)
+   and the lead was not manually excluded.
 
 A lead is judged on its *current* address and current consent, because consent
 is evidence about the address the person agreed to.
@@ -51,7 +55,7 @@ suppression list is loaded once as a set of normalized addresses.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from api.db import db_client
 from api.enums import EmailCampaignAudienceType, EmailCampaignConsentPolicy
@@ -67,8 +71,11 @@ EXCLUSION_ORDER: tuple[str, ...] = (
     "suppressed",
     "opted_out",
     "unknown",
+    "manually_excluded",
     "eligible",
 )
+
+MAX_MANUAL_EXCLUSIONS = 5000
 
 
 class AudienceError(ValueError):
@@ -84,6 +91,7 @@ class AudienceRule:
     project_id: int | None = None
     tag: str | None = None
     filters: Mapping[str, Any] = field(default_factory=dict)
+    excluded_lead_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -97,13 +105,19 @@ class AudienceResolution:
     excluded_suppressed_count: int = 0
     excluded_opted_out_count: int = 0
     excluded_unknown_count: int = 0
+    excluded_manual_count: int = 0
     duplicates_collapsed_count: int = 0
     # Lead-level count of unknown-consent leads, independent of the policy.
     unknown_lead_count: int = 0
     masked_sample: list[str] = field(default_factory=list)
 
     def counters(self) -> dict[str, int]:
-        """Column names on ``email_campaigns`` for the stored counters."""
+        """Column names on ``email_campaigns`` for the stored counters.
+
+        ``excluded_manual_count`` is intentionally absent: it is derived from
+        ``len(excluded_lead_ids)`` in the audience JSON at response time, so
+        no migration is needed to add the manual-exclusion bucket.
+        """
         return {
             "recipient_count": self.recipient_count,
             "eligible_count": self.eligible_count,
@@ -139,15 +153,19 @@ def _validate_rule(rule: AudienceRule) -> None:
                 f"A campaign may address at most {MAX_EXPLICIT_LEAD_IDS} "
                 "explicitly selected leads."
             )
-        return
+    if (
+        rule.excluded_lead_ids
+        and len(set(rule.excluded_lead_ids)) > MAX_MANUAL_EXCLUSIONS
+    ):
+        raise AudienceError(
+            f"At most {MAX_MANUAL_EXCLUSIONS} leads may be manually excluded."
+        )
     if audience_type == EmailCampaignAudienceType.PROJECT.value:
         if rule.project_id is None:
             raise AudienceError("Provide a lead project.")
-        return
     if audience_type == EmailCampaignAudienceType.TAG.value:
         if not (rule.tag or "").strip():
             raise AudienceError("Provide a tag.")
-        return
     if audience_type == EmailCampaignAudienceType.FILTER.value:
         if not rule.filters:
             raise AudienceError("Provide a lead filter.")
@@ -156,8 +174,8 @@ def _validate_rule(rule: AudienceRule) -> None:
                 "A campaign always addresses every lead matching the filter; "
                 "a saved project can capture a page instead."
             )
-        return
-    raise AudienceError(f"Unknown audience type: {audience_type!r}.")
+    if audience_type not in {t.value for t in EmailCampaignAudienceType}:
+        raise AudienceError(f"Unknown audience type: {audience_type!r}.")
 
 
 def validate_audience_rule(rule: AudienceRule) -> None:
@@ -252,6 +270,7 @@ async def resolve_audience(
         raise AudienceError(f"Unknown consent policy: {consent_policy!r}")
 
     include_unknown = consent_policy == EmailCampaignConsentPolicy.INCLUDE_UNKNOWN.value
+    excluded_ids = set(rule.excluded_lead_ids or ())
 
     explicit_ids: list[int] | None = None
     if rule.audience_type == EmailCampaignAudienceType.LEADS.value:
@@ -266,6 +285,7 @@ async def resolve_audience(
     opted_out = 0
     unknown_excluded = 0
     unknown_leads = 0
+    manual_excluded = 0
     eligible_leads = 0
     # normalized address -> (priority, updated_at timestamp, lead id)
     # Lower priority wins; then newest timestamp; then highest id.
@@ -300,6 +320,12 @@ async def resolve_audience(
         else:  # opted_in
             priority = 0
 
+        # Manual exclusion is the last check before eligibility — the operator
+        # explicitly chose to remove this lead after it passed every other gate.
+        if lead_id in excluded_ids:
+            manual_excluded += 1
+            continue
+
         eligible_leads += 1
         stamp = updated_at.timestamp() if updated_at is not None else 0.0
         current = recipients.get(address)
@@ -321,6 +347,7 @@ async def resolve_audience(
         excluded_suppressed_count=suppressed_count,
         excluded_opted_out_count=opted_out,
         excluded_unknown_count=unknown_excluded,
+        excluded_manual_count=manual_excluded,
         duplicates_collapsed_count=eligible_leads - len(recipients),
         unknown_lead_count=unknown_leads,
         masked_sample=sample,
