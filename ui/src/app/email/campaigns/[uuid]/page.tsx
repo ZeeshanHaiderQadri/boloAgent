@@ -40,7 +40,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ListRowSkeleton } from "@/components/ui/skeleton";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 
@@ -323,7 +323,7 @@ export default function EmailCampaignDetailPage() {
             <PageLayout title="Email campaign" description="Loading...">
                 <div className="space-y-4" role="status" aria-label="Loading campaign">
                     {[1, 2, 3].map((item) => (
-                        <Skeleton key={item} className="h-24 w-full rounded-lg" />
+                        <ListRowSkeleton key={item} />
                     ))}
                 </div>
             </PageLayout>

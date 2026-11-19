@@ -34,6 +34,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 import { emailConsentClass, emailConsentLabel } from "@/lib/emailConsent";
@@ -496,8 +497,14 @@ export function Step4Recipients({
             )}
 
             {loading && (
-                <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <div
+                    className="space-y-2"
+                    role="status"
+                    aria-label="Loading recipients"
+                >
+                    {[1, 2, 3, 4, 5].map((item) => (
+                        <Skeleton key={item} className="h-10 w-full rounded-md" />
+                    ))}
                 </div>
             )}
 

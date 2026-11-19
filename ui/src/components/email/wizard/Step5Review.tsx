@@ -145,14 +145,20 @@ export function Step5Review({ campaign, onCampaignChange, onBack }: Props) {
             </div>
 
             {result && (
-                <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-400">
-                    <Rocket className="mt-0.5 h-4 w-4 shrink-0" />
+                <div
+                    role="status"
+                    className="success-enter flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-400"
+                >
+                    <Rocket className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                     <p>{result.message}</p>
                 </div>
             )}
 
             {preconditions.length > 0 && (
-                <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                <div
+                    role="alert"
+                    className="list-enter rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive"
+                >
                     <p className="font-medium">Launch is blocked:</p>
                     <ul className="mt-1 list-disc space-y-1 pl-5">
                         {preconditions.map((failure) => (
