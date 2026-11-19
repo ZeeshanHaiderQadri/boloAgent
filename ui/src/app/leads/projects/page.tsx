@@ -5,6 +5,7 @@ import {
     FolderOpen,
     FolderPlus,
     Loader2,
+    Mail,
     Pencil,
     Phone,
     Search,
@@ -24,6 +25,7 @@ import {
     updateLeadProjectApiV1LeadProjectsProjectIdPatch,
 } from "@/client/sdk.gen";
 import type { LeadProjectResponse } from "@/client/types.gen";
+import { AddToCampaignDialog } from "@/components/email/add-to-campaign-dialog";
 import { PageLayout, PageSection } from "@/components/layout/PageLayout";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,6 +78,7 @@ export default function LeadProjectsPage() {
     const [renameBusy, setRenameBusy] = useState(false);
 
     const [deleteTarget, setDeleteTarget] = useState<LeadProjectResponse | null>(null);
+    const [projectEmailCampaign, setProjectEmailCampaign] = useState<number | null>(null);
 
     useEffect(() => {
         if (!loading && !user) redirectToLogin();
@@ -213,6 +216,7 @@ export default function LeadProjectsPage() {
     );
 
     return (
+        <>
         <PageLayout
             title="Lead projects"
             description="Saved collections of CRM leads, ready to export or send to a campaign. A lead lives in one project at a time; moving it never duplicates data."
@@ -354,6 +358,14 @@ export default function LeadProjectsPage() {
                                                 Open
                                                 <ArrowRight className="h-3.5 w-3.5" />
                                             </Link>
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => setProjectEmailCampaign(project.id)}
+                                        >
+                                            <Mail className="h-3.5 w-3.5" />
+                                            Email campaign
                                         </Button>
                                         <Button
                                             size="icon"
@@ -511,5 +523,13 @@ export default function LeadProjectsPage() {
                 </DialogContent>
             </Dialog>
         </PageLayout>
+
+        <AddToCampaignDialog
+            open={projectEmailCampaign !== null}
+            onOpenChange={(open) => { if (!open) setProjectEmailCampaign(null); }}
+            audienceType="project"
+            projectId={projectEmailCampaign ?? undefined}
+        />
+        </>
     );
 }
