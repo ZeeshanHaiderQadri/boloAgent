@@ -11,7 +11,9 @@ import re
 from typing import Mapping
 from urllib.parse import quote
 
-MAX_TEMPLATE_BODY_CHARS = 4096
+# Click-to-chat text is URL-encoded into the wa.me link; 1,000 characters keeps
+# messages readable and the resulting URL comfortably short.
+MAX_TEMPLATE_BODY_CHARS = 1000
 MAX_TEMPLATE_NAME_CHARS = 255
 
 VARIABLES: dict[str, str] = {

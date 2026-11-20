@@ -33,9 +33,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 import {
     extractTemplateVariables,
     renderTemplatePreview,
+    WHATSAPP_TEMPLATE_BODY_MAX,
     WHATSAPP_VARIABLES,
 } from "@/lib/whatsapp";
 
@@ -47,6 +49,8 @@ const CATEGORIES = [
     { value: "utility", label: "Utility" },
     { value: "authentication", label: "Authentication" },
 ] as const;
+
+const bodyTooLongMessage = `Messages are limited to ${WHATSAPP_TEMPLATE_BODY_MAX.toLocaleString()} characters.`;
 
 export function WhatsAppTemplateDialog({
     open,
@@ -125,6 +129,10 @@ export function WhatsAppTemplateDialog({
 
     const insertVariable = (name: string) => {
         const token = `{{${name}}}`;
+        if (body.length + token.length > WHATSAPP_TEMPLATE_BODY_MAX) {
+            setError(bodyTooLongMessage);
+            return;
+        }
         const element = bodyRef.current;
         if (!element) {
             setBody((current) => `${current}${token}`);
@@ -147,6 +155,10 @@ export function WhatsAppTemplateDialog({
         }
         if (!body.trim()) {
             setError("Message body cannot be empty.");
+            return;
+        }
+        if (body.trim().length > WHATSAPP_TEMPLATE_BODY_MAX) {
+            setError(bodyTooLongMessage);
             return;
         }
         setSaving(true);
@@ -265,25 +277,38 @@ export function WhatsAppTemplateDialog({
                                     value={body}
                                     onChange={(event) => setBody(event.target.value)}
                                     rows={9}
-                                    maxLength={4096}
+                                    maxLength={WHATSAPP_TEMPLATE_BODY_MAX}
                                 />
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="text-xs text-muted-foreground">
-                                        Insert:
+                                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-xs text-muted-foreground">
+                                            Insert:
+                                        </span>
+                                        {WHATSAPP_VARIABLES.map((variable) => (
+                                            <Button
+                                                key={variable.name}
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 gap-1 px-2 text-xs"
+                                                onClick={() => insertVariable(variable.name)}
+                                            >
+                                                <Plus className="h-3 w-3" />
+                                                {variable.label}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                    <span
+                                        className={cn(
+                                            "text-xs tabular-nums",
+                                            body.length > WHATSAPP_TEMPLATE_BODY_MAX
+                                                ? "text-destructive"
+                                                : "text-muted-foreground",
+                                        )}
+                                    >
+                                        {body.length.toLocaleString()} /{" "}
+                                        {WHATSAPP_TEMPLATE_BODY_MAX.toLocaleString()}
                                     </span>
-                                    {WHATSAPP_VARIABLES.map((variable) => (
-                                        <Button
-                                            key={variable.name}
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-7 gap-1 px-2 text-xs"
-                                            onClick={() => insertVariable(variable.name)}
-                                        >
-                                            <Plus className="h-3 w-3" />
-                                            {variable.label}
-                                        </Button>
-                                    ))}
                                 </div>
                                 {unknownVariables.length > 0 && (
                                     <p role="alert" className="text-xs text-destructive">

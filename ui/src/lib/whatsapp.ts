@@ -9,6 +9,9 @@
 
 import { defaultCountries, getActiveFormattingMask, parseCountry } from "react-international-phone";
 
+/** Mirrors MAX_TEMPLATE_BODY_CHARS in api/services/whatsapp/templates.py. */
+export const WHATSAPP_TEMPLATE_BODY_MAX = 1000;
+
 export const WHATSAPP_VARIABLES = [
     { name: "business_name", label: "Business name", sample: "Apex Labs" },
     { name: "category", label: "Category", sample: "Marketing agency" },

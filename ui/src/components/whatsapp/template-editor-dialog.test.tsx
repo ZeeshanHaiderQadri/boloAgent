@@ -112,6 +112,31 @@ describe("WhatsAppTemplateDialog", () => {
         ).toBe("Hello {{city}}");
     });
 
+    it("caps the message at 1,000 characters", () => {
+        render(
+            <WhatsAppTemplateDialog
+                open
+                templateUuid={null}
+                onOpenChange={vi.fn()}
+                onSaved={vi.fn()}
+            />,
+        );
+
+        const message = screen.getByLabelText("Message *") as HTMLTextAreaElement;
+        expect(message.maxLength).toBe(1000);
+
+        fireEvent.change(screen.getByLabelText("Name *"), {
+            target: { value: "Long one" },
+        });
+        fireEvent.change(message, { target: { value: "x".repeat(1001) } });
+        fireEvent.click(screen.getByRole("button", { name: "Create template" }));
+
+        expect(
+            screen.getByText(/Messages are limited to 1,000 characters/),
+        ).toBeTruthy();
+        expect(createWhatsappTemplateApiV1WhatsappTemplatesPost).not.toHaveBeenCalled();
+    });
+
     it("flags placeholders the backend will reject", () => {
         render(
             <WhatsAppTemplateDialog

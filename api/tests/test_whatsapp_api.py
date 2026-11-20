@@ -131,6 +131,13 @@ async def test_template_name_conflict_and_validation(db_session, test_client_fac
         long_name = await _create_template(client, name="x" * 256)
         assert long_name.status_code == 422
 
+        too_long = await _create_template(client, name="Long body", body="x" * 1001)
+        assert too_long.status_code == 422
+        assert "1000" in too_long.json()["detail"]
+
+        at_limit = await _create_template(client, name="At limit", body="x" * 1000)
+        assert at_limit.status_code == 201
+
 
 # ----------------------------------------------------------------------
 # Senders
