@@ -82,6 +82,7 @@ export function describePhoneNumber(
     });
     return {
         formatted: `+${country.dialCode} ${fillMask(mask, national).trim()}`,
-        countryName: country.name,
+        // A +1 number does not reveal whether it is US or Canadian.
+        countryName: country.dialCode === "1" ? "United States or Canada" : country.name,
     };
 }

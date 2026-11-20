@@ -99,7 +99,7 @@ describe("WhatsAppLinkButton", () => {
 
         const name = await screen.findByText("First contact");
         expect(screen.getByText("+1 (512) 555-0142")).toBeTruthy();
-        expect(screen.getByText("(United States)")).toBeTruthy();
+        expect(screen.getByText("(United States or Canada)")).toBeTruthy();
         const anchor = name.closest("a");
         expect(anchor?.getAttribute("href")).toBe(
             "https://wa.me/15125550142?text=Hi%20Apex%20Labs",

@@ -31,12 +31,22 @@ describe("describePhoneNumber", () => {
     it("formats a number with the country the backend resolved", () => {
         expect(describePhoneNumber("+15128522300", "US")).toEqual({
             formatted: "+1 (512) 852-2300",
-            countryName: "United States",
+            countryName: "United States or Canada",
         });
         expect(describePhoneNumber("+442079460018", "GB")).toEqual({
             formatted: "+44 2079 460018",
             countryName: "United Kingdom",
         });
+    });
+
+    it("labels every +1 number as the US or Canada, whichever was resolved", () => {
+        expect(describePhoneNumber("+14165550123", "CA")).toEqual({
+            formatted: "+1 (416) 555-0123",
+            countryName: "United States or Canada",
+        });
+        expect(describePhoneNumber("+12025550143", "US").countryName).toBe(
+            "United States or Canada",
+        );
     });
 
     it("falls back to plain E.164 when the country is unknown", () => {
