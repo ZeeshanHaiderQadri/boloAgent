@@ -187,6 +187,50 @@ async def test_sender_crud_default_promotion_and_phone_rules(
 
 
 @pytest.mark.asyncio
+async def test_sender_country_must_be_a_real_iso_code(db_session, test_client_factory):
+    user, _ = await _user_and_org(db_session, "wa_sender_iso")
+    async with test_client_factory(user) as client:
+        for country in ["UK", "EU", "ZZ", "USA", ""]:
+            response = await _create_sender(
+                client, country=country, phone="+44 7700 900123"
+            )
+            assert response.status_code == 422, country
+        accepted = await _create_sender(client, country="GB", phone="+44 7700 900123")
+        assert accepted.status_code == 201
+        assert accepted.json()["phone_e164"] == "+447700900123"
+
+
+@pytest.mark.asyncio
+async def test_sender_rejects_a_number_from_another_country(
+    db_session, test_client_factory
+):
+    user, _ = await _user_and_org(db_session, "wa_sender_mismatch")
+    async with test_client_factory(user) as client:
+        mismatch = await _create_sender(client, phone="+1 512 555 0100", country="GB")
+        assert mismatch.status_code == 422
+        detail = mismatch.json()["detail"]
+        assert "+1" in detail
+        assert "United States" in detail
+        assert "+44" in detail
+
+        # A Tokyo landline cannot be read as a US number either.
+        local = await _create_sender(client, phone="0312345678", country="US")
+        assert local.status_code == 422
+        assert "United States" in local.json()["detail"]
+
+        accepted = await _create_sender(client, phone="+1 (512) 555-0100", country="US")
+        assert accepted.status_code == 201
+        assert accepted.json()["phone_e164"] == "+15125550100"
+
+        # Changing only the country must not silently rewrite the saved number.
+        changed = await client.patch(
+            f"/api/v1/whatsapp/senders/{accepted.json()['uuid']}",
+            json={"country": "GB"},
+        )
+        assert changed.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_templates_and_senders_are_org_scoped(db_session, test_client_factory):
     user_a, _ = await _user_and_org(db_session, "wa_scope_a")
     user_b, _ = await _user_and_org(db_session, "wa_scope_b")
@@ -305,15 +349,11 @@ async def test_lead_links_resolve_a_gb_lead_with_a_us_default_sender(
         payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
         assert payload["available"] is True
         assert payload["phone_e164"] == "+442079460018"
-        assert payload["links"][0]["url"].startswith(
-            "https://wa.me/442079460018?text="
-        )
+        assert payload["links"][0]["url"].startswith("https://wa.me/442079460018?text=")
 
 
 @pytest.mark.asyncio
-async def test_lead_links_never_rewrite_a_plus_number(
-    db_session, test_client_factory
-):
+async def test_lead_links_never_rewrite_a_plus_number(db_session, test_client_factory):
     user, org = await _user_and_org(db_session, "wa_links_plus")
     lead_id = await _lead(
         db_session,
@@ -353,15 +393,11 @@ async def test_lead_links_never_prefix_a_japanese_number_with_a_us_hint(
     db_session, test_client_factory
 ):
     user, org = await _user_and_org(db_session, "wa_links_jp")
-    japanese = await _lead(
-        db_session, org.id, phone="03-1234-5678", country="Japan"
-    )
+    japanese = await _lead(db_session, org.id, phone="03-1234-5678", country="Japan")
     unlabelled = await _lead(db_session, org.id, phone="03 1234 5678")
     async with test_client_factory(user) as client:
         await _create_sender(client, country="US")
-        resolved = (
-            await client.get(f"/api/v1/whatsapp/leads/{japanese}/links")
-        ).json()
+        resolved = (await client.get(f"/api/v1/whatsapp/leads/{japanese}/links")).json()
         assert resolved["phone_e164"] == "+81312345678"
 
         refused = (

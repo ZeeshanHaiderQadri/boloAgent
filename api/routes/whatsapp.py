@@ -18,8 +18,16 @@ from api.db import db_client
 from api.db.models import UserModel, WhatsAppSenderModel, WhatsAppTemplateModel
 from api.db.whatsapp_client import WhatsAppConflictError
 from api.services.auth.depends import get_user
-from api.services.leads.normalization import normalize_lead_phone
-from api.services.whatsapp.countries import resolve_lead_phone
+from api.services.whatsapp.countries import (
+    country_for_e164,
+    country_name,
+    dial_code,
+    dial_code_for_e164,
+    international_digits,
+    normalize_country_code,
+    resolve_lead_phone,
+    resolve_local,
+)
 from api.services.whatsapp.templates import (
     MAX_TEMPLATE_NAME_CHARS,
     WhatsAppTemplateError,
@@ -154,24 +162,53 @@ def _language_or_422(value: str) -> str:
 
 
 def _country_or_422(value: str) -> str:
-    cleaned = (value or "").strip().upper()
-    if len(cleaned) != 2 or not cleaned.isalpha():
+    country = normalize_country_code(value)
+    if country is None:
         raise HTTPException(
             status_code=422,
-            detail="Country must be a two-letter code such as US or GB.",
+            detail="Country must be an ISO 3166-1 code such as US, GB or AE.",
         )
-    return cleaned
+    return country
 
 
 def _phone_or_422(raw: str, country: str) -> str:
-    """Normalize to E.164 using the sender's own country, never a hardcoded one."""
-    normalized = normalize_lead_phone(raw, country)
-    if not normalized:
+    """Validate a sender number against its country instead of rewriting it."""
+    international = international_digits(raw)
+    if international:
+        phone_e164 = f"+{international}"
+        expected = dial_code(country)
+        actual = dial_code_for_e164(phone_e164)
+        if actual != expected:
+            actual_name = country_name(country_for_e164(phone_e164))
+            expected_name = country_name(country)
+            if actual is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "That number's country code is not one Bolo recognises. "
+                        f"Use a number from {expected_name} or pick the matching country."
+                    ),
+                )
+            actual_label = f"+{actual}"
+            if actual_name:
+                actual_label += f" ({actual_name})"
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"That number starts with {actual_label}, "
+                    f"which is not {expected_name} (+{expected}). "
+                    "Pick the matching country or change the number."
+                ),
+            )
+        return phone_e164
+
+    normalized = resolve_local(raw, country)
+    if normalized is None:
         raise HTTPException(
             status_code=422,
             detail=(
-                "That phone number cannot be read as an international number. "
-                "Enter it with its country code or pick the matching country."
+                f"That number cannot be read as a {country_name(country)} number. "
+                "Enter it in international format (with +) or pick the matching country."
             ),
         )
     return normalized
