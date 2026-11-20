@@ -269,6 +269,19 @@ async def test_sender_rejects_a_number_from_another_country(
         )
         assert changed.status_code == 422
 
+        uuid = accepted.json()["uuid"]
+        bad_patch = await client.patch(
+            f"/api/v1/whatsapp/senders/{uuid}", json={"country": "USA"}
+        )
+        assert bad_patch.status_code == 422
+
+        mismatched_patch = await client.patch(
+            f"/api/v1/whatsapp/senders/{uuid}",
+            json={"phone": "+44 7700 900123", "country": "US"},
+        )
+        assert mismatched_patch.status_code == 422
+        assert "United Kingdom" in mismatched_patch.json()["detail"]
+
 
 @pytest.mark.asyncio
 async def test_templates_and_senders_are_org_scoped(db_session, test_client_factory):
@@ -295,6 +308,12 @@ async def test_templates_and_senders_are_org_scoped(db_session, test_client_fact
         ).status_code == 404
         assert (
             await client.get(f"/api/v1/whatsapp/senders/{sender['uuid']}")
+        ).status_code == 404
+        assert (
+            await client.patch(
+                f"/api/v1/whatsapp/senders/{sender['uuid']}",
+                json={"label": "Stolen"},
+            )
         ).status_code == 404
         assert (
             await client.delete(f"/api/v1/whatsapp/senders/{sender['uuid']}")
@@ -450,6 +469,21 @@ async def test_lead_links_resolve_a_gb_lead_with_a_us_default_sender(
         assert payload["phone_e164"] == "+442079460018"
         assert payload["country"] == "GB"
         assert payload["links"][0]["url"].startswith("https://wa.me/442079460018?text=")
+
+
+@pytest.mark.asyncio
+async def test_lead_links_resolve_a_local_number_from_the_lead_country(
+    db_session, test_client_factory
+):
+    """The lead's own country is enough; a saved sender is only a fallback."""
+    user, org = await _user_and_org(db_session, "wa_links_lead_country")
+    lead_id = await _lead(db_session, org.id, phone="512 555 0133", country="US")
+    async with test_client_factory(user) as client:
+        await _accept_disclaimer(client)
+        payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
+        assert payload["available"] is True
+        assert payload["phone_e164"] == "+15125550133"
+        assert payload["country"] == "US"
 
 
 @pytest.mark.asyncio
