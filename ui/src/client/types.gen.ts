@@ -1874,6 +1874,50 @@ export type CreateToolRequest = {
 };
 
 /**
+ * CreateWhatsAppSenderRequest
+ */
+export type CreateWhatsAppSenderRequest = {
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Phone
+     */
+    phone: string;
+    /**
+     * Country
+     */
+    country: string;
+    /**
+     * Is Default
+     */
+    is_default?: boolean;
+};
+
+/**
+ * CreateWhatsAppTemplateRequest
+ */
+export type CreateWhatsAppTemplateRequest = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Language
+     */
+    language?: string;
+    /**
+     * Category
+     */
+    category?: string;
+};
+
+/**
  * CreateWorkflowRequest
  */
 export type CreateWorkflowRequest = {
@@ -8616,6 +8660,50 @@ export type UpdateToolRequest = {
 };
 
 /**
+ * UpdateWhatsAppSenderRequest
+ */
+export type UpdateWhatsAppSenderRequest = {
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Phone
+     */
+    phone?: string | null;
+    /**
+     * Country
+     */
+    country?: string | null;
+    /**
+     * Is Default
+     */
+    is_default?: boolean | null;
+};
+
+/**
+ * UpdateWhatsAppTemplateRequest
+ */
+export type UpdateWhatsAppTemplateRequest = {
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Body
+     */
+    body?: string | null;
+    /**
+     * Language
+     */
+    language?: string | null;
+    /**
+     * Category
+     */
+    category?: string | null;
+};
+
+/**
  * UpdateWorkflowRequest
  */
 export type UpdateWorkflowRequest = {
@@ -9112,6 +9200,160 @@ export type WhatsAppConfigurationRequest = {
      * App secret used to verify webhook signatures
      */
     app_secret: string;
+};
+
+/**
+ * WhatsAppLeadLinksResponse
+ */
+export type WhatsAppLeadLinksResponse = {
+    /**
+     * Available
+     */
+    available: boolean;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Phone E164
+     */
+    phone_e164?: string | null;
+    /**
+     * Links
+     */
+    links: Array<WhatsAppTemplateLink>;
+};
+
+/**
+ * WhatsAppSenderResponse
+ */
+export type WhatsAppSenderResponse = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Phone E164
+     */
+    phone_e164: string;
+    /**
+     * Country
+     */
+    country: string;
+    /**
+     * Is Default
+     */
+    is_default: boolean;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+};
+
+/**
+ * WhatsAppTemplateLink
+ */
+export type WhatsAppTemplateLink = {
+    /**
+     * Template Uuid
+     */
+    template_uuid: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Language
+     */
+    language: string;
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * WhatsAppTemplateResponse
+ */
+export type WhatsAppTemplateResponse = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Language
+     */
+    language: string;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Variables
+     */
+    variables: Array<string>;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+};
+
+/**
+ * WhatsAppTemplateSummary
+ */
+export type WhatsAppTemplateSummary = {
+    /**
+     * Uuid
+     */
+    uuid: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Language
+     */
+    language: string;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Variables
+     */
+    variables: Array<string>;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
 };
 
 /**
@@ -17167,6 +17409,482 @@ export type ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetRespon
 };
 
 export type ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponse = ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponses[keyof ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponses];
+
+export type ListWhatsappTemplatesApiV1WhatsappTemplatesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/whatsapp/templates';
+};
+
+export type ListWhatsappTemplatesApiV1WhatsappTemplatesGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListWhatsappTemplatesApiV1WhatsappTemplatesGetError = ListWhatsappTemplatesApiV1WhatsappTemplatesGetErrors[keyof ListWhatsappTemplatesApiV1WhatsappTemplatesGetErrors];
+
+export type ListWhatsappTemplatesApiV1WhatsappTemplatesGetResponses = {
+    /**
+     * Response List Whatsapp Templates Api V1 Whatsapp Templates Get
+     *
+     * Successful Response
+     */
+    200: Array<WhatsAppTemplateSummary>;
+};
+
+export type ListWhatsappTemplatesApiV1WhatsappTemplatesGetResponse = ListWhatsappTemplatesApiV1WhatsappTemplatesGetResponses[keyof ListWhatsappTemplatesApiV1WhatsappTemplatesGetResponses];
+
+export type CreateWhatsappTemplateApiV1WhatsappTemplatesPostData = {
+    body: CreateWhatsAppTemplateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/whatsapp/templates';
+};
+
+export type CreateWhatsappTemplateApiV1WhatsappTemplatesPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateWhatsappTemplateApiV1WhatsappTemplatesPostError = CreateWhatsappTemplateApiV1WhatsappTemplatesPostErrors[keyof CreateWhatsappTemplateApiV1WhatsappTemplatesPostErrors];
+
+export type CreateWhatsappTemplateApiV1WhatsappTemplatesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: WhatsAppTemplateResponse;
+};
+
+export type CreateWhatsappTemplateApiV1WhatsappTemplatesPostResponse = CreateWhatsappTemplateApiV1WhatsappTemplatesPostResponses[keyof CreateWhatsappTemplateApiV1WhatsappTemplatesPostResponses];
+
+export type DeleteWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Template Uuid
+         */
+        template_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/whatsapp/templates/{template_uuid}';
+};
+
+export type DeleteWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidDeleteError = DeleteWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidDeleteErrors[keyof DeleteWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidDeleteErrors];
+
+export type DeleteWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidDeleteResponses = {
+    /**
+     * Response Delete Whatsapp Template Api V1 Whatsapp Templates  Template Uuid  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DeleteWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidDeleteResponse = DeleteWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidDeleteResponses[keyof DeleteWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidDeleteResponses];
+
+export type GetWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Template Uuid
+         */
+        template_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/whatsapp/templates/{template_uuid}';
+};
+
+export type GetWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidGetError = GetWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidGetErrors[keyof GetWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidGetErrors];
+
+export type GetWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WhatsAppTemplateResponse;
+};
+
+export type GetWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidGetResponse = GetWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidGetResponses[keyof GetWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidGetResponses];
+
+export type UpdateWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidPatchData = {
+    body: UpdateWhatsAppTemplateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Template Uuid
+         */
+        template_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/whatsapp/templates/{template_uuid}';
+};
+
+export type UpdateWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidPatchError = UpdateWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidPatchErrors[keyof UpdateWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidPatchErrors];
+
+export type UpdateWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: WhatsAppTemplateResponse;
+};
+
+export type UpdateWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidPatchResponse = UpdateWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidPatchResponses[keyof UpdateWhatsappTemplateApiV1WhatsappTemplatesTemplateUuidPatchResponses];
+
+export type ListWhatsappSendersApiV1WhatsappSendersGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/whatsapp/senders';
+};
+
+export type ListWhatsappSendersApiV1WhatsappSendersGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListWhatsappSendersApiV1WhatsappSendersGetError = ListWhatsappSendersApiV1WhatsappSendersGetErrors[keyof ListWhatsappSendersApiV1WhatsappSendersGetErrors];
+
+export type ListWhatsappSendersApiV1WhatsappSendersGetResponses = {
+    /**
+     * Response List Whatsapp Senders Api V1 Whatsapp Senders Get
+     *
+     * Successful Response
+     */
+    200: Array<WhatsAppSenderResponse>;
+};
+
+export type ListWhatsappSendersApiV1WhatsappSendersGetResponse = ListWhatsappSendersApiV1WhatsappSendersGetResponses[keyof ListWhatsappSendersApiV1WhatsappSendersGetResponses];
+
+export type CreateWhatsappSenderApiV1WhatsappSendersPostData = {
+    body: CreateWhatsAppSenderRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/whatsapp/senders';
+};
+
+export type CreateWhatsappSenderApiV1WhatsappSendersPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateWhatsappSenderApiV1WhatsappSendersPostError = CreateWhatsappSenderApiV1WhatsappSendersPostErrors[keyof CreateWhatsappSenderApiV1WhatsappSendersPostErrors];
+
+export type CreateWhatsappSenderApiV1WhatsappSendersPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: WhatsAppSenderResponse;
+};
+
+export type CreateWhatsappSenderApiV1WhatsappSendersPostResponse = CreateWhatsappSenderApiV1WhatsappSendersPostResponses[keyof CreateWhatsappSenderApiV1WhatsappSendersPostResponses];
+
+export type DeleteWhatsappSenderApiV1WhatsappSendersSenderUuidDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Sender Uuid
+         */
+        sender_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/whatsapp/senders/{sender_uuid}';
+};
+
+export type DeleteWhatsappSenderApiV1WhatsappSendersSenderUuidDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteWhatsappSenderApiV1WhatsappSendersSenderUuidDeleteError = DeleteWhatsappSenderApiV1WhatsappSendersSenderUuidDeleteErrors[keyof DeleteWhatsappSenderApiV1WhatsappSendersSenderUuidDeleteErrors];
+
+export type DeleteWhatsappSenderApiV1WhatsappSendersSenderUuidDeleteResponses = {
+    /**
+     * Response Delete Whatsapp Sender Api V1 Whatsapp Senders  Sender Uuid  Delete
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type DeleteWhatsappSenderApiV1WhatsappSendersSenderUuidDeleteResponse = DeleteWhatsappSenderApiV1WhatsappSendersSenderUuidDeleteResponses[keyof DeleteWhatsappSenderApiV1WhatsappSendersSenderUuidDeleteResponses];
+
+export type GetWhatsappSenderApiV1WhatsappSendersSenderUuidGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Sender Uuid
+         */
+        sender_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/whatsapp/senders/{sender_uuid}';
+};
+
+export type GetWhatsappSenderApiV1WhatsappSendersSenderUuidGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetWhatsappSenderApiV1WhatsappSendersSenderUuidGetError = GetWhatsappSenderApiV1WhatsappSendersSenderUuidGetErrors[keyof GetWhatsappSenderApiV1WhatsappSendersSenderUuidGetErrors];
+
+export type GetWhatsappSenderApiV1WhatsappSendersSenderUuidGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WhatsAppSenderResponse;
+};
+
+export type GetWhatsappSenderApiV1WhatsappSendersSenderUuidGetResponse = GetWhatsappSenderApiV1WhatsappSendersSenderUuidGetResponses[keyof GetWhatsappSenderApiV1WhatsappSendersSenderUuidGetResponses];
+
+export type UpdateWhatsappSenderApiV1WhatsappSendersSenderUuidPatchData = {
+    body: UpdateWhatsAppSenderRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Sender Uuid
+         */
+        sender_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/whatsapp/senders/{sender_uuid}';
+};
+
+export type UpdateWhatsappSenderApiV1WhatsappSendersSenderUuidPatchErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateWhatsappSenderApiV1WhatsappSendersSenderUuidPatchError = UpdateWhatsappSenderApiV1WhatsappSendersSenderUuidPatchErrors[keyof UpdateWhatsappSenderApiV1WhatsappSendersSenderUuidPatchErrors];
+
+export type UpdateWhatsappSenderApiV1WhatsappSendersSenderUuidPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: WhatsAppSenderResponse;
+};
+
+export type UpdateWhatsappSenderApiV1WhatsappSendersSenderUuidPatchResponse = UpdateWhatsappSenderApiV1WhatsappSendersSenderUuidPatchResponses[keyof UpdateWhatsappSenderApiV1WhatsappSendersSenderUuidPatchResponses];
+
+export type WhatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Lead Id
+         */
+        lead_id: number;
+    };
+    query?: never;
+    url: '/api/v1/whatsapp/leads/{lead_id}/links';
+};
+
+export type WhatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WhatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGetError = WhatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGetErrors[keyof WhatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGetErrors];
+
+export type WhatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WhatsAppLeadLinksResponse;
+};
+
+export type WhatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGetResponse = WhatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGetResponses[keyof WhatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGetResponses];
 
 export type ListToolsApiV1ToolsGetData = {
     body?: never;
