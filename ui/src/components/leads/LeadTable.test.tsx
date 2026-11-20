@@ -123,6 +123,8 @@ describe("LeadTable", () => {
                         social_links: {
                             instagram: "https://www.instagram.com/apex/",
                             youtube: "https://www.youtube.com/@apexlabs",
+                            facebook: "https://www.facebook.com/apexlabs",
+                            linkedin: "https://www.linkedin.com/company/apex-labs/",
                             tiktok: "http://www.tiktok.com/@insecure",
                             website: "https://example.com/not-a-platform",
                         },
@@ -138,6 +140,8 @@ describe("LeadTable", () => {
         expect(instagram.getAttribute("target")).toBe("_blank");
         expect(instagram.getAttribute("rel")).toBe("noopener noreferrer");
         expect(screen.getByRole("link", { name: "YouTube profile" })).toBeTruthy();
+        expect(screen.getByRole("link", { name: "Facebook profile" })).toBeTruthy();
+        expect(screen.getByRole("link", { name: "LinkedIn profile" })).toBeTruthy();
         expect(screen.queryByRole("link", { name: "X profile" })).toBeNull();
         // Plain http links are never rendered.
         expect(screen.queryByRole("link", { name: "TikTok profile" })).toBeNull();

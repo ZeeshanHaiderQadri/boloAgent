@@ -3,8 +3,8 @@
 Google Maps does not expose social accounts, so the only first-party source is
 the business website itself. We fetch the site (and one contact page when the
 homepage has no profiles) and keep only links whose host and path identify a
-real profile on Instagram, X, TikTok or YouTube. Nothing is invented: a lead
-without a discoverable profile simply has no icon.
+real profile on Instagram, X, TikTok, YouTube, Facebook or LinkedIn. Nothing is
+invented: a lead without a discoverable profile simply has no icon.
 
 Everything here treats website URLs as untrusted input:
 
@@ -38,7 +38,7 @@ from api.utils.url_security import (
     resolve_public_http_url,
 )
 
-SOCIAL_PLATFORMS = ("instagram", "x", "tiktok", "youtube")
+SOCIAL_PLATFORMS = ("instagram", "x", "tiktok", "youtube", "facebook", "linkedin")
 
 SCAN_TIMEOUT_SECONDS = 15.0
 MAX_PAGE_BYTES = 512 * 1024
@@ -64,6 +64,8 @@ _X_HANDLE_RE = re.compile(r"[A-Za-z0-9_]{1,15}")
 _TIKTOK_HANDLE_RE = re.compile(r"[A-Za-z0-9._]{1,24}")
 _YOUTUBE_HANDLE_RE = re.compile(r"[A-Za-z0-9._-]{1,100}")
 _YOUTUBE_CHANNEL_RE = re.compile(r"UC[A-Za-z0-9_-]{10,60}")
+_FACEBOOK_HANDLE_RE = re.compile(r"[A-Za-z0-9.]{1,50}")
+_LINKEDIN_HANDLE_RE = re.compile(r"[A-Za-z0-9_.-]{1,100}")
 
 _INSTAGRAM_RESERVED = {
     "about",
@@ -127,6 +129,68 @@ _YOUTUBE_RESERVED = {
     "shorts",
     "signin",
     "watch",
+}
+
+# Paths that are platform UI or share sheets, never a business's own page.
+_FACEBOOK_RESERVED = {
+    "about",
+    "ads",
+    "business",
+    "connect",
+    "dialog",
+    "events",
+    "gaming",
+    "groups",
+    "hashtag",
+    "help",
+    "home",
+    "l.php",
+    "legal",
+    "login",
+    "marketplace",
+    "messages",
+    "pages",
+    "people",
+    "permalink.php",
+    "photo",
+    "photo.php",
+    "plugins",
+    "policies",
+    "privacy",
+    "profile.php",
+    "public",
+    "reel",
+    "reels",
+    "search",
+    "settings",
+    "share",
+    "sharer",
+    "stories",
+    "story.php",
+    "terms",
+    "video.php",
+    "videos",
+    "watch",
+}
+
+_LINKEDIN_RESERVED = {
+    "about",
+    "ads",
+    "checkpoint",
+    "feed",
+    "help",
+    "jobs",
+    "legal",
+    "login",
+    "mynetwork",
+    "notifications",
+    "privacy",
+    "pulse",
+    "search",
+    "sharearticle",
+    "sharearticleupdate",
+    "signup",
+    "tos",
 }
 
 _CONTACT_KEYWORDS = ("contact", "kontakt", "contacto", "contatti", "impressum")
@@ -507,6 +571,33 @@ def _social_target(parsed) -> tuple[str, str] | None:
             return "youtube", f"https://www.youtube.com/{head}/{name}"
         return None
 
+    if _host_matches(host, "facebook.com") or _host_matches(host, "fb.com"):
+        segments = [part for part in parsed.path.split("/") if part]
+        if not segments:
+            return None
+        handle = segments[0]
+        if handle.lower() in _FACEBOOK_RESERVED or not _FACEBOOK_HANDLE_RE.fullmatch(
+            handle
+        ):
+            return None
+        return "facebook", f"https://www.facebook.com/{handle}"
+
+    if _host_matches(host, "linkedin.com"):
+        segments = [part for part in parsed.path.split("/") if part]
+        if len(segments) < 2:
+            return None
+        kind = segments[0].lower()
+        # Only personal and company pages; school pages and posts carry no
+        # business account.
+        if kind not in {"in", "company"}:
+            return None
+        handle = segments[1]
+        if handle.lower() in _LINKEDIN_RESERVED or not _LINKEDIN_HANDLE_RE.fullmatch(
+            handle
+        ):
+            return None
+        return "linkedin", f"https://www.linkedin.com/{kind}/{handle}/"
+
     return None
 
 
@@ -543,6 +634,10 @@ def _profile_handle(platform: str, canonical: str) -> str | None:
         # from owner-declared JSON-LD sameAs data.
         if segments[0].lower() == "channel":
             return None
+        return segments[1] if len(segments) > 1 else None
+    if platform == "facebook":
+        return segments[0]
+    if platform == "linkedin":
         return segments[1] if len(segments) > 1 else None
     return None
 
@@ -873,8 +968,9 @@ async def discover_social_links(
         return SocialScan(direct, checked=True, replace_links=True)
 
     if _is_facebook_site(normalized):
-        # Facebook pages cannot be meaningfully scraped and expose no
-        # first-party profile links, so record nothing and fetch nothing.
+        # A bindable Facebook page URL was already returned above; anything
+        # left here is a platform path or a shortener. Facebook cannot be
+        # meaningfully scraped, so record nothing and fetch nothing.
         logger.info("Skipping social scan for Facebook website {}", normalized)
         return SocialScan({}, checked=True, replace_links=False)
 
