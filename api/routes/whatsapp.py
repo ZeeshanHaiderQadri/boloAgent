@@ -19,6 +19,7 @@ from api.db.models import UserModel, WhatsAppSenderModel, WhatsAppTemplateModel
 from api.db.whatsapp_client import WhatsAppConflictError
 from api.services.auth.depends import get_user
 from api.services.leads.normalization import normalize_lead_phone
+from api.services.whatsapp.countries import resolve_lead_phone
 from api.services.whatsapp.templates import (
     MAX_TEMPLATE_NAME_CHARS,
     WhatsAppTemplateError,
@@ -100,6 +101,7 @@ class WhatsAppTemplateLink(BaseModel):
 
 class WhatsAppLeadLinksResponse(BaseModel):
     available: bool
+    # no_phone | country_unknown | unrecognized_number
     reason: Optional[str] = None
     phone_e164: Optional[str] = None
     links: list[WhatsAppTemplateLink]
@@ -454,19 +456,22 @@ async def whatsapp_lead_links(
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    phone_e164 = lead.phone_e164
-    if not phone_e164 and lead.phone:
-        # The sender's own default country is the only hint used; nothing is
-        # assumed when the organization has no sender or country.
+    resolution = resolve_lead_phone(lead.phone, lead.phone_e164, lead.country)
+    if resolution.failure == "country_unknown":
+        # The lead's country was the first hint and it was missing, so try the
+        # default sender's country. It is never used to override a lead country.
         sender = await db_client.get_default_whatsapp_sender(organization_id)
         if sender is not None:
-            phone_e164 = normalize_lead_phone(lead.phone, sender.country)
-    if not phone_e164:
-        return WhatsAppLeadLinksResponse(
-            available=False,
-            reason="no_phone" if not lead.phone else "country_unknown",
-            links=[],
-        )
+            resolution = resolve_lead_phone(
+                lead.phone, lead.phone_e164, lead.country, sender.country
+            )
+    if not resolution.phone_e164:
+        reason = {
+            "missing": "no_phone",
+            "country_unknown": "country_unknown",
+        }.get(resolution.failure or "", "unrecognized_number")
+        return WhatsAppLeadLinksResponse(available=False, reason=reason, links=[])
+    phone_e164 = resolution.phone_e164
 
     templates = await db_client.list_whatsapp_templates(organization_id)
     values = lead_values(

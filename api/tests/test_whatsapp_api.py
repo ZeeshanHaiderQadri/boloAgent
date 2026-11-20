@@ -28,7 +28,9 @@ async def _user_and_org(db_session, slug: str):
     return snapshot, org
 
 
-async def _lead(db_session, org_id, *, phone=None, phone_e164=None, city="Austin"):
+async def _lead(
+    db_session, org_id, *, phone=None, phone_e164=None, country=None, city="Austin"
+):
     async with db_session.async_session() as session:
         lead = LeadModel(
             organization_id=org_id,
@@ -36,6 +38,7 @@ async def _lead(db_session, org_id, *, phone=None, phone_e164=None, city="Austin
             title="Apex Labs",
             category="Marketing agency",
             city=city,
+            country=country,
             phone=phone,
             phone_e164=phone_e164,
         )
@@ -225,7 +228,11 @@ async def test_lead_links_render_every_template_for_an_e164_lead(
 ):
     user, org = await _user_and_org(db_session, "wa_links")
     lead_id = await _lead(
-        db_session, org.id, phone="(512) 555-0199", phone_e164="+15125550199"
+        db_session,
+        org.id,
+        phone="(512) 555-0199",
+        phone_e164="+15125550199",
+        country="US",
     )
     async with test_client_factory(user) as client:
         await _create_template(client)
@@ -284,6 +291,98 @@ async def test_lead_links_never_guess_a_country_without_a_sender(
         empty = (await client.get(f"/api/v1/whatsapp/leads/{known}/links")).json()
         assert empty["available"] is True
         assert empty["links"] == []
+
+
+@pytest.mark.asyncio
+async def test_lead_links_resolve_a_gb_lead_with_a_us_default_sender(
+    db_session, test_client_factory
+):
+    user, org = await _user_and_org(db_session, "wa_links_gb")
+    lead_id = await _lead(db_session, org.id, phone="020 7946 0018", country="GB")
+    async with test_client_factory(user) as client:
+        await _create_sender(client, country="US")
+        await _create_template(client)
+        payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
+        assert payload["available"] is True
+        assert payload["phone_e164"] == "+442079460018"
+        assert payload["links"][0]["url"].startswith(
+            "https://wa.me/442079460018?text="
+        )
+
+
+@pytest.mark.asyncio
+async def test_lead_links_never_rewrite_a_plus_number(
+    db_session, test_client_factory
+):
+    user, org = await _user_and_org(db_session, "wa_links_plus")
+    lead_id = await _lead(
+        db_session,
+        org.id,
+        phone="+44 20 7946 0018",
+        phone_e164="+15125550199",
+        country="US",
+    )
+    async with test_client_factory(user) as client:
+        await _create_sender(client, country="US")
+        await _create_template(client)
+        payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
+        assert payload["phone_e164"] == "+442079460018"
+
+
+@pytest.mark.asyncio
+async def test_lead_links_ignore_a_stored_e164_that_contradicts_the_country(
+    db_session, test_client_factory
+):
+    user, org = await _user_and_org(db_session, "wa_links_wrong_e164")
+    # The importer used to prefix "+1 " onto numbers when the search hinted US.
+    lead_id = await _lead(
+        db_session,
+        org.id,
+        phone="020 7946 0018",
+        phone_e164="+1202079460018",
+        country="GB",
+    )
+    async with test_client_factory(user) as client:
+        await _create_template(client)
+        payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
+        assert payload["phone_e164"] == "+442079460018"
+
+
+@pytest.mark.asyncio
+async def test_lead_links_never_prefix_a_japanese_number_with_a_us_hint(
+    db_session, test_client_factory
+):
+    user, org = await _user_and_org(db_session, "wa_links_jp")
+    japanese = await _lead(
+        db_session, org.id, phone="03-1234-5678", country="Japan"
+    )
+    unlabelled = await _lead(db_session, org.id, phone="03 1234 5678")
+    async with test_client_factory(user) as client:
+        await _create_sender(client, country="US")
+        resolved = (
+            await client.get(f"/api/v1/whatsapp/leads/{japanese}/links")
+        ).json()
+        assert resolved["phone_e164"] == "+81312345678"
+
+        refused = (
+            await client.get(f"/api/v1/whatsapp/leads/{unlabelled}/links")
+        ).json()
+        assert refused["available"] is False
+        assert refused["reason"] == "unrecognized_number"
+
+
+@pytest.mark.asyncio
+async def test_lead_links_do_not_trust_e164_without_a_known_country(
+    db_session, test_client_factory
+):
+    user, org = await _user_and_org(db_session, "wa_links_unknown_country")
+    lead_id = await _lead(
+        db_session, org.id, phone="5125550177", phone_e164="+15125550177"
+    )
+    async with test_client_factory(user) as client:
+        payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
+        assert payload["available"] is False
+        assert payload["reason"] == "country_unknown"
 
 
 @pytest.mark.asyncio

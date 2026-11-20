@@ -72,7 +72,9 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
     const reasonText =
         data?.reason === "no_phone"
             ? "This lead has no phone number."
-            : "The country for this number is unknown. Add a WhatsApp number with its country on the WhatsApp numbers page, then try again.";
+            : data?.reason === "unrecognized_number"
+              ? "This number does not match the lead's country, so Bolo will not guess. Correct the phone number or its country on the lead."
+              : "The country for this number is unknown. Add a WhatsApp number with its country on the WhatsApp numbers page, then try again.";
 
     return (
         <>
@@ -119,9 +121,11 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
                     ) : data && !data.available ? (
                         <div className="space-y-2 text-sm text-muted-foreground">
                             <p>{reasonText}</p>
-                            <Button variant="outline" size="sm" asChild>
-                                <Link href="/whatsapp/senders">WhatsApp numbers</Link>
-                            </Button>
+                            {data.reason === "country_unknown" && (
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href="/whatsapp/senders">WhatsApp numbers</Link>
+                                </Button>
+                            )}
                         </div>
                     ) : data && data.links.length === 0 ? (
                         <div className="space-y-2 text-sm text-muted-foreground">
