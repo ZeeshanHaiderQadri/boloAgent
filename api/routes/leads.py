@@ -117,10 +117,9 @@ async def _lead_responses(leads, organization_id: int) -> list[LeadResponse]:
     except Exception:
         # The icon is a convenience; a failed sender lookup must not take down
         # the lead list, detail or edit responses. Hide it until it recovers.
-        logger.warning(
+        logger.opt(exception=True).warning(
             "Could not load the default WhatsApp sender for organization {}",
             organization_id,
-            exc_info=True,
         )
         sender_country = None
         whatsapp_ready = False
