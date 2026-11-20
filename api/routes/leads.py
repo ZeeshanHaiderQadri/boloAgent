@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 from datetime import UTC, datetime
 from typing import Literal
@@ -47,6 +48,7 @@ from api.schemas.leads import (
     LeadUpdateRequest,
 )
 from api.services.auth.depends import get_user
+from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
 from api.services.leads.call_outcomes import call_outcome
 from api.services.leads.consent import (
     consent_reset_values,
@@ -65,6 +67,16 @@ from api.services.leads.normalization import normalize_lead_phone
 from api.services.leads.providers import (
     available_providers,
     default_provider_name,
+)
+from api.services.leads.social_scan_limits import (
+    acquire_org_scan_slot,
+    allow_refresh_socials,
+    release_org_scan_slot,
+)
+from api.services.leads.socials import (
+    SCAN_TIMEOUT_SECONDS,
+    discover_social_links,
+    normalize_website,
 )
 from api.tasks.arq import enqueue_job
 from api.tasks.function_names import FunctionNames
@@ -919,6 +931,96 @@ async def update_lead_email_consent(
     return LeadResponse.model_validate(updated)
 
 
+@router.post("/{lead_id}/refresh-socials", response_model=LeadResponse)
+async def refresh_lead_socials(
+    lead_id: int, user: UserModel = Depends(get_user)
+) -> LeadResponse:
+    """Re-scan one lead's website for social profiles on demand.
+
+    Rate-limited per user and per organization, capped at two concurrent
+    scans per organization, and bounded by the same 15 second deadline as the
+    background job. A failed fetch never replaces previously stored links.
+    """
+    organization_id = _organization_id(user)
+    lead = await db_client.get_lead(lead_id, organization_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    if not (lead.website or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="This lead has no website to scan for social profiles.",
+        )
+    website = normalize_website(lead.website)
+    if website is None:
+        raise HTTPException(
+            status_code=422,
+            detail="This lead's website is not a valid http(s) URL.",
+        )
+
+    try:
+        allowed = await allow_refresh_socials(
+            user_id=user.id, organization_id=organization_id
+        )
+    except RateLimiterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Social scan admission is temporarily unavailable.",
+        ) from exc
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many social refreshes. Try again in about an hour.",
+        )
+
+    try:
+        slot = await acquire_org_scan_slot(organization_id)
+    except RateLimiterUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Social scan admission is temporarily unavailable.",
+        ) from exc
+    if slot is None:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many social scans are already running for this organization.",
+        )
+
+    try:
+        async with asyncio.timeout(SCAN_TIMEOUT_SECONDS):
+            scan = await discover_social_links(website, business_name=lead.title)
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="The website took too long to respond. Stored links were kept.",
+        ) from exc
+    finally:
+        await release_org_scan_slot(organization_id, slot)
+
+    if not scan.checked:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Could not reach the website. Stored links were kept; try again later."
+            ),
+        )
+
+    now = datetime.now(UTC)
+    if scan.replace_links:
+        updated = await db_client.save_lead_socials(
+            lead_id,
+            organization_id,
+            social_links=scan.links,
+            checked_at=now,
+        )
+    else:
+        updated = await db_client.mark_lead_socials_checked(
+            lead_id, organization_id, checked_at=now
+        )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return LeadResponse.model_validate(updated)
+
+
 @router.get("/{lead_id}", response_model=LeadDetailResponse)
 async def get_lead_detail(
     lead_id: int, user: UserModel = Depends(get_user)
@@ -1008,6 +1110,17 @@ async def update_lead(
             raise HTTPException(status_code=422, detail="Business name cannot be empty")
         values[field] = value or None
         changed_contact_fields.append(field)
+    if request.website is not None:
+        old_website = (lead.website or "").strip() or None
+        new_website = (request.website or "").strip() or None
+        if new_website != old_website:
+            # Profiles belonged to the old site; scan the new one from scratch.
+            values.update(
+                social_links={},
+                socials_checked_at=None,
+                socials_attempts=0,
+                socials_next_attempt_at=None,
+            )
     if request.phone is not None:
         values["phone_e164"] = normalize_lead_phone(
             request.phone or None, request.country or lead.country

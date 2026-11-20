@@ -19,6 +19,7 @@ import { useOrganizationTimezone } from "@/hooks/useOrganizationTimezone";
 import { formatDate } from "@/lib/dateTime";
 
 import { EmailConsentBadge } from "./EmailConsentBadge";
+import { LeadSocialLinks } from "./LeadSocialLinks";
 import { LeadStatusBadge } from "./LeadStatusBadge";
 
 interface LeadTableProps {
@@ -204,23 +205,31 @@ export function LeadTable({
                                 )}
                                 {!compact && (
                                     <TableCell className="max-w-[200px]">
-                                        {lead.website ? (
-                                            <a
-                                                href={websiteHref(lead.website)}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                onClick={(event) => event.stopPropagation()}
-                                                className="flex items-center gap-1.5 text-sm hover:text-cta hover:underline"
-                                                title={lead.website}
-                                            >
-                                                <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                                <span className="truncate">
-                                                    {websiteLabel(lead.website)}
+                                        <div className="flex items-center gap-2">
+                                            {lead.website ? (
+                                                <a
+                                                    href={websiteHref(lead.website)}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    className="flex min-w-0 items-center gap-1.5 text-sm hover:text-cta hover:underline"
+                                                    title={lead.website}
+                                                >
+                                                    <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                                    <span className="truncate">
+                                                        {websiteLabel(lead.website)}
+                                                    </span>
+                                                </a>
+                                            ) : (
+                                                <span className="text-sm text-muted-foreground">
+                                                    —
                                                 </span>
-                                            </a>
-                                        ) : (
-                                            <span className="text-sm text-muted-foreground">—</span>
-                                        )}
+                                            )}
+                                            <LeadSocialLinks
+                                                links={lead.social_links}
+                                                className="shrink-0"
+                                            />
+                                        </div>
                                     </TableCell>
                                 )}
                                 {!compact && (

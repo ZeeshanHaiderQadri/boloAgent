@@ -135,6 +135,12 @@
             ]
           },
           {
+            "group": "Leads",
+            "pages": [
+              "leads/social-profiles"
+            ]
+          },
+          {
             "group": "Integrations",
             "tag": "NEW",
             "pages": [

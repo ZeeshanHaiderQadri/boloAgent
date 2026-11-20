@@ -153,6 +153,8 @@ class LeadResponse(BaseModel):
     phone_e164: str | None = None
     email: str | None = None
     website: str | None = None
+    social_links: dict[str, str] = Field(default_factory=dict)
+    socials_checked_at: datetime | None = None
     place_id: str | None = None
     cid: str | None = None
     rating: float | None = None
