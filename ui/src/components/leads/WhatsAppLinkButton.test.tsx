@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet } from "@/client";
+import {
+    getWhatsappDisclaimerApiV1WhatsappDisclaimerGet,
+    whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet,
+} from "@/client";
 import type { LeadResponse } from "@/client/types.gen";
 
 import { WhatsAppLinkButton } from "./WhatsAppLinkButton";
@@ -13,6 +16,8 @@ const { auth } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => auth }));
 vi.mock("@/client", () => ({
+    getWhatsappDisclaimerApiV1WhatsappDisclaimerGet: vi.fn(),
+    acceptWhatsappDisclaimerApiV1WhatsappDisclaimerPost: vi.fn(),
     whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet: vi.fn(),
 }));
 
@@ -51,6 +56,9 @@ function lead(overrides: Partial<LeadResponse> = {}): LeadResponse {
 
 beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getWhatsappDisclaimerApiV1WhatsappDisclaimerGet).mockResolvedValue({
+        data: { version: "2026-11-20", text: "Notice", accepted: true, accepted_at: null },
+    } as never);
 });
 
 afterEach(() => {
@@ -104,6 +112,20 @@ describe("WhatsAppLinkButton", () => {
         expect(fetchSpy).not.toHaveBeenCalled();
     });
 
+    it("asks for the notice before building any link", async () => {
+        vi.mocked(getWhatsappDisclaimerApiV1WhatsappDisclaimerGet).mockResolvedValue({
+            data: { version: "2026-11-20", text: "Notice", accepted: false, accepted_at: null },
+        } as never);
+
+        render(<WhatsAppLinkButton lead={lead()} />);
+        fireEvent.click(screen.getByRole("button", { name: /open whatsapp message for apex/i }));
+
+        expect(
+            await screen.findByRole("dialog", { name: "Before you message on WhatsApp" }),
+        ).toBeTruthy();
+        expect(whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet).not.toHaveBeenCalled();
+    });
+
     it("explains an unknown country instead of guessing one", async () => {
         vi.mocked(whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet).mockResolvedValue({
             data: {
@@ -137,5 +159,52 @@ describe("WhatsAppLinkButton", () => {
         fireEvent.click(screen.getByRole("button", { name: /open whatsapp message for apex/i }));
 
         expect(await screen.findByText("No WhatsApp templates yet.")).toBeTruthy();
+    });
+});
+
+describe("WhatsAppLinkButton consent hints", () => {
+    beforeEach(() => {
+        vi.mocked(whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet).mockResolvedValue({
+            data: {
+                available: true,
+                reason: null,
+                phone_e164: "+15125550142",
+                links: [
+                    {
+                        template_uuid: "t1",
+                        name: "First contact",
+                        body: "Hi Apex Labs",
+                        url: "https://wa.me/15125550142?text=Hi",
+                    },
+                ],
+            },
+        } as never);
+    });
+
+    async function openChooser(target: LeadResponse) {
+        render(<WhatsAppLinkButton lead={target} />);
+        fireEvent.click(
+            screen.getByRole("button", {
+                name: `Open WhatsApp message for ${target.title}`,
+            })
+        );
+        await screen.findByText("First contact");
+    }
+
+    it("always says WhatsApp consent is not tracked and flags unknown email consent", async () => {
+        await openChooser(lead());
+        expect(screen.getByText(/Bolo does not track WhatsApp consent/)).toBeTruthy();
+        expect(screen.getByText(/No email consent recorded/)).toBeTruthy();
+    });
+
+    it("warns when the lead opted out of marketing email", async () => {
+        await openChooser(lead({ email_consent: "opted_out" }));
+        expect(screen.getByText(/Email consent: opted out/)).toBeTruthy();
+    });
+
+    it("shows email opt-in without treating it as WhatsApp consent", async () => {
+        await openChooser(lead({ email_consent: "opted_in" }));
+        const note = screen.getByText(/Email consent: opted in/);
+        expect(note.textContent).toContain("does not prove");
     });
 });

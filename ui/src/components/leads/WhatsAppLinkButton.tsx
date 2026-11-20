@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Loader2, MessageCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -120,6 +120,8 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
                         </DialogDescription>
                     </DialogHeader>
 
+                    <ConsentNote lead={lead} />
+
                     {loading ? (
                         <div
                             className="flex items-center gap-2 py-6 text-sm text-muted-foreground"
@@ -187,5 +189,42 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
                 onAccepted={() => void show()}
             />
         </>
+    );
+}
+
+/**
+ * Always-visible reminder that email consent is not WhatsApp consent. The
+ * email consent below is only a signal; Bolo does not record WhatsApp consent.
+ */
+function ConsentNote({ lead }: { lead: LeadResponse }) {
+    return (
+        <div role="note" className="space-y-1.5 rounded-lg border bg-muted/40 p-3 text-xs">
+            <p className="text-foreground">
+                Bolo does not track WhatsApp consent. Before you press send, confirm
+                this business agreed to hear from you on WhatsApp.
+            </p>
+            {lead.email_consent === "opted_in" ? (
+                <p className="flex items-start gap-1.5 text-muted-foreground">
+                    <CheckCircle2
+                        className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500"
+                        aria-hidden
+                    />
+                    Email consent: opted in. That covers email only; it does not prove
+                    they agreed to WhatsApp messages.
+                </p>
+            ) : lead.email_consent === "opted_out" ? (
+                <p className="flex items-start gap-1.5 text-amber-600">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                    Email consent: opted out. Treat this as a strong signal not to message
+                    them unless they agreed to WhatsApp separately.
+                </p>
+            ) : (
+                <p className="flex items-start gap-1.5 text-amber-600">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                    No email consent recorded. That says nothing about WhatsApp; only send
+                    if they agreed to hear from you.
+                </p>
+            )}
+        </div>
     );
 }
