@@ -96,6 +96,82 @@ def test_normalize_uses_first_number_when_provider_lists_two():
     assert lead["phone_e164"] == "+442079460018"
 
 
+def test_normalize_prefers_the_rows_own_country_over_the_search_hint():
+    lead = normalize_lead_row(
+        {
+            "title": "Thames Coffee",
+            "phone": "020 7946 0018",
+            "complete_address": {"country": "GB"},
+        },
+        country_hint="US",
+        source="google_maps",
+    )
+
+    assert lead is not None
+    assert lead["phone_e164"] == "+442079460018"
+
+
+def test_normalize_accepts_a_country_name_from_the_row():
+    lead = normalize_lead_row(
+        {
+            "title": "Thames Coffee",
+            "phone": "020 7946 0018",
+            "complete_address": {"country": "United Kingdom"},
+        },
+        country_hint="US",
+        source="google_maps",
+    )
+
+    assert lead is not None
+    assert lead["phone_e164"] == "+442079460018"
+
+
+def test_normalize_leaves_an_international_number_alone():
+    # A leading "+" is already international; the search hint must not
+    # prepend a second country code to it.
+    lead = normalize_lead_row(
+        {"title": "No Country Ltd", "phone": "+442079460018"},
+        country_hint="US",
+        source="google_maps",
+    )
+
+    assert lead is not None
+    assert lead["phone_e164"] == "+442079460018"
+
+
+def test_normalize_stores_no_e164_when_the_number_contradicts_the_country():
+    lead = normalize_lead_row(
+        {
+            "title": "Cross-Border Co",
+            "phone": "+44 20 7946 0018",
+            "complete_address": {"country": "US"},
+        },
+        country_hint="US",
+        source="google_maps",
+    )
+
+    assert lead is not None
+    assert lead["phone"] == "+44 20 7946 0018"
+    assert lead["phone_e164"] is None
+
+
+def test_normalize_treats_a_shared_dial_code_as_agreeing():
+    # +1 covers the US and Canada; digits alone cannot say which one, so the
+    # number is kept rather than thrown away.
+    lead = normalize_lead_row(
+        {
+            "title": "Maple Co",
+            "phone": "+1 416 555 0123",
+            "complete_address": {"country": "US"},
+        },
+        country_hint="US",
+        source="google_maps",
+    )
+
+    assert lead is not None
+    assert lead["phone_e164"] == "+14165550123"
+
+
 def test_normalize_drops_non_dialable_and_invalid_numbers():
     for raw in ("not a phone", "12345", ""):
         lead = normalize_lead_row(

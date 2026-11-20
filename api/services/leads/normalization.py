@@ -10,6 +10,12 @@ import math
 import re
 from typing import Any
 
+from api.services.whatsapp.countries import (
+    dial_code,
+    dial_code_for_e164,
+    lead_country,
+    normalize_country_code,
+)
 from api.utils.email_validation import EMAIL_PATTERN, normalize_email
 from api.utils.telephony_address import normalize_telephony_address
 
@@ -121,6 +127,10 @@ def _normalize_phone(raw: Any, country_hint: str | None) -> str | None:
     first = _PHONE_SPLIT_RE.split(text)[0].strip()
     if not first:
         return None
+    # A number written with "+" is already international; a country hint must
+    # not prepend its dial code to it.
+    if first.startswith("+"):
+        country_hint = None
     try:
         normalized = normalize_telephony_address(first, country_hint)
     except ValueError:
@@ -191,12 +201,21 @@ def normalize_lead_row(
     if address and street and street not in address:
         address = f"{street}, {address}"
 
-    hint = (country_hint or country or "").strip().upper()
-    if len(hint) != 2:
-        hint = None
+    # The row's own country is the truth; the search-wide hint is only a
+    # fallback for rows that do not carry one.
+    own_country = lead_country(country)
+    hint = own_country or normalize_country_code(country_hint)
 
     phone_raw = _text(row.get("phone"))
     phone_e164 = _normalize_phone(phone_raw, hint)
+    if phone_e164 and own_country:
+        expected = dial_code(own_country)
+        actual = dial_code_for_e164(phone_e164)
+        if expected and actual and actual != expected:
+            # A stored number that disagrees with the lead's country is worse
+            # than no number: campaigns would dial the wrong region without a
+            # human noticing. Exports and link resolution both handle NULL.
+            phone_e164 = None
     email = _first_email(row.get("emails"), row.get("email"))
     website = _text(row.get("website") or row.get("web_site"))[:1024] or None
     place_id = _text(row.get("place_id"))
