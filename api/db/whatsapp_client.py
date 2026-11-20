@@ -25,6 +25,24 @@ class WhatsAppConflictError(Exception):
         super().__init__(message)
 
 
+_DEFAULT_UNIQUE_INDEX = "ix_whatsapp_senders_one_default"
+
+
+def sender_conflict_message(exc: IntegrityError) -> str:
+    """Explain a sender unique violation without blaming the wrong constraint.
+
+    Two first-time saves can race for the single default slot; that failure
+    has nothing to do with the phone number and needs its own advice.
+    """
+    constraint = getattr(getattr(exc, "orig", None), "constraint_name", None)
+    if constraint == _DEFAULT_UNIQUE_INDEX or _DEFAULT_UNIQUE_INDEX in str(exc):
+        return (
+            "Another WhatsApp number was just saved as the default. "
+            "Refresh the list and try again."
+        )
+    return "This phone number is already saved as a WhatsApp sender."
+
+
 class WhatsAppClient(BaseDBClient):
     """Organization-scoped WhatsApp template and sender operations."""
 
@@ -306,9 +324,7 @@ class WhatsAppClient(BaseDBClient):
                 await session.commit()
             except IntegrityError as exc:
                 await session.rollback()
-                raise WhatsAppConflictError(
-                    "This phone number is already saved as a WhatsApp sender."
-                ) from exc
+                raise WhatsAppConflictError(sender_conflict_message(exc)) from exc
             await session.refresh(sender)
             return sender
 
@@ -343,6 +359,7 @@ class WhatsAppClient(BaseDBClient):
                 raise WhatsAppConflictError(
                     "This phone number is already saved as a WhatsApp sender."
                 )
+            was_default = bool(sender.is_default)
             if is_default:
                 await session.execute(
                     update(WhatsAppSenderModel)
@@ -356,14 +373,37 @@ class WhatsAppClient(BaseDBClient):
             sender.phone_e164 = phone_e164
             sender.country = country
             sender.is_default = is_default
+            if was_default and not is_default:
+                # Demoting the default must not leave the organization without
+                # one: hand the flag to the oldest remaining number, or keep it
+                # here when this is the only number.
+                remaining = await session.execute(
+                    select(WhatsAppSenderModel.id)
+                    .where(
+                        WhatsAppSenderModel.organization_id == organization_id,
+                        WhatsAppSenderModel.sender_uuid != sender_uuid,
+                    )
+                    .order_by(WhatsAppSenderModel.id)
+                    .limit(1)
+                )
+                successor_id = remaining.scalar_one_or_none()
+                if successor_id is None:
+                    sender.is_default = True
+                else:
+                    # Release the partial unique slot before claiming it for
+                    # the successor.
+                    await session.flush()
+                    await session.execute(
+                        update(WhatsAppSenderModel)
+                        .where(WhatsAppSenderModel.id == successor_id)
+                        .values(is_default=True)
+                    )
             sender.updated_at = datetime.now(UTC)
             try:
                 await session.commit()
             except IntegrityError as exc:
                 await session.rollback()
-                raise WhatsAppConflictError(
-                    "This phone number is already saved as a WhatsApp sender."
-                ) from exc
+                raise WhatsAppConflictError(sender_conflict_message(exc)) from exc
             await session.refresh(sender)
             return sender
 

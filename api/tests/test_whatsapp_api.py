@@ -7,8 +7,10 @@ configuration, rendering and organization scoping.
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from api.db.models import LeadModel
+from api.db.whatsapp_client import sender_conflict_message
 
 PAYLOAD = {
     "name": "Warm intro",
@@ -297,6 +299,59 @@ async def test_templates_and_senders_are_org_scoped(db_session, test_client_fact
         assert (
             await client.delete(f"/api/v1/whatsapp/senders/{sender['uuid']}")
         ).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_editing_the_default_sender_always_leaves_a_default_sender(
+    db_session, test_client_factory
+):
+    user, _ = await _user_and_org(db_session, "wa_default_edit")
+    async with test_client_factory(user) as client:
+        first = (await _create_sender(client)).json()
+        second = (
+            await _create_sender(client, label="Owner", phone="+1 512 555 0101")
+        ).json()
+        assert first["is_default"] is True
+        assert second["is_default"] is False
+
+        # Stepping down promotes the oldest remaining number instead of leaving
+        # the organization without a default.
+        demoted = await client.patch(
+            f"/api/v1/whatsapp/senders/{first['uuid']}", json={"is_default": False}
+        )
+        assert demoted.status_code == 200, demoted.text
+        assert demoted.json()["is_default"] is False
+        listed = (await client.get("/api/v1/whatsapp/senders")).json()
+        assert [(item["uuid"], item["is_default"]) for item in listed] == [
+            (second["uuid"], True),
+            (first["uuid"], False),
+        ]
+
+        # The only remaining number stays the default even when asked to step
+        # down.
+        assert (
+            await client.delete(f"/api/v1/whatsapp/senders/{first['uuid']}")
+        ).status_code == 200
+        only = await client.patch(
+            f"/api/v1/whatsapp/senders/{second['uuid']}", json={"is_default": False}
+        )
+        assert only.status_code == 200
+        assert only.json()["is_default"] is True
+
+
+def test_default_slot_race_gets_its_own_conflict_message():
+    """Two concurrent first saves must not be blamed on a duplicate number."""
+    race = IntegrityError(
+        "insert", {}, Exception("duplicate key ... ix_whatsapp_senders_one_default")
+    )
+    assert "just saved as the default" in sender_conflict_message(race)
+
+    duplicate_phone = IntegrityError(
+        "insert", {}, Exception("duplicate key ... uq_whatsapp_senders_org_phone")
+    )
+    message = sender_conflict_message(duplicate_phone)
+    assert "phone number is already saved" in message
+    assert "default" not in message
 
 
 # ----------------------------------------------------------------------
