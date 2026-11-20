@@ -109,7 +109,7 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
                     className,
                 )}
             >
-                <MessageCircle className="h-4 w-4" aria-hidden />
+                <MessageCircle className="h-4.5 w-4.5" aria-hidden />
             </button>
 
             <Dialog open={open} onOpenChange={setOpen}>
