@@ -25,6 +25,7 @@ from api.db.tool_client import ToolClient
 from api.db.user_client import UserClient
 from api.db.webhook_credential_client import WebhookCredentialClient
 from api.db.webhook_delivery_client import WebhookDeliveryClient
+from api.db.whatsapp_client import WhatsAppClient
 from api.db.workflow_builder import WorkflowBuilderClient
 from api.db.workflow_client import WorkflowClient
 from api.db.workflow_completion_client import WorkflowCompletionClient
@@ -64,6 +65,7 @@ class DBClient(
     ToolClient,
     KnowledgeBaseClient,
     LeadClient,
+    WhatsAppClient,
     WorkflowRecordingClient,
     TelephonyConfigurationClient,
     TelephonyPhoneNumberClient,

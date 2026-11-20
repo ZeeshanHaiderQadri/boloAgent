@@ -2477,6 +2477,118 @@ class EmailMessageModel(Base):
     )
 
 
+class WhatsAppTemplateModel(Base):
+    """A reusable click-to-chat message for one organization.
+
+    The body is plain text because it is typed into WhatsApp by the operator's
+    own client: Bolo never sends it and no template approval is involved.
+    ``variables`` keeps the placeholder names found when the body was saved so
+    the editor can list them without re-parsing history.
+    """
+
+    __tablename__ = "whatsapp_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_uuid = Column(
+        String(36),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+
+    name = Column(String(255), nullable=False)
+    language = Column(
+        String(16), nullable=False, default="en", server_default=text("'en'")
+    )
+    # marketing | utility | authentication
+    category = Column(
+        String(32),
+        nullable=False,
+        default="marketing",
+        server_default=text("'marketing'"),
+    )
+    body = Column(Text, nullable=False)
+    variables = Column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+
+    created_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "name", name="uq_whatsapp_templates_org_name"
+        ),
+        CheckConstraint(
+            "category IN ('marketing', 'utility', 'authentication')",
+            name="ck_whatsapp_templates_category",
+        ),
+        Index("ix_whatsapp_templates_organization_id", "organization_id"),
+    )
+
+
+class WhatsAppSenderModel(Base):
+    """The operator's own WhatsApp number, kept for reference only.
+
+    Click-to-chat opens whichever WhatsApp account the operator is signed into,
+    so ``phone_e164`` is informational. ``country`` is the fallback hint used
+    when a lead's raw phone has no country code; no default country is assumed.
+    """
+
+    __tablename__ = "whatsapp_senders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_uuid = Column(
+        String(36),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+
+    label = Column(String(255), nullable=False)
+    phone_e164 = Column(String(32), nullable=False)
+    country = Column(String(2), nullable=False)
+    is_default = Column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+
+    created_by = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "phone_e164", name="uq_whatsapp_senders_org_phone"
+        ),
+        Index("ix_whatsapp_senders_organization_id", "organization_id"),
+        Index(
+            "ix_whatsapp_senders_one_default",
+            "organization_id",
+            unique=True,
+            postgresql_where=text("is_default"),
+        ),
+    )
+
+
 class EmailSuppressionModel(Base):
     """An address that must not receive further marketing email for this org."""
 
