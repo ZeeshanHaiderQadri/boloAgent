@@ -1,5 +1,6 @@
 import ipaddress
 import socket
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from api.constants import OUTBOUND_NETWORK_POLICY
@@ -23,15 +24,37 @@ class UnsafeOutboundURLError(ValueError):
     """A URL may not be fetched because it could reach a private network."""
 
 
-def validate_public_http_url(url: str) -> str:
-    """Reject URLs that could make Bolo reach a private or local service.
+@dataclass(frozen=True)
+class PinnedTarget:
+    """A public URL together with the exact address that was checked for it.
+
+    Callers that open a connection should dial ``ip`` while still sending
+    ``host`` as the HTTP Host header and TLS server name. Re-resolving the name
+    after this point would reopen the DNS-rebinding window.
+    """
+
+    url: str
+    host: str
+    port: int
+    ip: str
+
+
+def resolve_public_http_url(url: str) -> PinnedTarget:
+    """Validate a URL and return a single checked address to connect to.
 
     Unlike :func:`validate_user_configured_service_url` this check is always
     on. Scraper-derived website URLs are third-party input, so they must never
     be trusted to point at loopback, LAN or metadata addresses regardless of
     the ``OUTBOUND_NETWORK_POLICY`` the operator configured.
+
+    DNS is resolved here exactly once. The returned address must be the one
+    the caller dials; resolving again inside the HTTP client lets a hostile
+    domain answer with a private address the second time.
     """
-    parsed = urlparse(url.strip())
+    try:
+        parsed = urlparse(url.strip())
+    except ValueError as exc:
+        raise UnsafeOutboundURLError("URL is malformed") from exc
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise UnsafeOutboundURLError("Only http and https URLs can be fetched")
     if parsed.username or parsed.password:
@@ -47,13 +70,45 @@ def validate_public_http_url(url: str) -> str:
     hostname = parsed.hostname.lower().rstrip(".")
     if hostname == "localhost" or hostname.endswith(".localhost"):
         raise UnsafeOutboundURLError("localhost cannot be fetched")
+    try:
+        # httpx dials the IDNA form, so pin the same spelling it will use.
+        ascii_host = hostname.encode("idna").decode("ascii").lower()
+    except UnicodeError as exc:
+        raise UnsafeOutboundURLError("URL has an invalid hostname") from exc
 
-    for ip in _resolve_hostname_ips(hostname, port):
-        if _is_blocked_outbound_ip(ip):
+    try:
+        literal = ipaddress.ip_address(ascii_host)
+    except ValueError:
+        resolved = _resolve_hostname_ips(ascii_host, port)
+        for ip in resolved:
+            if _is_blocked_outbound_ip(ip):
+                raise UnsafeOutboundURLError(
+                    "The URL resolves to a private network address"
+                )
+        pinned_ip = str(resolved[0])
+    else:
+        if _is_blocked_outbound_ip(literal):
             raise UnsafeOutboundURLError(
                 "The URL resolves to a private network address"
             )
-    return url.strip()
+        pinned_ip = str(literal)
+
+    return PinnedTarget(
+        url=url.strip(),
+        host=ascii_host,
+        port=port or (443 if parsed.scheme == "https" else 80),
+        ip=pinned_ip,
+    )
+
+
+def validate_public_http_url(url: str) -> str:
+    """Reject URLs that could make Bolo reach a private or local service.
+
+    Kept as the boolean-style entry point for callers that only need
+    validation. Fetching code should use :func:`resolve_public_http_url` and
+    dial the returned address.
+    """
+    return resolve_public_http_url(url).url
 
 
 def validate_user_configured_service_url(

@@ -45,6 +45,10 @@ class RateLimiter:
             )
         return self.redis_client
 
+    async def get_redis(self) -> aioredis.Redis:
+        """Shared connection for callers that need their own admission script."""
+        return await self._get_redis()
+
     async def acquire_token(
         self,
         organization_id: int,

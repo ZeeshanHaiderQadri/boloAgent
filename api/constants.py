@@ -365,6 +365,12 @@ LEADS_DEFAULT_PROVIDER = os.getenv("LEADS_DEFAULT_PROVIDER", "google_maps")
 LEADS_ENABLE_DEMO_PROVIDER = (
     os.getenv("LEADS_ENABLE_DEMO_PROVIDER", "true").lower() == "true"
 )
+# Automatic social-profile enrichment fetches each business's own website.
+# Operators whose install must not make third-party requests can disable the
+# background pass; the per-lead refresh endpoint remains available.
+LEADS_SOCIAL_ENRICHMENT_ENABLED = (
+    os.getenv("LEADS_SOCIAL_ENRICHMENT_ENABLED", "true").lower() == "true"
+)
 # Hard caps so a wide filter cannot exhaust memory or fill a PDF/PNG file.
 LEADS_EXPORT_MAX_ROWS = int(os.getenv("LEADS_EXPORT_MAX_ROWS", "5000"))
 LEADS_EXPORT_MAX_TABLE_ROWS = int(os.getenv("LEADS_EXPORT_MAX_TABLE_ROWS", "250"))

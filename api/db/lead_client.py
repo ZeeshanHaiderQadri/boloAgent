@@ -301,6 +301,7 @@ class LeadClient(BaseDBClient):
                     LeadModel.dedupe_key,
                     LeadModel.email,
                     LeadModel.email_consent,
+                    LeadModel.website,
                 ).where(
                     LeadModel.organization_id == organization_id,
                     LeadModel.dedupe_key.in_(
@@ -332,6 +333,17 @@ class LeadClient(BaseDBClient):
                 refresh["updated_at"] = datetime.now(UTC)
 
                 previous = existing.get(dedupe_key)
+                if previous is not None and "website" in row:
+                    old_website = (previous.website or "").strip() or None
+                    new_website = (row.get("website") or "").strip() or None
+                    if new_website != old_website:
+                        # Profiles belonged to the old site; scan the new one.
+                        refresh.update(
+                            social_links={},
+                            socials_checked_at=None,
+                            socials_attempts=0,
+                            socials_next_attempt_at=None,
+                        )
                 new_email = row.get("email")
                 if (
                     previous is not None
@@ -515,12 +527,22 @@ class LeadClient(BaseDBClient):
         search_id: int | None = None,
         limit: int = 25,
     ) -> list[LeadModel]:
-        """Leads with a website that were never scanned for social profiles."""
+        """Leads with a website that are due for a social-profile scan.
+
+        A lead stays pending until a scan completes or is declared terminal.
+        Failed scans are backed off by ``socials_next_attempt_at`` so a broken
+        site cannot occupy every batch.
+        """
+        now = datetime.now(UTC)
         filters = [
             LeadModel.organization_id == organization_id,
             LeadModel.website.is_not(None),
             LeadModel.website != "",
             LeadModel.socials_checked_at.is_(None),
+            or_(
+                LeadModel.socials_next_attempt_at.is_(None),
+                LeadModel.socials_next_attempt_at <= now,
+            ),
         ]
         if search_id is not None:
             filters.append(
@@ -542,11 +564,16 @@ class LeadClient(BaseDBClient):
     async def count_leads_needing_socials(
         self, organization_id: int, *, search_id: int | None = None
     ) -> int:
+        now = datetime.now(UTC)
         filters = [
             LeadModel.organization_id == organization_id,
             LeadModel.website.is_not(None),
             LeadModel.website != "",
             LeadModel.socials_checked_at.is_(None),
+            or_(
+                LeadModel.socials_next_attempt_at.is_(None),
+                LeadModel.socials_next_attempt_at <= now,
+            ),
         ]
         if search_id is not None:
             filters.append(
@@ -562,7 +589,7 @@ class LeadClient(BaseDBClient):
             )
             return int(total or 0)
 
-    async def update_lead_socials(
+    async def save_lead_socials(
         self,
         lead_id: int,
         organization_id: int,
@@ -570,6 +597,7 @@ class LeadClient(BaseDBClient):
         social_links: dict[str, str],
         checked_at: datetime,
     ) -> LeadModel | None:
+        """Replace stored links with the result of a successful scan."""
         async with self.async_session() as session:
             result = await session.execute(
                 update(LeadModel)
@@ -580,8 +608,81 @@ class LeadClient(BaseDBClient):
                 .values(
                     social_links=social_links,
                     socials_checked_at=checked_at,
+                    socials_attempts=0,
+                    socials_next_attempt_at=None,
                     updated_at=datetime.now(UTC),
                 )
+                .returning(LeadModel)
+            )
+            row = result.scalar_one_or_none()
+            await session.commit()
+            if row is not None:
+                await session.refresh(row)
+            return row
+
+    async def mark_lead_socials_checked(
+        self,
+        lead_id: int,
+        organization_id: int,
+        *,
+        checked_at: datetime,
+    ) -> LeadModel | None:
+        """Record a terminal scan that produced no authoritative page.
+
+        Existing links are kept (robots denial, 404, Facebook website), but
+        the lead is marked done so it is not retried automatically.
+        """
+        async with self.async_session() as session:
+            result = await session.execute(
+                update(LeadModel)
+                .where(
+                    LeadModel.id == lead_id,
+                    LeadModel.organization_id == organization_id,
+                )
+                .values(
+                    socials_checked_at=checked_at,
+                    socials_attempts=0,
+                    socials_next_attempt_at=None,
+                    updated_at=datetime.now(UTC),
+                )
+                .returning(LeadModel)
+            )
+            row = result.scalar_one_or_none()
+            await session.commit()
+            if row is not None:
+                await session.refresh(row)
+            return row
+
+    async def record_lead_socials_failure(
+        self,
+        lead_id: int,
+        organization_id: int,
+        *,
+        next_attempt_at: datetime | None,
+        terminal_at: datetime | None = None,
+    ) -> LeadModel | None:
+        """Count a transient failure without touching links or checked_at.
+
+        Once the retry budget is exhausted the caller passes ``terminal_at``
+        so the lead stops being picked up, while the last good links stay.
+        """
+        values: dict[str, Any] = {
+            "socials_attempts": LeadModel.socials_attempts + 1,
+            "updated_at": datetime.now(UTC),
+        }
+        if terminal_at is not None:
+            values["socials_checked_at"] = terminal_at
+            values["socials_next_attempt_at"] = None
+        else:
+            values["socials_next_attempt_at"] = next_attempt_at
+        async with self.async_session() as session:
+            result = await session.execute(
+                update(LeadModel)
+                .where(
+                    LeadModel.id == lead_id,
+                    LeadModel.organization_id == organization_id,
+                )
+                .values(**values)
                 .returning(LeadModel)
             )
             row = result.scalar_one_or_none()

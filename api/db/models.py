@@ -1856,6 +1856,12 @@ class LeadModel(Base):
         JSON, nullable=False, default=dict, server_default=text("'{}'")
     )
     socials_checked_at = Column(DateTime(timezone=True), nullable=True)
+    # Transient fetch failures must not wipe good links or retry forever.
+    # Attempts counts consecutive failures and drives the backoff below.
+    socials_attempts = Column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    socials_next_attempt_at = Column(DateTime(timezone=True), nullable=True)
     place_id = Column(String(255), nullable=True)
     cid = Column(String(64), nullable=True)
     rating = Column(Float, nullable=True)

@@ -1,7 +1,7 @@
 """Real PostgreSQL coverage for the lead client: dedupe, CRM fields, filters."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import inspect
@@ -488,7 +488,7 @@ async def test_social_enrichment_queue_is_org_scoped_and_tracks_scans(db_session
     assert [lead.title for lead in pending] == ["Apex Labs"]
     assert await db_session.count_leads_needing_socials(org.id) == 1
 
-    updated = await db_session.update_lead_socials(
+    updated = await db_session.save_lead_socials(
         pending[0].id,
         org.id,
         social_links={"instagram": "https://www.instagram.com/apex/"},
@@ -498,6 +498,130 @@ async def test_social_enrichment_queue_is_org_scoped_and_tracks_scans(db_session
     assert updated is not None
     assert updated.social_links == {"instagram": "https://www.instagram.com/apex/"}
     assert updated.socials_checked_at is not None
+    assert updated.socials_attempts == 0
     assert await db_session.count_leads_needing_socials(org.id) == 0
     # The other organization's lead was never part of this batch.
     assert await db_session.count_leads_needing_socials(other_org.id) == 1
+
+
+@pytest.mark.asyncio
+async def test_social_failure_keeps_links_and_leaves_checked_at(db_session):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[_row("Apex Labs", "p1", website="https://apex-labs.com")],
+    )
+    lead = (await db_session.list_leads_needing_socials(org.id, search_id=search.id))[0]
+    checked = datetime.now(UTC)
+    await db_session.save_lead_socials(
+        lead.id,
+        org.id,
+        social_links={"instagram": "https://www.instagram.com/apex/"},
+        checked_at=checked,
+    )
+    # A later scan failure must not remove the good links or uncheck the lead.
+    await db_session.record_lead_socials_failure(
+        lead.id,
+        org.id,
+        next_attempt_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    kept = await db_session.get_lead(lead.id, org.id)
+    assert kept.social_links == {"instagram": "https://www.instagram.com/apex/"}
+    assert kept.socials_checked_at == checked
+    assert kept.socials_attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_social_failure_backs_off_a_pending_lead(db_session):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[_row("Cedar Works", "p2", website="https://cedar.example")],
+    )
+    lead = (await db_session.list_leads_needing_socials(org.id, search_id=search.id))[0]
+
+    await db_session.record_lead_socials_failure(
+        lead.id,
+        org.id,
+        next_attempt_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    # Not due again until the backoff expires, and nothing was marked checked.
+    assert await db_session.count_leads_needing_socials(org.id) == 0
+    assert (await db_session.get_lead(lead.id, org.id)).socials_checked_at is None
+
+    await db_session.record_lead_socials_failure(
+        lead.id, org.id, next_attempt_at=datetime.now(UTC) - timedelta(seconds=1)
+    )
+    assert await db_session.count_leads_needing_socials(org.id) == 1
+    assert (await db_session.get_lead(lead.id, org.id)).socials_attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_social_terminal_failure_stops_retrying_but_keeps_links(db_session):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[_row("Cedar Works", "p2", website="https://cedar.example")],
+    )
+    lead = (await db_session.list_leads_needing_socials(org.id, search_id=search.id))[0]
+    await db_session.save_lead_socials(
+        lead.id,
+        org.id,
+        social_links={"x": "https://x.com/cedar"},
+        checked_at=datetime.now(UTC),
+    )
+    await db_session.record_lead_socials_failure(
+        lead.id, org.id, next_attempt_at=None, terminal_at=datetime.now(UTC)
+    )
+
+    done = await db_session.get_lead(lead.id, org.id)
+    assert done.social_links == {"x": "https://x.com/cedar"}
+    assert done.socials_checked_at is not None
+    assert done.socials_attempts == 1
+    assert done.socials_next_attempt_at is None
+    assert await db_session.count_leads_needing_socials(org.id) == 0
+
+
+@pytest.mark.asyncio
+async def test_website_change_on_rescrape_clears_old_socials(db_session):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[_row("Apex Labs", "p1", website="https://old.example")],
+    )
+    lead = (await db_session.list_leads_needing_socials(org.id, search_id=search.id))[0]
+    await db_session.save_lead_socials(
+        lead.id,
+        org.id,
+        social_links={"instagram": "https://www.instagram.com/apex/"},
+        checked_at=datetime.now(UTC),
+    )
+
+    await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        leads=[_row("Apex Labs", "p1", website="https://new.example")],
+    )
+
+    # The upsert is a Core conflict update, so the session's identity map still
+    # holds the old row; expire it before reading the new state.
+    lead_id, org_id = lead.id, org.id
+    stale = await db_session.get_lead(lead_id, org_id)
+    inspect(stale).session.expire_all()
+    refreshed = await db_session.get_lead(lead_id, org_id)
+    assert refreshed.website == "https://new.example"
+    assert refreshed.social_links == {}
+    assert refreshed.socials_checked_at is None
+    assert refreshed.socials_attempts == 0
+    # The new site is scanned from scratch.
+    assert await db_session.count_leads_needing_socials(org_id) == 1

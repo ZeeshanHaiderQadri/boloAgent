@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from api.routes.leads import router
 from api.services.auth.depends import get_user
 from api.services.leads.dispatch import DispatchQuotaError
+from api.services.leads.socials import SocialScan
 
 NOW = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
 USER = SimpleNamespace(id=3, selected_organization_id=11)
@@ -763,6 +764,39 @@ def test_patch_contact_fields_normalizes_phone_and_logs_an_edit():
     assert set(activity["metadata"]["fields"]) == {"phone", "city", "website"}
 
 
+def test_patch_website_clears_socials_so_the_new_site_is_rescanned():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+    db.update_lead = AsyncMock(return_value=_lead(website="https://new.example"))
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch("/leads/1", json={"website": "https://new.example"})
+
+    assert response.status_code == 200, response.text
+    values = db.update_lead.await_args.kwargs
+    assert values["website"] == "https://new.example"
+    assert values["social_links"] == {}
+    assert values["socials_checked_at"] is None
+    assert values["socials_attempts"] == 0
+    assert values["socials_next_attempt_at"] is None
+
+
+def test_patch_keeps_socials_when_the_website_is_unchanged():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+    db.update_lead = AsyncMock(return_value=_lead(city="Oakland"))
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        response = _app().patch("/leads/1", json={"city": "Oakland"})
+
+    assert response.status_code == 200, response.text
+    values = db.update_lead.await_args.kwargs
+    assert "social_links" not in values
+    assert "socials_checked_at" not in values
+
+
 def test_patch_rejects_clearing_the_business_name():
     db = MagicMock()
     db.get_lead = AsyncMock(return_value=_lead())
@@ -1187,17 +1221,32 @@ def test_bulk_delete_without_matches_is_404():
 def test_refresh_socials_scans_the_website_and_saves_org_scoped_links():
     db = MagicMock()
     db.get_lead = AsyncMock(return_value=_lead())
-    db.update_lead_socials = AsyncMock(
+    db.save_lead_socials = AsyncMock(
         return_value=_lead(
             social_links={"instagram": "https://www.instagram.com/apex/"},
             socials_checked_at=NOW,
         )
     )
-    discover = AsyncMock(return_value={"instagram": "https://www.instagram.com/apex/"})
+    discover = AsyncMock(
+        return_value=SocialScan(
+            {"instagram": "https://www.instagram.com/apex/"},
+            checked=True,
+            replace_links=True,
+        )
+    )
 
     with (
         patch("api.routes.leads.db_client", db),
         patch("api.routes.leads.discover_social_links", discover),
+        patch(
+            "api.routes.leads.allow_refresh_socials",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "api.routes.leads.acquire_org_scan_slot",
+            AsyncMock(return_value="slot-1"),
+        ),
+        patch("api.routes.leads.release_org_scan_slot", AsyncMock()) as release,
     ):
         response = _app().post("/leads/1/refresh-socials")
 
@@ -1209,9 +1258,178 @@ def test_refresh_socials_scans_the_website_and_saves_org_scoped_links():
     discover.assert_awaited_once_with(
         "https://apex-software-demo.com", business_name="Apex Software Labs"
     )
-    kwargs = db.update_lead_socials.await_args.kwargs
+    kwargs = db.save_lead_socials.await_args.kwargs
     assert kwargs["social_links"] == {"instagram": "https://www.instagram.com/apex/"}
-    assert db.update_lead_socials.await_args.args == (1, USER.selected_organization_id)
+    assert db.save_lead_socials.await_args.args == (1, USER.selected_organization_id)
+    release.assert_awaited_once_with(USER.selected_organization_id, "slot-1")
+
+
+def test_refresh_socials_keeps_links_when_the_scan_fails_temporarily():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+    discover = AsyncMock(
+        return_value=SocialScan(
+            {}, checked=False, replace_links=False, error="http 503"
+        )
+    )
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.discover_social_links", discover),
+        patch(
+            "api.routes.leads.allow_refresh_socials",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "api.routes.leads.acquire_org_scan_slot",
+            AsyncMock(return_value="slot-1"),
+        ),
+        patch("api.routes.leads.release_org_scan_slot", AsyncMock()),
+    ):
+        response = _app().post("/leads/1/refresh-socials")
+
+    assert response.status_code == 502
+    assert "Stored links were kept" in response.json()["detail"]
+    db.save_lead_socials.assert_not_called()
+    db.mark_lead_socials_checked.assert_not_called()
+
+
+def test_refresh_socials_marks_a_robots_denial_as_checked():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+    db.mark_lead_socials_checked = AsyncMock(return_value=_lead())
+    discover = AsyncMock(return_value=SocialScan({}, checked=True, replace_links=False))
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.discover_social_links", discover),
+        patch(
+            "api.routes.leads.allow_refresh_socials",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "api.routes.leads.acquire_org_scan_slot",
+            AsyncMock(return_value="slot-1"),
+        ),
+        patch("api.routes.leads.release_org_scan_slot", AsyncMock()),
+    ):
+        response = _app().post("/leads/1/refresh-socials")
+
+    assert response.status_code == 200, response.text
+    db.mark_lead_socials_checked.assert_awaited_once()
+    db.save_lead_socials.assert_not_called()
+
+
+def test_refresh_socials_returns_422_for_a_malformed_website():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead(website="http://[::1"))
+    discover = AsyncMock()
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.discover_social_links", discover),
+        patch(
+            "api.routes.leads.allow_refresh_socials",
+            AsyncMock(return_value=True),
+        ),
+    ):
+        response = _app().post("/leads/1/refresh-socials")
+
+    assert response.status_code == 422
+    discover.assert_not_awaited()
+
+
+def test_refresh_socials_fails_closed_when_redis_is_down():
+    from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
+
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+    discover = AsyncMock()
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.discover_social_links", discover),
+        patch(
+            "api.routes.leads.allow_refresh_socials",
+            AsyncMock(side_effect=RateLimiterUnavailable("bucket")),
+        ),
+    ):
+        response = _app().post("/leads/1/refresh-socials")
+
+    assert response.status_code == 503
+    discover.assert_not_awaited()
+
+
+def test_refresh_socials_is_rate_limited_per_user_and_org():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+    discover = AsyncMock()
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.discover_social_links", discover),
+        patch(
+            "api.routes.leads.allow_refresh_socials",
+            AsyncMock(return_value=False),
+        ),
+    ):
+        response = _app().post("/leads/1/refresh-socials")
+
+    assert response.status_code == 429
+    discover.assert_not_awaited()
+
+
+def test_refresh_socials_caps_concurrent_scans_per_org():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+    discover = AsyncMock()
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.discover_social_links", discover),
+        patch(
+            "api.routes.leads.allow_refresh_socials",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "api.routes.leads.acquire_org_scan_slot",
+            AsyncMock(return_value=None),
+        ),
+    ):
+        response = _app().post("/leads/1/refresh-socials")
+
+    assert response.status_code == 429
+    discover.assert_not_awaited()
+
+
+def test_refresh_socials_returns_504_when_the_scan_times_out():
+    db = MagicMock()
+    db.get_lead = AsyncMock(return_value=_lead())
+    db.mark_lead_socials_checked = AsyncMock()
+
+    async def slow_scan(*args, **kwargs):
+        import asyncio
+
+        await asyncio.sleep(10)
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.discover_social_links", slow_scan),
+        patch("api.routes.leads.SCAN_TIMEOUT_SECONDS", 0.01),
+        patch(
+            "api.routes.leads.allow_refresh_socials",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "api.routes.leads.acquire_org_scan_slot",
+            AsyncMock(return_value="slot-1"),
+        ),
+        patch("api.routes.leads.release_org_scan_slot", AsyncMock()),
+    ):
+        response = _app().post("/leads/1/refresh-socials")
+
+    assert response.status_code == 504
+    db.mark_lead_socials_checked.assert_not_called()
 
 
 def test_refresh_socials_requires_a_lead_website():
@@ -1222,7 +1440,7 @@ def test_refresh_socials_requires_a_lead_website():
         response = _app().post("/leads/1/refresh-socials")
 
     assert response.status_code == 400
-    db.update_lead_socials.assert_not_called()
+    db.save_lead_socials.assert_not_called()
 
 
 def test_refresh_socials_is_scoped_to_the_selected_organization():

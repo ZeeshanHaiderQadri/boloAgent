@@ -10,8 +10,9 @@ idempotent and partial trailing rows are dropped by the parser.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 from loguru import logger
 
@@ -20,8 +21,10 @@ from api.constants import (
     LEADS_ENABLE_DEMO_PROVIDER,
     LEADS_SCRAPER_POLL_INTERVAL_SECONDS,
     LEADS_SCRAPER_TIMEOUT_SECONDS,
+    LEADS_SOCIAL_ENRICHMENT_ENABLED,
 )
 from api.db import db_client
+from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
 from api.services.leads.call_outcomes import call_outcome, next_crm_status
 from api.services.leads.normalization import normalize_rows
 from api.services.leads.providers import (
@@ -29,16 +32,41 @@ from api.services.leads.providers import (
     ProviderJobStatus,
     get_provider,
 )
-from api.services.leads.socials import discover_social_links
+from api.services.leads.social_scan_limits import (
+    acquire_enrichment_job_lease,
+    release_enrichment_job_lease,
+)
+from api.services.leads.socials import (
+    SocialScan,
+    discover_social_links,
+    normalize_website,
+)
 from api.tasks.function_names import FunctionNames
 
 SOCIAL_ENRICH_BATCH_SIZE = 25
 SOCIAL_ENRICH_CONCURRENCY = 4
 SOCIAL_ENRICH_MAX_RUNS = 40
+# A batch may scan for at most this long. Leads not reached stay pending, so
+# the next short job picks them up instead of holding a worker for minutes.
+SOCIAL_ENRICH_BATCH_BUDGET_SECONDS = 100.0
+SOCIAL_ENRICH_MAX_ATTEMPTS = 5
+SOCIAL_ENRICH_BASE_BACKOFF_SECONDS = 3600
+SOCIAL_ENRICH_MAX_BACKOFF_SECONDS = 86400
+SOCIAL_ENRICH_CHAIN_DELAY_SECONDS = 5
+SOCIAL_ENRICH_DEFER_SECONDS = 30
 
 
 async def _set_status(search_id: int, organization_id: int, **values: Any) -> None:
     await db_client.update_lead_search(search_id, organization_id, **values)
+
+
+def _site_key(website: str | None) -> str:
+    """Canonical key so trailing-slash and host-case variants scan once."""
+    normalized = normalize_website(website)
+    if not normalized:
+        return (website or "").strip()
+    parsed = urlparse(normalized)
+    return f"{parsed.scheme.lower()}://{parsed.hostname or ''}{parsed.path.rstrip('/')}"
 
 
 def _target_results(search: Any) -> int | None:
@@ -63,6 +91,8 @@ async def _enqueue_auto_calls(ctx: dict, search_id: int) -> None:
 
 
 async def _enqueue_social_enrichment(ctx: dict, search_id: int) -> None:
+    if not LEADS_SOCIAL_ENRICHMENT_ENABLED:
+        return
     redis = (ctx or {}).get("redis")
     if redis is None:
         return
@@ -503,14 +533,16 @@ async def sync_lead_call_outcomes(ctx: dict) -> dict[str, Any]:
     return {"status": "ok", "recorded": len(activities)}
 
 
-async def enrich_lead_socials(ctx: dict, search_id: int) -> dict[str, Any]:
+async def enrich_lead_socials(
+    ctx: dict, search_id: int, run: int = 0
+) -> dict[str, Any]:
     """Scan each lead's own website for its social profiles.
 
-    The query only returns leads whose website has never been scanned, so a
-    repeated or duplicated job is cheap. Each processed lead is stamped with
-    ``socials_checked_at`` even when nothing was found, which keeps a rerun
-    from hammering the same sites; an operator can still refresh one lead on
-    demand from the API.
+    One global lease means the fleet runs at most one enrichment job at a
+    time, leaving ARQ slots for email campaigns, webhooks and call sync. A
+    transient failure leaves the old links in place and schedules a backed-off
+    retry; after ``SOCIAL_ENRICH_MAX_ATTEMPTS`` the lead stops retrying but
+    keeps whatever was found before.
     """
     search = await db_client.get_lead_search_unscoped(search_id)
     if search is None:
@@ -518,7 +550,79 @@ async def enrich_lead_socials(ctx: dict, search_id: int) -> dict[str, Any]:
     if search.provider == "demo":
         # Demo websites are generated placeholders, not real sites.
         return {"status": "skipped", "reason": "demo provider"}
-    return await _scan_pending_socials(ctx, search.organization_id, search.id, run=0)
+    if not LEADS_SOCIAL_ENRICHMENT_ENABLED:
+        return {"status": "disabled"}
+
+    redis = (ctx or {}).get("redis")
+    if redis is None:
+        return {"status": "skipped", "reason": "queue unavailable"}
+
+    try:
+        lease = await acquire_enrichment_job_lease(redis)
+    except RateLimiterUnavailable:
+        lease = None
+    if lease is None:
+        # Another enrichment job holds the fleet-wide slot. Try again later
+        # rather than scanning alongside it.
+        try:
+            await redis.enqueue_job(
+                FunctionNames.ENRICH_LEAD_SOCIALS,
+                search_id,
+                run,
+                _defer_by=timedelta(seconds=SOCIAL_ENRICH_DEFER_SECONDS),
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not defer social enrichment for search {}: {}",
+                search_id,
+                exc,
+            )
+        return {"status": "deferred"}
+
+    try:
+        return await _scan_pending_socials(
+            ctx, search.organization_id, search.id, run=run
+        )
+    finally:
+        await release_enrichment_job_lease(redis, lease)
+
+
+async def _apply_scan_result(lead: Any, scan: SocialScan, organization_id: int) -> int:
+    """Persist one scan without ever destroying a previously good result."""
+    now = datetime.now(UTC)
+    if scan.checked:
+        if scan.replace_links:
+            await db_client.save_lead_socials(
+                lead.id,
+                organization_id,
+                social_links=scan.links,
+                checked_at=now,
+            )
+            return len(scan.links)
+        await db_client.mark_lead_socials_checked(
+            lead.id, organization_id, checked_at=now
+        )
+        return 0
+
+    attempts = (lead.socials_attempts or 0) + 1
+    if attempts >= SOCIAL_ENRICH_MAX_ATTEMPTS:
+        await db_client.record_lead_socials_failure(
+            lead.id,
+            organization_id,
+            next_attempt_at=None,
+            terminal_at=now,
+        )
+    else:
+        delay = min(
+            SOCIAL_ENRICH_BASE_BACKOFF_SECONDS * (2 ** (attempts - 1)),
+            SOCIAL_ENRICH_MAX_BACKOFF_SECONDS,
+        )
+        await db_client.record_lead_socials_failure(
+            lead.id,
+            organization_id,
+            next_attempt_at=now + timedelta(seconds=delay),
+        )
+    return 0
 
 
 async def _scan_pending_socials(
@@ -530,33 +634,48 @@ async def _scan_pending_socials(
     if not leads:
         return {"status": "completed", "scanned": 0, "found": 0, "remaining": 0}
 
+    # Leads that share the exact same website are scanned once; different
+    # URLs on the same host are serialised so we never hammer one site.
+    groups: dict[str, list[Any]] = {}
+    for lead in leads:
+        groups.setdefault(_site_key(lead.website), []).append(lead)
+
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + SOCIAL_ENRICH_BATCH_BUDGET_SECONDS
+    queue: asyncio.Queue = asyncio.Queue()
+    for item in groups.items():
+        queue.put_nowait(item)
     semaphore = asyncio.Semaphore(SOCIAL_ENRICH_CONCURRENCY)
+    host_locks: dict[str, asyncio.Lock] = {}
+    scanned = 0
     found = 0
 
-    async def scan(lead) -> None:
-        nonlocal found
-        async with semaphore:
+    async def worker() -> None:
+        nonlocal scanned, found
+        while loop.time() < deadline:
             try:
-                links = await discover_social_links(
-                    lead.website, business_name=lead.title
-                )
-            except Exception as exc:  # a single hostile page must not fail the batch
-                logger.warning(
-                    "Social scan failed for lead {} ({}): {}",
-                    lead.id,
-                    lead.website,
-                    exc,
-                )
-                links = {}
-            await db_client.update_lead_socials(
-                lead.id,
-                organization_id,
-                social_links=links,
-                checked_at=datetime.now(UTC),
-            )
-            found += len(links)
+                url, group = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+            host = (urlparse(url).hostname or url).lower()
+            lock = host_locks.setdefault(host, asyncio.Lock())
+            async with semaphore, lock:
+                if loop.time() >= deadline:
+                    return
+                try:
+                    scan = await discover_social_links(
+                        url, business_name=group[0].title
+                    )
+                except Exception as exc:  # one hostile page must not fail the batch
+                    logger.warning("Social scan failed for {}: {}", url, exc)
+                    continue
+                for lead in group:
+                    found += await _apply_scan_result(lead, scan, organization_id)
+                scanned += len(group)
 
-    await asyncio.gather(*(scan(lead) for lead in leads))
+    await asyncio.gather(
+        *(worker() for _ in range(min(SOCIAL_ENRICH_CONCURRENCY, len(groups))))
+    )
 
     remaining = await db_client.count_leads_needing_socials(
         organization_id, search_id=search_id
@@ -565,7 +684,12 @@ async def _scan_pending_socials(
         redis = (ctx or {}).get("redis")
         if redis is not None:
             try:
-                await redis.enqueue_job(FunctionNames.ENRICH_LEAD_SOCIALS, search_id)
+                await redis.enqueue_job(
+                    FunctionNames.ENRICH_LEAD_SOCIALS,
+                    search_id,
+                    run + 1,
+                    _defer_by=timedelta(seconds=SOCIAL_ENRICH_CHAIN_DELAY_SECONDS),
+                )
             except Exception as exc:
                 logger.warning(
                     "Could not continue social enrichment for search {}: {}",
@@ -576,13 +700,13 @@ async def _scan_pending_socials(
     logger.info(
         "Social enrichment for search {}: scanned {}, found {}, remaining {}",
         search_id,
-        len(leads),
+        scanned,
         found,
         remaining,
     )
     return {
         "status": "completed",
-        "scanned": len(leads),
+        "scanned": scanned,
         "found": found,
         "remaining": remaining,
     }
