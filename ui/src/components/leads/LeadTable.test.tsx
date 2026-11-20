@@ -9,6 +9,14 @@ vi.mock("next/navigation", () => ({
     useRouter: () => ({ push: vi.fn() }),
 }));
 
+vi.mock("@/lib/auth", () => ({
+    useAuth: () => ({ getAccessToken: vi.fn(async () => "token") }),
+}));
+
+vi.mock("@/client", () => ({
+    whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet: vi.fn(),
+}));
+
 vi.mock("@/hooks/useOrganizationTimezone", () => ({
     useOrganizationTimezone: () => "UTC",
 }));
@@ -64,6 +72,24 @@ describe("LeadTable", () => {
         render(<LeadTable leads={[lead({ phone: null, phone_e164: null })]} />);
 
         expect(screen.getByText("No phone")).toBeTruthy();
+    });
+
+    it("offers a WhatsApp message for numbers with a country", () => {
+        render(<LeadTable leads={[lead()]} />);
+
+        expect(
+            screen.getByRole("button", { name: /open whatsapp message for apex/i }),
+        ).toBeTruthy();
+    });
+
+    it("hides the WhatsApp action for local numbers with no country", () => {
+        render(
+            <LeadTable
+                leads={[lead({ phone: "(415) 555-0142", phone_e164: null })]}
+            />,
+        );
+
+        expect(screen.queryByRole("button", { name: /open whatsapp message/i })).toBeNull();
     });
 
     it("wires row and select-all checkboxes to the parent", () => {

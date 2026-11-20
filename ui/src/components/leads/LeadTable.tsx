@@ -21,6 +21,7 @@ import { formatDate } from "@/lib/dateTime";
 import { EmailConsentBadge } from "./EmailConsentBadge";
 import { LeadSocialLinks } from "./LeadSocialLinks";
 import { LeadStatusBadge } from "./LeadStatusBadge";
+import { WhatsAppLinkButton } from "./WhatsAppLinkButton";
 
 interface LeadTableProps {
     leads: LeadResponse[];
@@ -165,14 +166,17 @@ export function LeadTable({
                                 <TableCell>
                                     <div className="flex flex-col gap-1 text-sm">
                                         {lead.phone ? (
-                                            <a
-                                                href={`tel:${lead.phone_e164 || lead.phone}`}
-                                                onClick={(event) => event.stopPropagation()}
-                                                className="flex items-center gap-1.5 hover:text-cta hover:underline"
-                                            >
-                                                <Phone className="h-3.5 w-3.5 shrink-0" />
-                                                <span className="truncate">{lead.phone}</span>
-                                            </a>
+                                            <div className="flex items-center gap-1.5">
+                                                <a
+                                                    href={`tel:${lead.phone_e164 || lead.phone}`}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    className="flex min-w-0 items-center gap-1.5 hover:text-cta hover:underline"
+                                                >
+                                                    <Phone className="h-3.5 w-3.5 shrink-0" />
+                                                    <span className="truncate">{lead.phone}</span>
+                                                </a>
+                                                <WhatsAppLinkButton lead={lead} className="shrink-0" />
+                                            </div>
                                         ) : (
                                             <span className="flex items-center gap-1.5 text-muted-foreground">
                                                 <Phone className="h-3.5 w-3.5 shrink-0" />
