@@ -1,10 +1,11 @@
 ---
 title: "Social profiles for leads"
-description: "How Bolo finds Instagram, X, TikTok and YouTube profiles on a lead's own website, and how to turn the feature off."
+description: "How Bolo finds Instagram, X, TikTok, YouTube, Facebook and LinkedIn profiles on a lead's own website, and how to turn the feature off."
 ---
 
 When a lead has a website, Bolo can look for the business's own Instagram, X,
-TikTok and YouTube profiles and show them as icons in the leads table.
+TikTok, YouTube, Facebook and LinkedIn profiles and show them as icons in the
+leads table.
 
 ## Where the requests come from
 
@@ -21,13 +22,18 @@ Requests are deliberately small and polite:
   response budget and at most four redirects.
 - Only public web addresses are fetched, so a lead website cannot make Bolo
   reach a private or internal service.
-- Facebook, `fb.com` and `fb.me` pages are not fetched; a lead whose website is
-  only a Facebook page records no profiles.
+- Facebook and `fb.com` pages are never fetched. When a lead's website is
+  itself a Facebook page, that page is recorded as the lead's Facebook
+  profile; `fb.me` short links and platform paths record nothing.
 
 A profile is kept only when the handle matches the business. Template footers
 that link the site vendor's account and unrelated accounts with similar words
 (say, a pizza shop linking a pizza truck) are ignored. If a scan fails
 temporarily, existing icons stay and the lead is retried later with backoff.
+
+Recognized page shapes are `facebook.com/<page>` and LinkedIn's
+`linkedin.com/company/<slug>` and `linkedin.com/in/<slug>` pages. Share
+sheets, feeds, groups, events and other platform pages are ignored.
 
 ## Refreshing one lead
 

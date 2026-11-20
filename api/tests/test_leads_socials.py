@@ -242,11 +242,56 @@ def test_prefix_handle_matches_a_domain_label():
     }
 
 
+def test_extracts_facebook_and_linkedin_pages():
+    html = """
+    <a href="https://www.facebook.com/apexlabsnyc/?ref=footer">Facebook</a>
+    <a href="https://www.linkedin.com/company/apex-labs/posts/">LinkedIn</a>
+    """
+
+    links = extract_social_links(html, "https://apex-labs.com")
+
+    assert links == {
+        "facebook": "https://www.facebook.com/apexlabsnyc",
+        "linkedin": "https://www.linkedin.com/company/apex-labs/",
+    }
+
+
+def test_ignores_share_sheets_and_reserved_facebook_and_linkedin_paths():
+    html = """
+    <a href="https://www.facebook.com/sharer/sharer.php?u=https://apex-labs.com">Share</a>
+    <a href="https://www.facebook.com/events/123/">Event</a>
+    <a href="https://www.facebook.com/profile.php?id=123">Profile</a>
+    <a href="https://www.linkedin.com/feed/">Feed</a>
+    <a href="https://www.linkedin.com/shareArticle?mini=true&url=https://apex-labs.com">Share</a>
+    <a href="https://www.linkedin.com/school/apexlabs/">School</a>
+    """
+
+    assert extract_social_links(html, "https://apex-labs.com") == {}
+
+
+def test_facebook_and_linkedin_need_brand_evidence():
+    html = """
+    <a href="https://www.facebook.com/unrelatedvenues/">Facebook</a>
+    <a href="https://www.linkedin.com/company/acme-holdings/">LinkedIn</a>
+    <a href="https://www.facebook.com/apexlabs/">Our page</a>
+    """
+
+    links = extract_social_links(html, "https://apex-labs.com")
+
+    assert links == {"facebook": "https://www.facebook.com/apexlabs"}
+
+
 def test_website_that_is_a_profile_binds_directly():
     assert social_link_from_url("instagram.com/apex.labs") == {
         "instagram": "https://www.instagram.com/apex.labs/"
     }
-    assert social_link_from_url("https://www.facebook.com/apexlabs") == {}
+    assert social_link_from_url("https://www.facebook.com/apexlabs") == {
+        "facebook": "https://www.facebook.com/apexlabs"
+    }
+    assert social_link_from_url("https://www.linkedin.com/company/apex-labs") == {
+        "linkedin": "https://www.linkedin.com/company/apex-labs/"
+    }
+    assert social_link_from_url("https://www.facebook.com/help/") == {}
     assert social_link_from_url(None) == {}
     assert social_link_from_url("http://[::1") == {}
 
@@ -266,8 +311,15 @@ async def test_facebook_website_is_never_fetched(monkeypatch):
     monkeypatch.setattr(socials, "_resolve_target", explode)
 
     scan = await discover_social_links("https://www.facebook.com/apexlabs")
+    # The page URL itself is the business account; nothing is fetched.
+    assert scan == SocialScan(
+        {"facebook": "https://www.facebook.com/apexlabs"},
+        checked=True,
+        replace_links=True,
+    )
 
-    assert scan == SocialScan({}, checked=True, replace_links=False)
+    shortener = await discover_social_links("https://fb.me/apexlabs")
+    assert shortener == SocialScan({}, checked=True, replace_links=False)
 
 
 @pytest.mark.asyncio
