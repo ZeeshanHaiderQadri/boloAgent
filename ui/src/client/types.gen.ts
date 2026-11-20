@@ -9241,6 +9241,10 @@ export type WhatsAppLeadLinksResponse = {
      */
     phone_e164?: string | null;
     /**
+     * Country
+     */
+    country?: string | null;
+    /**
      * Links
      */
     links: Array<WhatsAppTemplateLink>;

@@ -121,6 +121,8 @@ class WhatsAppLeadLinksResponse(BaseModel):
     # no_phone | country_unknown | unrecognized_number
     reason: Optional[str] = None
     phone_e164: Optional[str] = None
+    # ISO country the number was resolved under, for display only.
+    country: Optional[str] = None
     links: list[WhatsAppTemplateLink]
 
 
@@ -593,4 +595,9 @@ async def whatsapp_lead_links(
                 url=url,
             )
         )
-    return WhatsAppLeadLinksResponse(available=True, phone_e164=phone_e164, links=links)
+    return WhatsAppLeadLinksResponse(
+        available=True,
+        phone_e164=phone_e164,
+        country=resolution.country,
+        links=links,
+    )

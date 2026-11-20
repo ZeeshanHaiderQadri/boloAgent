@@ -21,7 +21,7 @@ import { WhatsAppDisclaimerDialog } from "@/components/whatsapp/disclaimer-dialo
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { hasInternationalPhone } from "@/lib/whatsapp";
+import { describePhoneNumber, hasInternationalPhone } from "@/lib/whatsapp";
 
 /**
  * Opens a chooser of click-to-chat messages for one lead. Nothing is sent from
@@ -83,6 +83,10 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
         }
     };
 
+    const target = data?.phone_e164
+        ? describePhoneNumber(data.phone_e164, data.country)
+        : null;
+
     const reasonText =
         data?.reason === "no_phone"
             ? "This lead has no phone number."
@@ -121,6 +125,18 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
                     </DialogHeader>
 
                     <ConsentNote lead={lead} />
+
+                    {target && (
+                        <div className="flex flex-wrap items-baseline gap-x-1.5 text-sm">
+                            <span className="text-muted-foreground">This link opens</span>
+                            <span className="font-medium">{target.formatted}</span>
+                            {target.countryName && (
+                                <span className="text-muted-foreground">
+                                    ({target.countryName})
+                                </span>
+                            )}
+                        </div>
+                    )}
 
                     {loading ? (
                         <div
@@ -175,8 +191,8 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
                                 </a>
                             ))}
                             <p className="text-xs text-muted-foreground">
-                                Opens {data?.phone_e164} in whichever WhatsApp account you
-                                are signed into. No message is sent until you press send.
+                                Opens in whichever WhatsApp account you are signed into.
+                                No message is sent until you press send.
                             </p>
                         </div>
                     )}

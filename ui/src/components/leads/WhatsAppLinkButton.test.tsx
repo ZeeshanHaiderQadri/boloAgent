@@ -82,6 +82,7 @@ describe("WhatsAppLinkButton", () => {
                 available: true,
                 reason: null,
                 phone_e164: "+15125550142",
+                country: "US",
                 links: [
                     {
                         template_uuid: "t1",
@@ -98,6 +99,8 @@ describe("WhatsAppLinkButton", () => {
         fireEvent.click(screen.getByRole("button", { name: /open whatsapp message for apex/i }));
 
         const name = await screen.findByText("First contact");
+        expect(screen.getByText("+1 (512) 555-0142")).toBeTruthy();
+        expect(screen.getByText("(United States)")).toBeTruthy();
         const anchor = name.closest("a");
         expect(anchor?.getAttribute("href")).toBe(
             "https://wa.me/15125550142?text=Hi%20Apex%20Labs",

@@ -291,6 +291,7 @@ async def test_lead_links_render_every_template_for_an_e164_lead(
         payload = response.json()
         assert payload["available"] is True
         assert payload["phone_e164"] == "+15125550199"
+        assert payload["country"] == "US"
         assert len(payload["links"]) == 1
         link = payload["links"][0]
         assert "Apex Labs" in link["body"]
@@ -333,6 +334,7 @@ async def test_lead_links_never_guess_a_country_without_a_sender(
             "available": False,
             "reason": "country_unknown",
             "phone_e164": None,
+            "country": None,
             "links": [],
         }
         missing = (await client.get(f"/api/v1/whatsapp/leads/{no_phone}/links")).json()
@@ -358,6 +360,7 @@ async def test_lead_links_resolve_a_gb_lead_with_a_us_default_sender(
         payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
         assert payload["available"] is True
         assert payload["phone_e164"] == "+442079460018"
+        assert payload["country"] == "GB"
         assert payload["links"][0]["url"].startswith("https://wa.me/442079460018?text=")
 
 
