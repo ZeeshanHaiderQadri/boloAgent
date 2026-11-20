@@ -5,7 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import inspect
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from api.db.models import LeadSearchResultModel
 from api.services.leads.normalization import normalize_lead_row
 
 
@@ -625,3 +628,411 @@ async def test_website_change_on_rescrape_clears_old_socials(db_session):
     assert refreshed.socials_attempts == 0
     # The new site is scanned from scratch.
     assert await db_session.count_leads_needing_socials(org_id) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["stopping", "stopped"])
+async def test_update_lead_search_fences_stopped_and_cross_org(db_session, status):
+    user, org = await _org(db_session)
+    _, other_org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    run = (datetime.now(UTC), "original-job")
+    await db_session.update_lead_search(
+        search.id, org.id, status="running", started_at=run[0], external_job_id=run[1]
+    )
+    assert (
+        await db_session.update_lead_search(
+            search.id,
+            other_org.id,
+            expected_run=run,
+            expected_statuses={"running"},
+            status="completed",
+            results_count=99,
+        )
+        is None
+    )
+    assert (await db_session.get_lead_search(search.id, org.id)).status == "running"
+
+    stopped = await db_session.update_lead_search(search.id, org.id, status=status)
+    stopped_at = stopped.updated_at
+    assert (
+        await db_session.update_lead_search(
+            search.id,
+            org.id,
+            expected_run=run,
+            expected_statuses={"running"},
+            status="completed",
+            results_count=99,
+        )
+        is None
+    )
+    async with db_session.async_session() as session:
+        await session.refresh(stopped)
+    assert stopped.status == status
+    assert stopped.results_count == 0
+    assert stopped.updated_at == stopped_at
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("has_started_at", [False, True])
+@pytest.mark.parametrize("has_job_id", [False, True])
+async def test_update_lead_search_fences_run_identity(
+    db_session, has_started_at, has_job_id
+):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    now = datetime.now(UTC)
+    run = (now if has_started_at else None, "original-job" if has_job_id else None)
+    await db_session.update_lead_search(
+        search.id, org.id, status="running", started_at=run[0], external_job_id=run[1]
+    )
+    # Each component, including NULL, must match independently.
+    for stale_run in ((now + timedelta(seconds=1), run[1]), (run[0], "other-job")):
+        assert (
+            await db_session.update_lead_search(
+                search.id,
+                org.id,
+                expected_run=stale_run,
+                expected_statuses={"running"},
+                results_count=99,
+            )
+            is None
+        )
+    assert (
+        await db_session.update_lead_search(
+            search.id, org.id, expected_statuses=set(), results_count=99
+        )
+        is None
+    )
+
+    # Evaluate the fence against old values, before installing a new attempt.
+    next_run = (now + timedelta(minutes=1), "next-job")
+    updated = await db_session.update_lead_search(
+        search.id,
+        org.id,
+        expected_run=run,
+        expected_statuses={"queued", "running"},
+        started_at=next_run[0],
+        external_job_id=next_run[1],
+    )
+    assert updated is not None
+    assert (updated.started_at, updated.external_job_id) == next_run
+    assert (
+        await db_session.update_lead_search(
+            search.id,
+            org.id,
+            expected_run=run,
+            expected_statuses={"running"},
+            status="completed",
+            results_count=99,
+        )
+        is None
+    )
+    async with db_session.async_session() as session:
+        await session.refresh(updated)
+    assert updated.status == "running"
+    assert updated.results_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "lost_fence",
+    [
+        "queued",
+        "stopping",
+        "stopped",
+        "completed",
+        "started_at",
+        "job_id",
+        "null_run",
+        "cross_org",
+    ],
+)
+async def test_guarded_upsert_rejects_late_rows(db_session, lost_fence):
+    user, org = await _org(db_session)
+    _, other_org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=search.id, organization_id=org.id, leads=[_row("Original", "p1")]
+    )
+    run = (datetime.now(UTC), "original-job")
+    await db_session.update_lead_search(
+        search.id,
+        org.id,
+        status="running",
+        started_at=run[0],
+        external_job_id=run[1],
+        results_count=1,
+        new_leads_count=1,
+    )
+    organization_id = org.id
+    if lost_fence in {"queued", "stopping", "stopped", "completed"}:
+        await db_session.update_lead_search(search.id, org.id, status=lost_fence)
+    elif lost_fence == "started_at":
+        await db_session.update_lead_search(
+            search.id, org.id, started_at=run[0] + timedelta(seconds=1)
+        )
+    elif lost_fence == "job_id":
+        await db_session.update_lead_search(
+            search.id, org.id, external_job_id="next-job"
+        )
+    elif lost_fence == "null_run":
+        run = (None, None)
+    else:
+        organization_id = other_org.id
+    before = await db_session.get_lead_search(search.id, org.id)
+    updated_at = before.updated_at
+
+    counts = await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=organization_id,
+        expected_run=run,
+        leads=[_row("Late refresh", "p1"), _row("Late new lead", "p2")],
+    )
+    assert counts == {
+        "results_count": 0,
+        "new_leads_count": 0,
+        "updated_leads_count": 0,
+    }
+    leads, total = await db_session.list_leads(org.id)
+    async with db_session.async_session() as session:
+        await session.refresh(leads[0])
+        await session.refresh(before)
+    assert total == 1
+    assert leads[0].title == "Original"
+    assert await db_session.list_leads(other_org.id) == ([], 0)
+    assert await db_session.count_search_results(search.id) == 1
+    assert (before.results_count, before.new_leads_count) == (1, 1)
+    assert before.updated_at == updated_at
+
+
+@pytest.mark.asyncio
+async def test_guarded_upsert_updates_cumulative_counters(db_session):
+    user, org = await _org(db_session)
+    previous = await _search(db_session, user, org)
+    await db_session.upsert_leads_for_search(
+        search_id=previous.id,
+        organization_id=org.id,
+        leads=[_row("Existing in CRM", "p0")],
+    )
+    # Unguarded callers retain their existing counter behavior.
+    async with db_session.async_session() as session:
+        await session.refresh(previous)
+    assert (previous.results_count, previous.new_leads_count) == (0, 0)
+
+    search = await _search(db_session, user, org)
+    await db_session.update_lead_search(
+        search.id, org.id, status="running", results_count=99, new_leads_count=7
+    )
+    updated_at = search.updated_at
+    # NULL components are valid run identities, not omitted guards.
+    first = await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        expected_run=(None, None),
+        leads=[
+            _row("Existing in CRM", "p0"),
+            _row("New", "p1"),
+            _row("Duplicate", "p1"),
+        ],
+    )
+    assert first == {"results_count": 2, "new_leads_count": 1, "updated_leads_count": 1}
+    async with db_session.async_session() as session:
+        await session.refresh(search)
+    assert (search.results_count, search.new_leads_count) == (2, 8)
+    assert search.updated_at > updated_at
+
+    second = await db_session.upsert_leads_for_search(
+        search_id=search.id,
+        organization_id=org.id,
+        expected_run=(None, None),
+        leads=[_row("New renamed", "p1"), _row("Another", "p2")],
+    )
+    assert second == {
+        "results_count": 2,
+        "new_leads_count": 1,
+        "updated_leads_count": 1,
+    }
+    async with db_session.async_session() as session:
+        await session.refresh(search)
+    assert search.results_count == await db_session.count_search_results(search.id) == 3
+    assert search.new_leads_count == 9
+
+
+@pytest.mark.asyncio
+async def test_guarded_upsert_rolls_back_leads_when_counter_write_fails(
+    db_session, monkeypatch
+):
+    user, org = await _org(db_session)
+    search = await _search(db_session, user, org)
+    run = (datetime.now(UTC), "original-job")
+    await db_session.update_lead_search(
+        search.id,
+        org.id,
+        status="running",
+        started_at=run[0],
+        external_job_id=run[1],
+        new_leads_count=2147483647,
+    )
+    search_id, org_id = search.id, org.id
+    updated_at = search.updated_at
+    async with db_session.async_session() as session:
+        connection = await session.connection()
+
+    # Isolate the overflow rollback from the fixture's setup transaction.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            db_session,
+            "async_session",
+            async_sessionmaker(
+                bind=connection, join_transaction_mode="create_savepoint"
+            ),
+        )
+        with pytest.raises(DBAPIError, match="out of.*range"):
+            await db_session.upsert_leads_for_search(
+                search_id=search_id,
+                organization_id=org_id,
+                expected_run=run,
+                leads=[_row("Must roll back", "p1")],
+            )
+
+    assert await db_session.list_leads(org_id) == ([], 0)
+    assert await db_session.count_search_results(search_id) == 0
+    async with db_session.async_session() as session:
+        await session.refresh(search)
+    assert search.results_count == 0
+    assert search.new_leads_count == 2147483647
+    assert search.updated_at == updated_at
+
+
+@pytest.mark.asyncio
+async def test_list_lead_searches_needing_recovery_selects_due_not_future(db_session):
+    user, org = await _org(db_session)
+    before = datetime.now(UTC)
+    old = before - timedelta(hours=1)
+    future = before + timedelta(hours=1)
+    cases = [
+        ("stopping", future, future, True),
+        ("queued", None, old, True),
+        ("running", old, future, True),
+        ("running", None, old, True),
+        ("queued", None, future, False),
+        ("running", future, old, False),
+        ("queued", old, future, False),
+        ("queued", None, before, False),
+        ("running", None, before, False),
+        ("stopped", old, old, False),
+        ("completed", old, old, False),
+        ("failed", old, old, False),
+        ("cancelled", old, old, False),
+    ]
+    expected_ids = []
+    for status, started_at, updated_at, due in cases:
+        search = await _search(db_session, user, org)
+        async with db_session.async_session() as session:
+            search.status = status
+            search.started_at = started_at
+            search.created_at = old
+            search.updated_at = updated_at
+            await session.commit()
+        if due:
+            expected_ids.append(search.id)
+    recovered = await db_session.list_lead_searches_needing_recovery(before)
+    assert [search.id for search in recovered] == expected_ids
+    limited = await db_session.list_lead_searches_needing_recovery(before, limit=2)
+    assert [search.id for search in limited] == expected_ids[:2]
+
+
+@pytest.mark.asyncio
+async def test_list_searches_needing_socials_is_due_distinct_and_scoped(db_session):
+    user, org = await _org(db_session)
+    other_user, other_org = await _org(db_session)
+    now = datetime.now(UTC)
+    expected_ids = []
+    for status in (
+        "queued",
+        "running",
+        "stopping",
+        "stopped",
+        "completed",
+        "failed",
+        "cancelled",
+    ):
+        search = await _search(db_session, user, org)
+        await db_session.update_lead_search(
+            search.id, org.id, provider="google_maps", status=status
+        )
+        await db_session.upsert_leads_for_search(
+            search_id=search.id,
+            organization_id=org.id,
+            leads=[
+                _row("Due", f"{status}-1", website="https://due.example"),
+                _row("Also due", f"{status}-2", website="https://also-due.example"),
+            ],
+        )
+        expected_ids.append(search.id)
+
+    # Worker discovery spans tenants, but every link must still match its org.
+    other_search = await _search(db_session, other_user, other_org)
+    await db_session.update_lead_search(
+        other_search.id, other_org.id, provider="google_maps"
+    )
+    await db_session.upsert_leads_for_search(
+        search_id=other_search.id,
+        organization_id=other_org.id,
+        leads=[_row("Other org due", "other", website="https://other.example")],
+    )
+    foreign_lead = (await db_session.list_leads(other_org.id))[0][0]
+    await db_session.record_lead_socials_failure(
+        foreign_lead.id, other_org.id, next_attempt_at=now - timedelta(hours=1)
+    )
+    expected_ids.append(other_search.id)
+
+    for reason in (
+        "demo",
+        "future",
+        "checked",
+        "empty_website",
+        "null_website",
+        "unlinked",
+        "foreign_link",
+    ):
+        search = await _search(db_session, user, org)
+        await db_session.update_lead_search(
+            search.id,
+            org.id,
+            provider="demo" if reason == "demo" else "google_maps",
+            status="completed",
+        )
+        if reason == "foreign_link":
+            # Simulate a legacy malformed link; FK validity alone does not
+            # establish tenant ownership.
+            async with db_session.async_session() as session:
+                session.add(
+                    LeadSearchResultModel(search_id=search.id, lead_id=foreign_lead.id)
+                )
+                await session.commit()
+            continue
+        await db_session.upsert_leads_for_search(
+            search_id=search.id,
+            organization_id=org.id,
+            leads=[_row("Excluded", reason, website="https://excluded.example")],
+        )
+        lead = (await db_session.list_leads(org.id, search_id=search.id))[0][0]
+        if reason == "future":
+            await db_session.record_lead_socials_failure(
+                lead.id, org.id, next_attempt_at=now + timedelta(hours=1)
+            )
+        elif reason == "checked":
+            await db_session.mark_lead_socials_checked(lead.id, org.id, checked_at=now)
+        elif reason in {"empty_website", "null_website"}:
+            await db_session.update_lead(
+                lead.id, org.id, website="" if reason == "empty_website" else None
+            )
+        elif reason == "unlinked":
+            await db_session.clear_search_results(search.id, org.id)
+
+    pending = await db_session.list_searches_needing_socials()
+    assert [search.id for search in pending] == expected_ids
+    limited = await db_session.list_searches_needing_socials(limit=2)
+    assert [search.id for search in limited] == expected_ids[:2]

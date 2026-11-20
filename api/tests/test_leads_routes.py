@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -238,17 +239,171 @@ def test_create_search_requires_an_agent_when_auto_call_is_on():
     assert response.status_code == 422
 
 
-def test_stop_marks_an_active_search_as_stopping():
+@pytest.mark.parametrize("status", ["queued", "running", "stopping"])
+def test_stop_finishes_without_a_live_worker_or_queue(status):
     db = _mock_db()
-    db.get_lead_search = AsyncMock(return_value=_search(status="running"))
-    db.update_lead_search = AsyncMock(return_value=_search(status="stopping"))
+    db.get_lead_search = AsyncMock(
+        return_value=_search(status=status, results_count=96)
+    )
+    db.update_lead_search = AsyncMock(
+        return_value=_search(status="stopped", results_count=96)
+    )
 
-    with patch("api.routes.leads.db_client", db):
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch(
+            "api.routes.leads.enqueue_job",
+            new=AsyncMock(side_effect=RuntimeError("queue down")),
+        ),
+    ):
         response = _app().post("/leads/searches/21/stop")
 
     assert response.status_code == 200
-    assert response.json()["status"] == "stopping"
-    assert db.update_lead_search.await_args.kwargs["status"] == "stopping"
+    assert response.json()["status"] == "stopped"
+    assert response.json()["results_count"] == 96
+    assert db.update_lead_search.await_args.kwargs["status"] == "stopped"
+    assert db.update_lead_search.await_args.kwargs["expected_run"] == (None, None)
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_stop_queues_captured_job_cleanup_and_socials_best_effort(cleanup_fails):
+    search = _search(
+        status="running",
+        provider="google_maps",
+        external_job_id="job-old",
+        started_at=NOW,
+    )
+    stopped = _search(
+        status="stopped",
+        provider="google_maps",
+        external_job_id="job-old",
+        started_at=NOW,
+        completed_at=datetime.now(UTC),
+        results_count=96,
+    )
+    db = _mock_db()
+    db.get_lead_search = AsyncMock(return_value=search)
+    db.update_lead_search = AsyncMock(return_value=stopped)
+
+    async def enqueue_job(name, *args, **kwargs):
+        # Stop is already durable before any best-effort queue access.
+        db.update_lead_search.assert_awaited_once()
+        if cleanup_fails and name == "cancel_lead_scraper":
+            raise RuntimeError("cleanup queue unavailable")
+
+    enqueue = AsyncMock(side_effect=enqueue_job)
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.enqueue_job", enqueue),
+        patch("api.routes.leads.LEADS_SOCIAL_ENRICHMENT_ENABLED", True),
+    ):
+        response = _app().post("/leads/searches/21/stop")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "stopped"
+    assert response.json()["results_count"] == 96
+    db.get_lead_search.assert_awaited_once_with(21, USER.selected_organization_id)
+    assert db.update_lead_search.await_args.args == (21, USER.selected_organization_id)
+    values = db.update_lead_search.await_args.kwargs
+    assert values["status"] == "stopped"
+    assert values["expected_run"] == (NOW, "job-old")
+    assert values["expected_statuses"] == {"queued", "running", "stopping"}
+    assert isinstance(values["completed_at"], datetime)
+    assert values["error_message"] is None
+    assert "results_count" not in values and "new_leads_count" not in values
+    assert enqueue.await_count == 2
+    enqueue.assert_any_await("cancel_lead_scraper", "google_maps", "job-old")
+    enqueue.assert_any_await("enrich_lead_socials", 21, _job_id="lead-socials:21")
+
+
+def test_stop_is_idempotent_for_an_already_stopped_search():
+    search = _search(
+        status="stopped", external_job_id="job-old", results_count=96, completed_at=NOW
+    )
+    db = _mock_db()
+    db.get_lead_search = AsyncMock(return_value=search)
+    db.update_lead_search = AsyncMock()
+    enqueue = AsyncMock()
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.enqueue_job", enqueue),
+    ):
+        client = _app()
+        first = client.post("/leads/searches/21/stop")
+        second = client.post("/leads/searches/21/stop")
+
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert first.json()["status"] == "stopped"
+    assert first.json()["results_count"] == 96
+    assert datetime.fromisoformat(first.json()["completed_at"]) == NOW
+    db.update_lead_search.assert_not_awaited()
+    enqueue.assert_not_awaited()
+
+
+@pytest.mark.parametrize("new_status", ["queued", "running", "completed", "stopped"])
+def test_stop_lost_cas_reloads_newer_state_without_cleanup(new_status):
+    search = _search(status="running", started_at=NOW, external_job_id="job-old")
+    newer = _search(
+        status=new_status,
+        started_at=datetime.now(UTC),
+        external_job_id="job-new",
+        results_count=101,
+    )
+    db = _mock_db()
+    db.get_lead_search = AsyncMock(side_effect=[search, newer])
+    db.update_lead_search = AsyncMock(return_value=None)
+    enqueue = AsyncMock()
+
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.enqueue_job", enqueue),
+    ):
+        response = _app().post("/leads/searches/21/stop")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == new_status
+    assert response.json()["external_job_id"] == "job-new"
+    assert response.json()["results_count"] == 101
+    assert datetime.fromisoformat(response.json()["started_at"]) == newer.started_at
+    assert db.get_lead_search.await_count == 2
+    assert all(
+        call.args == (21, USER.selected_organization_id)
+        for call in db.get_lead_search.await_args_list
+    )
+    db.update_lead_search.assert_awaited_once()
+    assert db.update_lead_search.await_args.kwargs["expected_run"] == (NOW, "job-old")
+    enqueue.assert_not_awaited()
+
+
+def test_stop_cannot_access_another_organizations_search():
+    foreign = _search(
+        status="running", organization_id=USER.selected_organization_id + 1
+    )
+    db = _mock_db()
+
+    async def get_search(search_id, organization_id):
+        if search_id == foreign.id and organization_id == foreign.organization_id:
+            return foreign
+        return None
+
+    db.get_lead_search = AsyncMock(side_effect=get_search)
+    db.update_lead_search = AsyncMock()
+    enqueue = AsyncMock()
+    with (
+        patch("api.routes.leads.db_client", db),
+        patch("api.routes.leads.enqueue_job", enqueue),
+    ):
+        response = _app().post(f"/leads/searches/{foreign.id}/stop")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Search not found"
+    db.get_lead_search.assert_awaited_once_with(
+        foreign.id, USER.selected_organization_id
+    )
+    db.update_lead_search.assert_not_awaited()
+    enqueue.assert_not_awaited()
 
 
 def test_stop_rejects_a_finished_search():
@@ -662,12 +817,16 @@ def test_update_search_rejects_while_running():
     assert "Stop or cancel" in response.json()["detail"]
 
 
-def test_extend_search_raises_target_and_scraper_depth():
+def test_extend_search_raises_target_and_keeps_planned_places():
     search = _search(
         status="completed",
         target_results=50,
         results_count=12,
-        params={"depth": 3, "website_filter": "no_website"},
+        params={
+            "depth": 3,
+            "website_filter": "no_website",
+            "fanout_places": ["Fresno", "Oakland"],
+        },
     )
     updated = _search(status="queued", target_results=250)
     db = _mock_db()
@@ -683,10 +842,76 @@ def test_extend_search_raises_target_and_scraper_depth():
     assert response.status_code == 200, response.text
     kwargs = db.update_lead_search.await_args.kwargs
     assert kwargs["target_results"] == 250
-    # 250 results need 13 pages at ~20 per page; filters are preserved.
-    assert kwargs["params"]["depth"] == 13
+    # Extending fans out to new places; the places already covered are kept so
+    # the worker can skip them, and the scraper depth stays as it was.
+    assert kwargs["params"]["depth"] == 3
     assert kwargs["params"]["website_filter"] == "no_website"
+    assert kwargs["params"]["fanout_places"] == ["Fresno", "Oakland"]
     assert kwargs["status"] == "queued"
+    assert kwargs["external_job_id"] is None
+    enqueue.assert_awaited_once_with("run_lead_search", 21)
+
+
+def test_extend_search_replans_places_when_the_previous_run_was_interrupted():
+    search = _search(
+        status="stopped",
+        target_results=50,
+        results_count=12,
+        params={
+            "depth": 3,
+            "keywords": ["plumbers in Fresno, CA"],
+            "fanout_places": ["Fresno", "Oakland"],
+        },
+    )
+    updated = _search(status="queued", target_results=250)
+    db = _mock_db()
+    db.get_lead_search = AsyncMock(return_value=search)
+    db.update_lead_search = AsyncMock(return_value=updated)
+
+    with patch("api.routes.leads.db_client", db):
+        with patch("api.routes.leads.enqueue_job", new=AsyncMock()):
+            response = _app().post(
+                "/leads/searches/21/extend", json={"additional_results": 200}
+            )
+
+    assert response.status_code == 200, response.text
+    kwargs = db.update_lead_search.await_args.kwargs
+    assert kwargs["target_results"] == 250
+    assert kwargs["params"]["depth"] == 3
+    # The interrupted run never queried every place it had reserved, so Extend
+    # must re-plan instead of silently skipping them.
+    assert "fanout_places" not in kwargs["params"]
+    assert "keywords" not in kwargs["params"]
+
+
+def test_retry_search_replans_reserved_places():
+    search = _search(
+        status="failed",
+        target_results=50,
+        results_count=12,
+        error_message="Discovery job failed",
+        params={
+            "depth": 3,
+            "keywords": ["plumbers in Fresno, CA"],
+            "fanout_places": ["Fresno", "Oakland"],
+        },
+    )
+    updated = _search(status="queued", target_results=50)
+    db = _mock_db()
+    db.get_lead_search = AsyncMock(return_value=search)
+    db.update_lead_search = AsyncMock(return_value=updated)
+
+    with patch("api.routes.leads.db_client", db):
+        with patch("api.routes.leads.enqueue_job", new=AsyncMock()) as enqueue:
+            response = _app().post("/leads/searches/21/retry")
+
+    assert response.status_code == 200, response.text
+    kwargs = db.update_lead_search.await_args.kwargs
+    assert kwargs["params"]["depth"] == 3
+    assert "fanout_places" not in kwargs["params"]
+    assert "keywords" not in kwargs["params"]
+    assert kwargs["status"] == "queued"
+    assert kwargs["error_message"] is None
     assert kwargs["external_job_id"] is None
     enqueue.assert_awaited_once_with("run_lead_search", 21)
 

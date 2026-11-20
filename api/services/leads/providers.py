@@ -40,6 +40,10 @@ class LeadProviderError(RuntimeError):
     """Raised when the discovery provider cannot complete a job."""
 
 
+class LeadProviderUnavailable(LeadProviderError):
+    """The provider service could not be reached (usually a short restart)."""
+
+
 class LeadProvider(Protocol):
     name: str
 
@@ -54,9 +58,23 @@ class LeadProvider(Protocol):
     async def cancel(self, search: LeadSearchModel) -> None: ...
 
 
+def split_query(search: LeadSearchModel) -> tuple[str, str]:
+    """Return the category and location with a duplicated location removed.
+
+    Operators often paste the whole query into the category field
+    ("plumbers in Leeds"). Strip the repeated location so Google is not asked
+    for "plumbers in Leeds in Leeds".
+    """
+    category = " ".join((search.category or "").split())
+    location = " ".join((search.location or "").split())
+    if category and location:
+        suffix = re.compile(rf"\s+in\s+{re.escape(location)}$", re.IGNORECASE)
+        category = suffix.sub("", category).strip()
+    return category, location
+
+
 def search_query(search: LeadSearchModel) -> str:
-    category = (search.category or "").strip()
-    location = (search.location or "").strip()
+    category, location = split_query(search)
     if category and location:
         return f"{category} in {location}"
     return category or location or search.name
@@ -91,22 +109,32 @@ class GoogleMapsScraperProvider:
 
     async def submit(self, search: LeadSearchModel) -> str:
         params = search.params or {}
+        keywords = params.get("keywords")
+        if not isinstance(keywords, list) or not keywords:
+            keywords = [search_query(search)]
+        # Leave the worker a margin: the scraper stops on its own before the
+        # task's deadline, so the final results file is complete.
+        budget_seconds = min(
+            int(params.get("max_time_seconds", LEADS_SCRAPER_TIMEOUT_SECONDS)),
+            LEADS_SCRAPER_TIMEOUT_SECONDS,
+        )
+        budget_seconds = max(60, budget_seconds - 30)
         payload = {
             "name": search.name,
-            "keywords": [search_query(search)],
+            "keywords": [str(keyword) for keyword in keywords if str(keyword).strip()],
             "lang": search.language or "en",
             "zoom": int(params.get("zoom", 15)),
             "lat": str(params.get("lat", "") or ""),
             "lon": str(params.get("lon", "") or ""),
             "fast_mode": bool(params.get("fast_mode", False)),
-            "radius": int(params.get("radius_km", 10)),
+            # The scraper counts its radius in meters; the search form stores
+            # kilometres.
+            "radius": int(params.get("radius_km", 10) or 10) * 1000,
             "depth": int(params.get("depth", 10)),
             "email": bool(params.get("email", False)),
             "extra_reviews": False,
-            "max_time": min(
-                int(params.get("max_time_seconds", LEADS_SCRAPER_TIMEOUT_SECONDS)),
-                LEADS_SCRAPER_TIMEOUT_SECONDS,
-            ),
+            # Seconds: the web API multiplies this into a Go duration.
+            "max_time": budget_seconds,
             "proxies": [],
         }
         async with _http_client() as client:
@@ -130,8 +158,13 @@ class GoogleMapsScraperProvider:
         return str(job_id)
 
     async def _get_job(self, job_id: str) -> dict:
-        async with _http_client() as client:
-            response = await client.get(self._url(f"/api/v1/jobs/{job_id}"))
+        try:
+            async with _http_client() as client:
+                response = await client.get(self._url(f"/api/v1/jobs/{job_id}"))
+        except httpx.HTTPError as exc:
+            raise LeadProviderUnavailable(
+                "Could not reach the Google Maps scraper service"
+            ) from exc
         if response.status_code == 404:
             raise LeadProviderError("The scraper lost this job (container restarted?)")
         if response.status_code >= 400:
@@ -162,10 +195,15 @@ class GoogleMapsScraperProvider:
     ) -> list[dict]:
         if not search.external_job_id:
             raise LeadProviderError("Search has no external scraper job id")
-        async with _http_client() as client:
-            response = await client.get(
-                self._url(f"/api/v1/jobs/{search.external_job_id}/download")
-            )
+        try:
+            async with _http_client() as client:
+                response = await client.get(
+                    self._url(f"/api/v1/jobs/{search.external_job_id}/download")
+                )
+        except httpx.HTTPError as exc:
+            raise LeadProviderUnavailable(
+                "Could not reach the Google Maps scraper service"
+            ) from exc
         if response.status_code == 404:
             # While the job is starting the CSV does not exist yet. Once the
             # job reports success a missing file is a real failure.

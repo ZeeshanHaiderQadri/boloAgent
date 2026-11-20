@@ -1,0 +1,53 @@
+---
+title: "Search result limits"
+description: "How Bolo collects large lead lists past Google Maps' per-query limit, and why a search can still finish below its target."
+---
+
+A lead search sends one query to Google Maps and keeps collecting until it
+reaches your target or the planned queries run out.
+
+## Why one query returns about 20 businesses
+
+Google Maps serves roughly one page of results — about 20 businesses — for a
+text search, and the scraper's deeper scrolling does not fetch more for these
+queries. One query therefore cannot meet a large target on its own.
+
+## How Bolo collects more
+
+For a target above about 15 businesses, Bolo splits the search into **one query
+per city or town** inside the location — or per neighbourhood when the location
+is itself a city. The place names come from OpenStreetMap, with Wikidata
+answering the same question when the OpenStreetMap query service is at
+capacity. The queries run concurrently in a single scraper job and their
+results are merged and de-duplicated, so "Software companies in California"
+searches Fresno, Bakersfield, Riverside, and so on instead of stopping at the
+first 20 hits.
+
+A search asking for 100 leads therefore runs about seven area queries; a search
+asking for 1000 runs up to 60 within its time budget. Businesses are
+de-duplicated across queries and across searches: a company already in your
+CRM is linked to the new search instead of being created twice.
+
+If OpenStreetMap cannot resolve the location, the search falls back to the
+single original query.
+
+## Why a search can still finish below its target
+
+**Completed** means the scraper finished; it does not mean the target was
+reached. A shortfall is normal when:
+
+- the category is rare in the area, so the planned cities return few matches;
+- the location is fully covered and extending finds no new places;
+- the search reached its **max runtime** (Search tuning on the new-search
+  form) before every planned query finished. Collect the rest by extending.
+
+Extending a search plans **additional** cities or neighbourhoods and skips the
+places already searched, so it adds new businesses instead of repeating the
+first query.
+
+## How Bolo builds each query
+
+The base query is `<category> in <location>`. If the category already ends with
+the location, Bolo does not repeat it — the example above searches "Software
+companies in California", not "… in California in California". Area queries
+append the place name: "Software companies in Fresno, California".

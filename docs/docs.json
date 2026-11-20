@@ -137,6 +137,7 @@
           {
             "group": "Leads",
             "pages": [
+              "leads/search-results-limit",
               "leads/social-profiles"
             ]
           },

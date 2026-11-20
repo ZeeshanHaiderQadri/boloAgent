@@ -848,7 +848,8 @@ async def _fetch_page(url: str, budget: _Budget, *, kind: str = "html") -> _Page
         if not budget.has_time():
             raise _ScanTransient("scan deadline reached")
         try:
-            target = _resolve_target(current)
+            # DNS resolution is blocking; keep the scan deadline cancellable.
+            target = await asyncio.to_thread(_resolve_target, current)
         except UnsafeOutboundURLError as exc:
             raise _ScanTerminal(str(exc)) from exc
         except ServiceHostResolutionError as exc:

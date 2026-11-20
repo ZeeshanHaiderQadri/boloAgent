@@ -84,9 +84,48 @@ async def test_submit_sends_expected_job_payload():
     assert payload["keywords"] == ["Gyms in London, UK"]
     assert payload["depth"] == 2
     assert payload["zoom"] == 12
-    assert payload["radius"] == 7
+    # The scraper expects meters; the search stores kilometres.
+    assert payload["radius"] == 7000
     assert payload["email"] is True
-    assert payload["max_time"] == 300
+    # The web API multiplies max_time by time.Second; the worker keeps a
+    # 30-second margin so the job ends before the task's own deadline.
+    assert payload["max_time"] == 270
+
+
+@pytest.mark.asyncio
+async def test_submit_sends_planned_fanout_keywords_when_present():
+    client = _Client(response=_Response(payload={"id": "job-7"}))
+    provider = providers.GoogleMapsScraperProvider("http://scraper.test")
+    search = _search(
+        params={
+            "keywords": [
+                "Gyms in London, UK",
+                "Gyms in Camden, London, UK",
+            ]
+        }
+    )
+
+    with patch.object(providers.httpx, "AsyncClient", MagicMock(return_value=client)):
+        await provider.submit(search)
+
+    assert client.requests[0][2]["keywords"] == [
+        "Gyms in London, UK",
+        "Gyms in Camden, London, UK",
+    ]
+
+
+def test_search_query_drops_a_location_already_pasted_into_the_category():
+    search = _search(category="Software Companies in California", location="California")
+
+    assert providers.search_query(search) == "Software Companies in California"
+
+    # Careful matching: a category that merely mentions the location keeps it.
+    other = _search(
+        category="Software Companies in Northern California", location="California"
+    )
+    assert providers.search_query(other) == (
+        "Software Companies in Northern California in California"
+    )
 
 
 @pytest.mark.asyncio

@@ -69,9 +69,11 @@ from api.tasks.campaign_tasks import (
 from api.tasks.email_campaign_tasks import send_email_campaign
 from api.tasks.knowledge_base_processing import process_knowledge_base_document
 from api.tasks.lead_tasks import (
+    cancel_lead_scraper,
     enrich_lead_socials,
     run_lead_auto_dispatch,
     run_lead_search,
+    sweep_lead_searches,
     sync_lead_call_outcomes,
 )
 from api.tasks.run_integrations import run_integrations_post_workflow_run
@@ -117,13 +119,17 @@ class WorkerSettings:
         process_knowledge_base_document,
         func(run_lead_search, timeout=LEADS_SCRAPER_TIMEOUT_SECONDS + 120),
         func(run_lead_auto_dispatch, timeout=300),
-        func(enrich_lead_socials, timeout=600),
+        func(enrich_lead_socials, timeout=150, keep_result=0),
+        func(cancel_lead_scraper, timeout=10),
         deliver_webhook,
         complete_inactive_text_chat_session,
         finalize_completed_text_chat,
         func(send_email_campaign, timeout=1800),
     ]
     cron_jobs = [
+        cron(
+            sweep_lead_searches, minute=set(range(60)), second=10, run_at_startup=True
+        ),
         cron(sweep_builder_runs, minute=set(range(60)), second=45, run_at_startup=True),
         cron(
             sweep_workflow_completions,

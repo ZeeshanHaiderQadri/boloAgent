@@ -149,6 +149,18 @@ def lead_filter_clauses(organization_id: int, **kwargs) -> list:
     return _lead_filters(organization_id, **kwargs)
 
 
+def _socials_due_filters(now: datetime) -> list:
+    return [
+        LeadModel.website.is_not(None),
+        LeadModel.website != "",
+        LeadModel.socials_checked_at.is_(None),
+        or_(
+            LeadModel.socials_next_attempt_at.is_(None),
+            LeadModel.socials_next_attempt_at <= now,
+        ),
+    ]
+
+
 class LeadProjectNameConflictError(Exception):
     """Raised when a lead project name already exists in the organization."""
 
@@ -231,17 +243,91 @@ class LeadClient(BaseDBClient):
             )
             return list(result.scalars().all()), int(total or 0)
 
+    async def list_lead_searches_needing_recovery(
+        self, before: datetime, limit: int = 100
+    ) -> list[LeadSearchModel]:
+        """Worker-only lookup of stopping or stale active searches across orgs."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(LeadSearchModel)
+                .where(
+                    or_(
+                        LeadSearchModel.status == "stopping",
+                        and_(
+                            LeadSearchModel.status == "running",
+                            func.coalesce(
+                                LeadSearchModel.started_at, LeadSearchModel.updated_at
+                            )
+                            < before,
+                        ),
+                        and_(
+                            LeadSearchModel.status == "queued",
+                            LeadSearchModel.updated_at < before,
+                        ),
+                    )
+                )
+                .order_by(LeadSearchModel.id.asc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def list_searches_needing_socials(
+        self, limit: int = 100
+    ) -> list[LeadSearchModel]:
+        """Worker-only lookup of non-demo searches with due socials, any status."""
+        pending = (
+            select(LeadSearchResultModel.id)
+            .join(
+                LeadModel,
+                and_(
+                    LeadModel.id == LeadSearchResultModel.lead_id,
+                    LeadModel.organization_id == LeadSearchModel.organization_id,
+                ),
+            )
+            .where(
+                LeadSearchResultModel.search_id == LeadSearchModel.id,
+                *_socials_due_filters(datetime.now(UTC)),
+            )
+            .exists()
+        )
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(LeadSearchModel)
+                .where(LeadSearchModel.provider != "demo", pending)
+                .order_by(LeadSearchModel.id.asc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())
+
     async def update_lead_search(
-        self, search_id: int, organization_id: int, **values: Any
+        self,
+        search_id: int,
+        organization_id: int,
+        *,
+        expected_run: tuple[datetime | None, str | None] | None = None,
+        expected_statuses: set[str] | None = None,
+        **values: Any,
     ) -> LeadSearchModel | None:
+        filters = [
+            LeadSearchModel.id == search_id,
+            LeadSearchModel.organization_id == organization_id,
+        ]
+        if expected_run is not None:
+            filters.extend(
+                [
+                    LeadSearchModel.started_at.is_not_distinct_from(expected_run[0]),
+                    LeadSearchModel.external_job_id.is_not_distinct_from(
+                        expected_run[1]
+                    ),
+                ]
+            )
+        if expected_statuses is not None:
+            filters.append(LeadSearchModel.status.in_(expected_statuses))
         values["updated_at"] = datetime.now(UTC)
         async with self.async_session() as session:
             result = await session.execute(
                 update(LeadSearchModel)
-                .where(
-                    LeadSearchModel.id == search_id,
-                    LeadSearchModel.organization_id == organization_id,
-                )
+                .where(*filters)
                 .values(**values)
                 .returning(LeadSearchModel)
             )
@@ -282,11 +368,13 @@ class LeadClient(BaseDBClient):
         search_id: int,
         organization_id: int,
         leads: Iterable[dict[str, Any]],
+        expected_run: tuple[datetime | None, str | None] | None = None,
     ) -> dict[str, int]:
         """Upsert provider rows into org-wide leads and link them to the search.
 
         Deduplication is on ``(organization_id, dedupe_key)``. Existing business
-        fields are refreshed, CRM fields are preserved.
+        fields are refreshed, CRM fields are preserved. Guarded worker batches
+        lock their running search and persist its counters in the same transaction.
         """
         rows = list(leads)
         seen: set[str] = set()
@@ -295,6 +383,31 @@ class LeadClient(BaseDBClient):
         updated_leads = 0
 
         async with self.async_session() as session:
+            search = None
+            if expected_run is not None:
+                search = await session.scalar(
+                    select(LeadSearchModel)
+                    .where(
+                        LeadSearchModel.id == search_id,
+                        LeadSearchModel.organization_id == organization_id,
+                        LeadSearchModel.status == "running",
+                        LeadSearchModel.started_at.is_not_distinct_from(
+                            expected_run[0]
+                        ),
+                        LeadSearchModel.external_job_id.is_not_distinct_from(
+                            expected_run[1]
+                        ),
+                    )
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+                if search is None:
+                    return {
+                        "results_count": 0,
+                        "new_leads_count": 0,
+                        "updated_leads_count": 0,
+                    }
+
             existing_keys_result = await session.execute(
                 select(
                     LeadModel.id,
@@ -398,6 +511,15 @@ class LeadClient(BaseDBClient):
                 else:
                     new_leads += 1
 
+            if search is not None:
+                total = await session.scalar(
+                    select(func.count(LeadSearchResultModel.id)).where(
+                        LeadSearchResultModel.search_id == search_id
+                    )
+                )
+                search.results_count = int(total or 0)
+                search.new_leads_count += new_leads
+                search.updated_at = datetime.now(UTC)
             await session.commit()
 
         return {
@@ -533,16 +655,9 @@ class LeadClient(BaseDBClient):
         Failed scans are backed off by ``socials_next_attempt_at`` so a broken
         site cannot occupy every batch.
         """
-        now = datetime.now(UTC)
         filters = [
             LeadModel.organization_id == organization_id,
-            LeadModel.website.is_not(None),
-            LeadModel.website != "",
-            LeadModel.socials_checked_at.is_(None),
-            or_(
-                LeadModel.socials_next_attempt_at.is_(None),
-                LeadModel.socials_next_attempt_at <= now,
-            ),
+            *_socials_due_filters(datetime.now(UTC)),
         ]
         if search_id is not None:
             filters.append(
@@ -564,16 +679,9 @@ class LeadClient(BaseDBClient):
     async def count_leads_needing_socials(
         self, organization_id: int, *, search_id: int | None = None
     ) -> int:
-        now = datetime.now(UTC)
         filters = [
             LeadModel.organization_id == organization_id,
-            LeadModel.website.is_not(None),
-            LeadModel.website != "",
-            LeadModel.socials_checked_at.is_(None),
-            or_(
-                LeadModel.socials_next_attempt_at.is_(None),
-                LeadModel.socials_next_attempt_at <= now,
-            ),
+            *_socials_due_filters(datetime.now(UTC)),
         ]
         if search_id is not None:
             filters.append(

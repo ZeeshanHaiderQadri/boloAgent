@@ -98,8 +98,8 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
         <>
             <button
                 type="button"
-                title="Open WhatsApp message"
-                aria-label={`Open WhatsApp message for ${lead.title}`}
+                title="Try WhatsApp (registration unverified)"
+                aria-label={`Try WhatsApp (registration unverified) for ${lead.title}`}
                 onClick={(event) => {
                     event.stopPropagation();
                     void show();
@@ -123,6 +123,11 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
                             filled in. Bolo does not send it; you press send inside WhatsApp.
                         </DialogDescription>
                     </DialogHeader>
+
+                    <p className="text-sm text-muted-foreground">
+                        WhatsApp registration is not verified. This link only works if the
+                        business uses WhatsApp; a valid phone number does not confirm that.
+                    </p>
 
                     <ConsentNote lead={lead} />
 

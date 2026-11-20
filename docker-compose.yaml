@@ -92,6 +92,11 @@ services:
     # every search behind the previous job's email-site visits (each up to a
     # 30s networkidle timeout), stalling new searches at 0 results.
     command: ["-web", "-addr", ":8080", "-data-folder", "/data", "-c", "4"]
+    environment:
+      # The scraper's PostHog call runs inside its job loop; when outbound
+      # telemetry is filtered the loop can stop picking up new jobs. Telemetry
+      # is not needed for operation.
+      DISABLE_TELEMETRY: "1"
     volumes:
       - gmapsdata:/data
     restart: unless-stopped
