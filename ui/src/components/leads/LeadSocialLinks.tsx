@@ -35,7 +35,7 @@ interface LeadSocialLinksProps {
 export function LeadSocialLinks({ links, className }: LeadSocialLinksProps) {
     const entries = Object.entries(links ?? {}).filter(
         (entry): entry is [SocialPlatform, string] =>
-            isPlatform(entry[0]) && /^https?:\/\//i.test(entry[1]),
+            isPlatform(entry[0]) && /^https:\/\//i.test(entry[1]),
     );
 
     if (entries.length === 0) return null;
@@ -49,7 +49,7 @@ export function LeadSocialLinks({ links, className }: LeadSocialLinksProps) {
                         key={platform}
                         href={url}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         title={label}
                         aria-label={label}
                         onClick={(event) => event.stopPropagation()}

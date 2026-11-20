@@ -94,6 +94,7 @@ describe("LeadTable", () => {
                         social_links: {
                             instagram: "https://www.instagram.com/apex/",
                             youtube: "https://www.youtube.com/@apexlabs",
+                            tiktok: "http://www.tiktok.com/@insecure",
                             website: "https://example.com/not-a-platform",
                         },
                     }),
@@ -106,8 +107,11 @@ describe("LeadTable", () => {
             "https://www.instagram.com/apex/",
         );
         expect(instagram.getAttribute("target")).toBe("_blank");
+        expect(instagram.getAttribute("rel")).toBe("noopener noreferrer");
         expect(screen.getByRole("link", { name: "YouTube profile" })).toBeTruthy();
         expect(screen.queryByRole("link", { name: "X profile" })).toBeNull();
+        // Plain http links are never rendered.
+        expect(screen.queryByRole("link", { name: "TikTok profile" })).toBeNull();
     });
 
     it("shows the empty state instead of an empty table", () => {
