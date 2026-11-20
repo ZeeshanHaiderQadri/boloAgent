@@ -4172,6 +4172,10 @@ export type LeadResponse = {
      */
     phone_e164?: string | null;
     /**
+     * Whatsapp Available
+     */
+    whatsapp_available?: boolean;
+    /**
      * Email
      */
     email?: string | null;

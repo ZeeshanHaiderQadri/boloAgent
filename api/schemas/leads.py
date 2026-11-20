@@ -151,6 +151,8 @@ class LeadResponse(BaseModel):
     postal_code: str | None = None
     phone: str | None = None
     phone_e164: str | None = None
+    # True when the WhatsApp chooser can build a link for this lead.
+    whatsapp_available: bool = False
     email: str | None = None
     website: str | None = None
     social_links: dict[str, str] = Field(default_factory=dict)

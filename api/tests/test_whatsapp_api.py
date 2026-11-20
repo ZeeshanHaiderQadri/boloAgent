@@ -448,6 +448,54 @@ async def test_lead_links_are_org_scoped(db_session, test_client_factory):
 
 
 # ----------------------------------------------------------------------
+# Lead list availability
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_lead_list_flags_which_leads_can_open_whatsapp(
+    db_session, test_client_factory
+):
+    """The CRM only shows the chat icon for leads whose link can be built.
+
+    Availability is computed by the backend with the same rules as the link
+    endpoint, so the list and the chooser can never disagree.
+    """
+    user, org = await _user_and_org(db_session, "wa_lead_availability")
+    local = await _lead(db_session, org.id, phone="512 555 0123")
+    explicit = await _lead(
+        db_session, org.id, phone="+44 20 7946 0018", phone_e164="+442079460018"
+    )
+    unreadable = await _lead(db_session, org.id, phone="03 1234 5678")
+    no_phone = await _lead(db_session, org.id, phone=None)
+
+    async def availability(client) -> dict[int, bool]:
+        response = await client.get("/api/v1/leads", params={"limit": 100})
+        assert response.status_code == 200, response.text
+        return {
+            item["id"]: item["whatsapp_available"] for item in response.json()["leads"]
+        }
+
+    async with test_client_factory(user) as client:
+        # Nothing identifies the country of a bare local number yet.
+        before = await availability(client)
+        assert before[local] is False
+        assert before[explicit] is True
+        assert before[unreadable] is False
+        assert before[no_phone] is False
+
+        await _create_sender(client, country="US")
+        after = await availability(client)
+        assert after[local] is True
+        # A Tokyo landline is not silently read as a US number.
+        assert after[unreadable] is False
+
+        detail = await client.get(f"/api/v1/leads/{local}")
+        assert detail.status_code == 200
+        assert detail.json()["lead"]["whatsapp_available"] is True
+
+
+# ----------------------------------------------------------------------
 # Disclaimer
 # ----------------------------------------------------------------------
 

@@ -21,7 +21,7 @@ import { WhatsAppDisclaimerDialog } from "@/components/whatsapp/disclaimer-dialo
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { describePhoneNumber, hasInternationalPhone } from "@/lib/whatsapp";
+import { describePhoneNumber } from "@/lib/whatsapp";
 
 /**
  * Opens a chooser of click-to-chat messages for one lead. Nothing is sent from
@@ -35,8 +35,8 @@ export function WhatsAppLinkButton({
     lead: LeadResponse;
     className?: string;
 }) {
-    // Hidden rather than guessed when the number carries no country.
-    if (!hasInternationalPhone(lead)) return null;
+    // The backend already resolved whether a link can be built for this lead.
+    if (!lead.whatsapp_available) return null;
     return <WhatsAppChooser lead={lead} className={className} />;
 }
 

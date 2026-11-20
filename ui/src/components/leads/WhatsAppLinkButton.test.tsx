@@ -33,6 +33,7 @@ function lead(overrides: Partial<LeadResponse> = {}): LeadResponse {
         postal_code: "78701",
         phone: "(512) 555-0142",
         phone_e164: "+15125550142",
+        whatsapp_available: true,
         email: null,
         website: null,
         place_id: "p1",
@@ -66,10 +67,8 @@ afterEach(() => {
 });
 
 describe("WhatsAppLinkButton", () => {
-    it("does not render for a number without a country code", () => {
-        render(
-            <WhatsAppLinkButton lead={lead({ phone: "(512) 555-0142", phone_e164: null })} />,
-        );
+    it("does not render when the backend cannot build a link", () => {
+        render(<WhatsAppLinkButton lead={lead({ whatsapp_available: false })} />);
 
         expect(screen.queryByRole("button", { name: /whatsapp/i })).toBeNull();
         expect(whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet).not.toHaveBeenCalled();

@@ -33,6 +33,7 @@ function lead(overrides: Partial<LeadResponse> = {}): LeadResponse {
         postal_code: "94105",
         phone: "(415) 555-0142",
         phone_e164: "+14155550142",
+        whatsapp_available: true,
         email: "hello@apex.example.com",
         website: "https://apex.example.com",
         place_id: "p1",
@@ -74,20 +75,22 @@ describe("LeadTable", () => {
         expect(screen.getByText("No phone")).toBeTruthy();
     });
 
-    it("offers a WhatsApp message for numbers with a country", () => {
-        render(<LeadTable leads={[lead()]} />);
+    it("offers a WhatsApp message when the backend says a link can be built", () => {
+        // Availability is server-computed; a bare local number is still messageable
+        // once the organization's sender country resolves it.
+        render(
+            <LeadTable
+                leads={[lead({ phone: "(415) 555-0142", phone_e164: null })]}
+            />,
+        );
 
         expect(
             screen.getByRole("button", { name: /open whatsapp message for apex/i }),
         ).toBeTruthy();
     });
 
-    it("hides the WhatsApp action for local numbers with no country", () => {
-        render(
-            <LeadTable
-                leads={[lead({ phone: "(415) 555-0142", phone_e164: null })]}
-            />,
-        );
+    it("hides the WhatsApp action when no link can be built", () => {
+        render(<LeadTable leads={[lead({ whatsapp_available: false })]} />);
 
         expect(screen.queryByRole("button", { name: /open whatsapp message/i })).toBeNull();
     });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+    describePhoneNumber,
     extractTemplateVariables,
-    hasInternationalPhone,
     renderTemplatePreview,
 } from "@/lib/whatsapp";
 
@@ -25,14 +25,24 @@ describe("WhatsApp preview helpers", () => {
             "Hi Apex Labs,\nAustin",
         );
     });
+});
 
-    it("only treats numbers with their own country as international", () => {
-        expect(hasInternationalPhone({ phone: "(512) 555-0142", phone_e164: "+15125550142" })).toBe(
-            true,
-        );
-        expect(hasInternationalPhone({ phone: "+44 20 7946 0958", phone_e164: null })).toBe(true);
-        // No hardcoded +1: a local number stays without an icon.
-        expect(hasInternationalPhone({ phone: "(512) 555-0142", phone_e164: null })).toBe(false);
-        expect(hasInternationalPhone({ phone: null, phone_e164: null })).toBe(false);
+describe("describePhoneNumber", () => {
+    it("formats a number with the country the backend resolved", () => {
+        expect(describePhoneNumber("+15128522300", "US")).toEqual({
+            formatted: "+1 (512) 852-2300",
+            countryName: "United States",
+        });
+        expect(describePhoneNumber("+442079460018", "GB")).toEqual({
+            formatted: "+44 2079 460018",
+            countryName: "United Kingdom",
+        });
+    });
+
+    it("falls back to plain E.164 when the country is unknown", () => {
+        expect(describePhoneNumber("+15128522300", null)).toEqual({
+            formatted: "+15128522300",
+            countryName: null,
+        });
     });
 });

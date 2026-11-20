@@ -42,19 +42,6 @@ export function renderTemplatePreview(
         .trim();
 }
 
-/**
- * The icon is only shown when the number carries its own country: an
- * international (``+``) number or one the import pipeline already normalized
- * to E.164. Raw local numbers stay hidden rather than guessing a country.
- */
-export function hasInternationalPhone(lead: {
-    phone?: string | null;
-    phone_e164?: string | null;
-}): boolean {
-    return (lead.phone_e164 ?? "").trim().startsWith("+") ||
-        (lead.phone ?? "").trim().startsWith("+");
-}
-
 function fillMask(mask: string, digits: string): string {
     let filled = "";
     let index = 0;
