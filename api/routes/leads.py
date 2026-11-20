@@ -110,15 +110,29 @@ async def _lead_responses(leads, organization_id: int) -> list[LeadResponse]:
     same resolution the link endpoint uses runs here. The default sender's
     country is the fallback hint and is loaded once per response.
     """
-    sender = await db_client.get_default_whatsapp_sender(organization_id)
-    sender_country = sender.country if sender else None
+    try:
+        sender = await db_client.get_default_whatsapp_sender(organization_id)
+        sender_country = sender.country if sender else None
+        whatsapp_ready = True
+    except Exception:
+        # The icon is a convenience; a failed sender lookup must not take down
+        # the lead list, detail or edit responses. Hide it until it recovers.
+        logger.warning(
+            "Could not load the default WhatsApp sender for organization {}",
+            organization_id,
+            exc_info=True,
+        )
+        sender_country = None
+        whatsapp_ready = False
     responses: list[LeadResponse] = []
     for lead in leads:
         resolution = resolve_lead_phone(
             lead.phone, lead.phone_e164, lead.country, sender_country
         )
         response = LeadResponse.model_validate(lead)
-        response.whatsapp_available = resolution.phone_e164 is not None
+        response.whatsapp_available = (
+            whatsapp_ready and resolution.phone_e164 is not None
+        )
         responses.append(response)
     return responses
 

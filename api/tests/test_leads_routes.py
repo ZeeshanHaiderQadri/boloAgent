@@ -374,6 +374,30 @@ def test_lead_detail_is_org_scoped_and_includes_relations():
     db.get_lead.assert_awaited_once_with(1, 11)
 
 
+def test_lead_responses_survive_a_whatsapp_sender_lookup_failure():
+    db = _mock_db()
+    db.get_default_whatsapp_sender = AsyncMock(side_effect=RuntimeError("db down"))
+    db.list_leads = AsyncMock(return_value=([_lead()], 1))
+    db.get_lead = AsyncMock(return_value=_lead())
+    db.list_lead_activities = AsyncMock(return_value=[])
+    db.list_lead_calls = AsyncMock(return_value=[])
+    db.list_lead_search_links = AsyncMock(return_value=[])
+    db.update_lead = AsyncMock(return_value=_lead(crm_status="contacted"))
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        listing = _app().get("/leads")
+        detail = _app().get("/leads/1")
+        edited = _app().patch("/leads/1", json={"crm_status": "contacted"})
+
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["leads"][0]["whatsapp_available"] is False
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["lead"]["whatsapp_available"] is False
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["whatsapp_available"] is False
+
+
 def test_patch_status_change_appends_activity():
     db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
