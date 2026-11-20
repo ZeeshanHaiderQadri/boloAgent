@@ -78,6 +78,7 @@ from api.services.leads.socials import (
     discover_social_links,
     normalize_website,
 )
+from api.services.whatsapp.countries import resolve_lead_phone
 from api.tasks.arq import enqueue_job
 from api.tasks.function_names import FunctionNames
 
@@ -100,6 +101,43 @@ def _organization_id(user: UserModel) -> int:
     if not user.selected_organization_id:
         raise HTTPException(status_code=400, detail="No organization selected")
     return user.selected_organization_id
+
+
+async def _lead_responses(leads, organization_id: int) -> list[LeadResponse]:
+    """Serialize leads, flagging which ones can produce a WhatsApp link.
+
+    The chooser hides its icon unless a link can actually be built, so the
+    same resolution the link endpoint uses runs here. The default sender's
+    country is the fallback hint and is loaded once per response.
+    """
+    try:
+        sender = await db_client.get_default_whatsapp_sender(organization_id)
+        sender_country = sender.country if sender else None
+        whatsapp_ready = True
+    except Exception:
+        # The icon is a convenience; a failed sender lookup must not take down
+        # the lead list, detail or edit responses. Hide it until it recovers.
+        logger.opt(exception=True).warning(
+            "Could not load the default WhatsApp sender for organization {}",
+            organization_id,
+        )
+        sender_country = None
+        whatsapp_ready = False
+    responses: list[LeadResponse] = []
+    for lead in leads:
+        resolution = resolve_lead_phone(
+            lead.phone, lead.phone_e164, lead.country, sender_country
+        )
+        response = LeadResponse.model_validate(lead)
+        response.whatsapp_available = (
+            whatsapp_ready and resolution.phone_e164 is not None
+        )
+        responses.append(response)
+    return responses
+
+
+async def _lead_response(lead, organization_id: int) -> LeadResponse:
+    return (await _lead_responses([lead], organization_id))[0]
 
 
 def _total_pages(total: int, limit: int) -> int:
@@ -662,7 +700,7 @@ async def list_leads(
         limit=limit,
     )
     return LeadListResponse(
-        leads=[LeadResponse.model_validate(lead) for lead in leads],
+        leads=await _lead_responses(leads, _organization_id(user)),
         total_count=total,
         page=page,
         limit=limit,
@@ -928,7 +966,7 @@ async def update_lead_email_consent(
         await db_client.add_lead_activity(**activity)
         updated = lead
 
-    return LeadResponse.model_validate(updated)
+    return await _lead_response(updated, organization_id)
 
 
 @router.post("/{lead_id}/refresh-socials", response_model=LeadResponse)
@@ -1018,7 +1056,7 @@ async def refresh_lead_socials(
         )
     if updated is None:
         raise HTTPException(status_code=404, detail="Lead not found")
-    return LeadResponse.model_validate(updated)
+    return await _lead_response(updated, organization_id)
 
 
 @router.get("/{lead_id}", response_model=LeadDetailResponse)
@@ -1032,7 +1070,7 @@ async def get_lead_detail(
 
     activities, calls, searches = await _lead_relations(lead_id, organization_id)
     return LeadDetailResponse(
-        lead=LeadResponse.model_validate(lead),
+        lead=await _lead_response(lead, organization_id),
         activities=activities,
         calls=calls,
         searches=searches,
@@ -1191,7 +1229,7 @@ async def update_lead(
             body=request.notes,
         )
 
-    return LeadResponse.model_validate(updated)
+    return await _lead_response(updated, organization_id)
 
 
 @router.delete("/{lead_id}")

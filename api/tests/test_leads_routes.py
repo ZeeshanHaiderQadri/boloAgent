@@ -89,8 +89,20 @@ def _lead(**overrides):
     return SimpleNamespace(**values)
 
 
+def _mock_db() -> MagicMock:
+    """Mock DB client with the async defaults every lead response awaits.
+
+    Lead responses embed ``whatsapp_available``, which resolves the org's
+    default sender. Without an AsyncMock here the route raises
+    "MagicMock can't be used in 'await' expression".
+    """
+    db = MagicMock()
+    db.get_default_whatsapp_sender = AsyncMock(return_value=None)
+    return db
+
+
 def test_meta_lists_crm_statuses_formats_and_providers():
-    with patch("api.routes.leads.db_client", MagicMock()):
+    with patch("api.routes.leads.db_client", _mock_db()):
         response = _app().get("/leads/meta")
 
     assert response.status_code == 200
@@ -102,7 +114,7 @@ def test_meta_lists_crm_statuses_formats_and_providers():
 
 
 def test_create_search_enqueues_worker_and_scopes_to_organization():
-    db = MagicMock()
+    db = _mock_db()
     db.create_lead_search = AsyncMock(return_value=_search())
     db.update_lead_search = AsyncMock(return_value=_search())
     db.get_lead_search = AsyncMock(return_value=_search())
@@ -131,7 +143,7 @@ def test_create_search_enqueues_worker_and_scopes_to_organization():
 
 
 def test_create_search_rejects_provider_not_available_on_deployment():
-    with patch("api.routes.leads.db_client", MagicMock()):
+    with patch("api.routes.leads.db_client", _mock_db()):
         response = _app().post(
             "/leads/searches",
             json={
@@ -146,7 +158,7 @@ def test_create_search_rejects_provider_not_available_on_deployment():
 
 
 def test_create_search_marks_failed_when_queue_is_down():
-    db = MagicMock()
+    db = _mock_db()
     db.create_lead_search = AsyncMock(return_value=_search())
     db.update_lead_search = AsyncMock(return_value=_search())
 
@@ -167,7 +179,7 @@ def test_create_search_marks_failed_when_queue_is_down():
 
 
 def test_cancel_only_allows_active_searches():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=_search(status="completed"))
 
     with patch("api.routes.leads.db_client", db):
@@ -178,7 +190,7 @@ def test_cancel_only_allows_active_searches():
 
 
 def test_create_search_passes_target_and_auto_call_options():
-    db = MagicMock()
+    db = _mock_db()
     db.create_lead_search = AsyncMock(return_value=_search(target_results=10))
     db.update_lead_search = AsyncMock(return_value=_search(target_results=10))
     db.get_lead_search = AsyncMock(return_value=_search(target_results=10))
@@ -212,7 +224,7 @@ def test_create_search_passes_target_and_auto_call_options():
 
 
 def test_create_search_requires_an_agent_when_auto_call_is_on():
-    with patch("api.routes.leads.db_client", MagicMock()):
+    with patch("api.routes.leads.db_client", _mock_db()):
         response = _app().post(
             "/leads/searches",
             json={
@@ -227,7 +239,7 @@ def test_create_search_requires_an_agent_when_auto_call_is_on():
 
 
 def test_stop_marks_an_active_search_as_stopping():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=_search(status="running"))
     db.update_lead_search = AsyncMock(return_value=_search(status="stopping"))
 
@@ -240,7 +252,7 @@ def test_stop_marks_an_active_search_as_stopping():
 
 
 def test_stop_rejects_a_finished_search():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=_search(status="completed"))
 
     with patch("api.routes.leads.db_client", db):
@@ -250,7 +262,7 @@ def test_stop_rejects_a_finished_search():
 
 
 def test_list_leads_passes_filters_and_org_scope():
-    db = MagicMock()
+    db = _mock_db()
     db.list_leads = AsyncMock(return_value=([_lead()], 1))
 
     with patch("api.routes.leads.db_client", db):
@@ -272,7 +284,7 @@ def test_list_leads_passes_filters_and_org_scope():
 
 
 def test_export_returns_downloadable_attachment():
-    db = MagicMock()
+    db = _mock_db()
     db.list_leads = AsyncMock(return_value=([_lead()], 1))
     db.get_lead_search = AsyncMock(return_value=_search())
 
@@ -288,7 +300,7 @@ def test_export_returns_downloadable_attachment():
 
 
 def test_export_without_matches_is_a_400():
-    db = MagicMock()
+    db = _mock_db()
     db.list_leads = AsyncMock(return_value=([], 0))
 
     with patch("api.routes.leads.db_client", db):
@@ -299,7 +311,7 @@ def test_export_without_matches_is_a_400():
 
 
 def test_bulk_update_records_one_status_activity_per_changed_lead():
-    db = MagicMock()
+    db = _mock_db()
     db.get_leads_by_ids = AsyncMock(
         return_value=[
             _lead(id=1, crm_status="new"),
@@ -328,7 +340,7 @@ def test_bulk_update_records_one_status_activity_per_changed_lead():
 
 def test_dispatch_maps_quota_failures_to_402():
     with (
-        patch("api.routes.leads.db_client", MagicMock()),
+        patch("api.routes.leads.db_client", _mock_db()),
         patch(
             "api.routes.leads.dispatch_leads_to_campaign",
             new=AsyncMock(side_effect=DispatchQuotaError("Quota exhausted")),
@@ -348,7 +360,7 @@ def test_dispatch_maps_quota_failures_to_402():
 
 
 def test_lead_detail_is_org_scoped_and_includes_relations():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     db.list_lead_activities = AsyncMock(return_value=[])
     db.list_lead_calls = AsyncMock(return_value=[])
@@ -362,8 +374,32 @@ def test_lead_detail_is_org_scoped_and_includes_relations():
     db.get_lead.assert_awaited_once_with(1, 11)
 
 
+def test_lead_responses_survive_a_whatsapp_sender_lookup_failure():
+    db = _mock_db()
+    db.get_default_whatsapp_sender = AsyncMock(side_effect=RuntimeError("db down"))
+    db.list_leads = AsyncMock(return_value=([_lead()], 1))
+    db.get_lead = AsyncMock(return_value=_lead())
+    db.list_lead_activities = AsyncMock(return_value=[])
+    db.list_lead_calls = AsyncMock(return_value=[])
+    db.list_lead_search_links = AsyncMock(return_value=[])
+    db.update_lead = AsyncMock(return_value=_lead(crm_status="contacted"))
+    db.add_lead_activity = AsyncMock()
+
+    with patch("api.routes.leads.db_client", db):
+        listing = _app().get("/leads")
+        detail = _app().get("/leads/1")
+        edited = _app().patch("/leads/1", json={"crm_status": "contacted"})
+
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["leads"][0]["whatsapp_available"] is False
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["lead"]["whatsapp_available"] is False
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["whatsapp_available"] is False
+
+
 def test_patch_status_change_appends_activity():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     db.update_lead = AsyncMock(return_value=_lead(crm_status="interested"))
     db.add_lead_activity = AsyncMock()
@@ -380,7 +416,7 @@ def test_patch_status_change_appends_activity():
 
 
 def test_unknown_lead_returns_404():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=None)
 
     with patch("api.routes.leads.db_client", db):
@@ -407,7 +443,7 @@ def _edit_payload(**overrides):
 
 
 def test_list_leads_passes_geography_and_contact_filters():
-    db = MagicMock()
+    db = _mock_db()
     db.list_leads = AsyncMock(return_value=([_lead()], 1))
 
     with patch("api.routes.leads.db_client", db):
@@ -430,7 +466,7 @@ def test_list_leads_passes_geography_and_contact_filters():
 
 
 def test_facets_returns_dependent_filter_values():
-    db = MagicMock()
+    db = _mock_db()
     db.lead_facets = AsyncMock(
         return_value={
             "countries": ["CY", "US"],
@@ -459,7 +495,7 @@ def test_facets_returns_dependent_filter_values():
 
 def test_update_search_requires_an_existing_csv_campaign():
     search = _search(status="stopped", results_count=1, target_results=25)
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=search)
     db.get_campaign = AsyncMock(return_value=None)
     db.update_lead_search = AsyncMock()
@@ -478,7 +514,7 @@ def test_update_search_requires_an_existing_csv_campaign():
 def test_update_search_can_append_current_leads_to_existing_campaign():
     search = _search(status="stopped", results_count=2, target_results=25)
     updated = _search(status="queued", target_results=100, results_count=2)
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=search)
     db.get_campaign = AsyncMock(
         return_value=SimpleNamespace(
@@ -517,7 +553,7 @@ def test_update_search_can_append_current_leads_to_existing_campaign():
 
 def test_update_search_rejects_adding_to_a_campaign_that_was_not_started():
     search = _search(status="stopped", results_count=1, target_results=25)
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=search)
     db.get_campaign = AsyncMock(
         return_value=SimpleNamespace(
@@ -546,7 +582,7 @@ def test_update_search_requeues_with_new_settings_and_keeps_leads():
         status="queued",
         target_results=100,
     )
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=search)
     db.update_lead_search = AsyncMock(return_value=updated)
     db.clear_search_results = AsyncMock()
@@ -576,7 +612,7 @@ def test_update_search_requeues_with_new_settings_and_keeps_leads():
 
 def test_update_search_can_start_from_scratch():
     search = _search(status="completed", results_count=80, target_results=80)
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=search)
     db.update_lead_search = AsyncMock(
         return_value=_search(status="queued", results_count=0)
@@ -599,7 +635,7 @@ def test_update_search_can_start_from_scratch():
 
 def test_update_search_rejects_target_below_existing_leads():
     search = _search(status="completed", results_count=80, target_results=80)
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=search)
     db.update_lead_search = AsyncMock()
 
@@ -616,7 +652,7 @@ def test_update_search_rejects_target_below_existing_leads():
 
 
 def test_update_search_rejects_while_running():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=_search(status="running"))
 
     with patch("api.routes.leads.db_client", db):
@@ -634,7 +670,7 @@ def test_extend_search_raises_target_and_scraper_depth():
         params={"depth": 3, "website_filter": "no_website"},
     )
     updated = _search(status="queued", target_results=250)
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=search)
     db.update_lead_search = AsyncMock(return_value=updated)
 
@@ -657,7 +693,7 @@ def test_extend_search_raises_target_and_scraper_depth():
 
 def test_extend_search_cannot_exceed_the_result_limit():
     search = _search(status="completed", target_results=900, results_count=900)
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=search)
     db.update_lead_search = AsyncMock()
 
@@ -674,7 +710,7 @@ def test_extend_search_cannot_exceed_the_result_limit():
 
 
 def test_list_leads_and_stats_accept_a_project_scope():
-    db = MagicMock()
+    db = _mock_db()
     db.list_leads = AsyncMock(return_value=([_lead()], 1))
     db.lead_stats = AsyncMock(
         return_value={
@@ -704,7 +740,7 @@ def test_list_leads_and_stats_accept_a_project_scope():
 
 
 def test_export_uses_the_project_name_as_the_file_title():
-    db = MagicMock()
+    db = _mock_db()
     db.list_leads = AsyncMock(return_value=([_lead()], 1))
     db.get_lead_project = AsyncMock(
         return_value=(SimpleNamespace(name="US coffee shops"), 1, 1)
@@ -720,7 +756,7 @@ def test_export_uses_the_project_name_as_the_file_title():
 
 
 def test_export_unknown_project_is_a_404():
-    db = MagicMock()
+    db = _mock_db()
     db.list_leads = AsyncMock(return_value=([_lead()], 1))
     db.get_lead_project = AsyncMock(return_value=None)
 
@@ -731,7 +767,7 @@ def test_export_unknown_project_is_a_404():
 
 
 def test_patch_contact_fields_normalizes_phone_and_logs_an_edit():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     db.update_lead = AsyncMock(
         return_value=_lead(
@@ -765,7 +801,7 @@ def test_patch_contact_fields_normalizes_phone_and_logs_an_edit():
 
 
 def test_patch_website_clears_socials_so_the_new_site_is_rescanned():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     db.update_lead = AsyncMock(return_value=_lead(website="https://new.example"))
     db.add_lead_activity = AsyncMock()
@@ -783,7 +819,7 @@ def test_patch_website_clears_socials_so_the_new_site_is_rescanned():
 
 
 def test_patch_keeps_socials_when_the_website_is_unchanged():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     db.update_lead = AsyncMock(return_value=_lead(city="Oakland"))
     db.add_lead_activity = AsyncMock()
@@ -798,7 +834,7 @@ def test_patch_keeps_socials_when_the_website_is_unchanged():
 
 
 def test_patch_rejects_clearing_the_business_name():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
 
     with patch("api.routes.leads.db_client", db):
@@ -809,7 +845,7 @@ def test_patch_rejects_clearing_the_business_name():
 
 
 def test_bulk_update_can_append_tags_without_replacing_them():
-    db = MagicMock()
+    db = _mock_db()
     db.get_leads_by_ids = AsyncMock(return_value=[_lead(id=1), _lead(id=2)])
     db.bulk_update_leads = AsyncMock(return_value=2)
     db.add_tags_to_leads = AsyncMock(return_value=2)
@@ -827,7 +863,7 @@ def test_bulk_update_can_append_tags_without_replacing_them():
 
 
 def test_list_leads_passes_the_email_consent_filter():
-    db = MagicMock()
+    db = _mock_db()
     db.list_leads = AsyncMock(return_value=([_lead(email_consent="opted_in")], 1))
 
     with patch("api.routes.leads.db_client", db):
@@ -839,7 +875,7 @@ def test_list_leads_passes_the_email_consent_filter():
 
 
 def test_recording_email_consent_requires_a_written_reason_for_opt_in():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
 
     with patch("api.routes.leads.db_client", db):
@@ -853,7 +889,7 @@ def test_recording_email_consent_requires_a_written_reason_for_opt_in():
 
 
 def test_recording_email_consent_stores_source_time_and_warning():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(
         return_value=_lead(email_consent="unknown", email_consent_source=None)
     )
@@ -896,7 +932,7 @@ def test_recording_email_consent_stores_source_time_and_warning():
 
 
 def test_recording_email_consent_can_opt_out_without_a_reason():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead(email_consent="opted_in"))
     db.update_lead = AsyncMock(
         return_value=_lead(
@@ -919,7 +955,7 @@ def test_recording_email_consent_can_opt_out_without_a_reason():
 
 
 def test_reconfirming_the_same_consent_keeps_the_original_source_and_time():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(
         return_value=_lead(
             email_consent="opted_in",
@@ -953,7 +989,7 @@ def test_reconfirming_the_same_consent_keeps_the_original_source_and_time():
 
 
 def test_clearing_email_consent_removes_source_and_timestamp():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(
         return_value=_lead(
             email_consent="opted_out",
@@ -977,7 +1013,7 @@ def test_clearing_email_consent_removes_source_and_timestamp():
 
 
 def test_bulk_email_consent_updates_leads_and_logs_every_matched_row():
-    db = MagicMock()
+    db = _mock_db()
     db.get_leads_by_ids = AsyncMock(
         return_value=[
             _lead(id=1, email_consent="unknown"),
@@ -1021,7 +1057,7 @@ def test_bulk_email_consent_updates_leads_and_logs_every_matched_row():
 
 
 def test_bulk_email_consent_records_a_reason_when_nothing_changes():
-    db = MagicMock()
+    db = _mock_db()
     db.get_leads_by_ids = AsyncMock(
         return_value=[_lead(id=1, email_consent="opted_in")]
     )
@@ -1046,7 +1082,7 @@ def test_bulk_email_consent_records_a_reason_when_nothing_changes():
 
 
 def test_bulk_email_consent_requires_a_reason_for_opt_in():
-    with patch("api.routes.leads.db_client", MagicMock()):
+    with patch("api.routes.leads.db_client", _mock_db()):
         response = _app().post(
             "/leads/email-consent/bulk",
             json={"lead_ids": [1], "email_consent": "opted_in"},
@@ -1056,7 +1092,7 @@ def test_bulk_email_consent_requires_a_reason_for_opt_in():
 
 
 def test_editing_the_email_resets_consent_in_the_same_update():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(
         return_value=_lead(
             email="old@apex-software-demo.com",
@@ -1090,7 +1126,7 @@ def test_editing_the_email_resets_consent_in_the_same_update():
 
 
 def test_editing_the_email_without_consent_does_not_log_a_reset():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(
         return_value=_lead(email="old@apex-software-demo.com", email_consent="unknown")
     )
@@ -1115,7 +1151,7 @@ def test_editing_the_email_without_consent_does_not_log_a_reset():
 
 
 def test_adding_an_address_clears_consent_that_had_no_address():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(
         return_value=_lead(
             email=None,
@@ -1144,7 +1180,7 @@ def test_adding_an_address_clears_consent_that_had_no_address():
 
 
 def test_editing_only_the_email_case_keeps_consent():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead(email="Hello@Apex-Software-Demo.com"))
     db.update_lead = AsyncMock(return_value=_lead(email="hello@apex-software-demo.com"))
     db.add_lead_activity = AsyncMock()
@@ -1161,7 +1197,7 @@ def test_editing_only_the_email_case_keeps_consent():
 
 
 def test_delete_search_rejects_active_search():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=_search(status="running"))
 
     with patch("api.routes.leads.db_client", db):
@@ -1173,7 +1209,7 @@ def test_delete_search_rejects_active_search():
 
 
 def test_delete_search_removes_finished_search_for_org():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=_search(status="completed"))
     db.delete_lead_search = AsyncMock(return_value=True)
 
@@ -1186,7 +1222,7 @@ def test_delete_search_removes_finished_search_for_org():
 
 
 def test_delete_search_unknown_is_404():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead_search = AsyncMock(return_value=None)
 
     with patch("api.routes.leads.db_client", db):
@@ -1196,7 +1232,7 @@ def test_delete_search_unknown_is_404():
 
 
 def test_bulk_delete_is_org_scoped_and_reports_count():
-    db = MagicMock()
+    db = _mock_db()
     db.delete_leads = AsyncMock(return_value=2)
 
     with patch("api.routes.leads.db_client", db):
@@ -1208,7 +1244,7 @@ def test_bulk_delete_is_org_scoped_and_reports_count():
 
 
 def test_bulk_delete_without_matches_is_404():
-    db = MagicMock()
+    db = _mock_db()
     db.delete_leads = AsyncMock(return_value=0)
 
     with patch("api.routes.leads.db_client", db):
@@ -1219,7 +1255,7 @@ def test_bulk_delete_without_matches_is_404():
 
 
 def test_refresh_socials_scans_the_website_and_saves_org_scoped_links():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     db.save_lead_socials = AsyncMock(
         return_value=_lead(
@@ -1265,7 +1301,7 @@ def test_refresh_socials_scans_the_website_and_saves_org_scoped_links():
 
 
 def test_refresh_socials_keeps_links_when_the_scan_fails_temporarily():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     discover = AsyncMock(
         return_value=SocialScan(
@@ -1295,7 +1331,7 @@ def test_refresh_socials_keeps_links_when_the_scan_fails_temporarily():
 
 
 def test_refresh_socials_marks_a_robots_denial_as_checked():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     db.mark_lead_socials_checked = AsyncMock(return_value=_lead())
     discover = AsyncMock(return_value=SocialScan({}, checked=True, replace_links=False))
@@ -1321,7 +1357,7 @@ def test_refresh_socials_marks_a_robots_denial_as_checked():
 
 
 def test_refresh_socials_returns_422_for_a_malformed_website():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead(website="http://[::1"))
     discover = AsyncMock()
 
@@ -1342,7 +1378,7 @@ def test_refresh_socials_returns_422_for_a_malformed_website():
 def test_refresh_socials_fails_closed_when_redis_is_down():
     from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
 
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     discover = AsyncMock()
 
@@ -1361,7 +1397,7 @@ def test_refresh_socials_fails_closed_when_redis_is_down():
 
 
 def test_refresh_socials_is_rate_limited_per_user_and_org():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     discover = AsyncMock()
 
@@ -1380,7 +1416,7 @@ def test_refresh_socials_is_rate_limited_per_user_and_org():
 
 
 def test_refresh_socials_caps_concurrent_scans_per_org():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     discover = AsyncMock()
 
@@ -1403,7 +1439,7 @@ def test_refresh_socials_caps_concurrent_scans_per_org():
 
 
 def test_refresh_socials_returns_504_when_the_scan_times_out():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead())
     db.mark_lead_socials_checked = AsyncMock()
 
@@ -1433,7 +1469,7 @@ def test_refresh_socials_returns_504_when_the_scan_times_out():
 
 
 def test_refresh_socials_requires_a_lead_website():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=_lead(website=None))
 
     with patch("api.routes.leads.db_client", db):
@@ -1444,7 +1480,7 @@ def test_refresh_socials_requires_a_lead_website():
 
 
 def test_refresh_socials_is_scoped_to_the_selected_organization():
-    db = MagicMock()
+    db = _mock_db()
     db.get_lead = AsyncMock(return_value=None)
 
     with patch("api.routes.leads.db_client", db):

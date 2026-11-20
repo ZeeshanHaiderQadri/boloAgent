@@ -17,6 +17,7 @@ import {
   type LucideIcon,
   Mail,
   Megaphone,
+  MessageCircle,
   Phone,
   Plug,
   Settings,
@@ -141,6 +142,15 @@ const NAV_SECTIONS: SidebarNavSection[] = [
           { title: "Senders",   url: "/email/senders"    },
           { title: "Templates", url: "/email/templates"  },
           { title: "Campaigns", url: "/email/campaigns"  },
+        ],
+      },
+      {
+        title: "WhatsApp",
+        url: "/whatsapp/templates",
+        icon: MessageCircle,
+        children: [
+          { title: "Templates", url: "/whatsapp/templates" },
+          { title: "Senders",   url: "/whatsapp/senders"   },
         ],
       },
       {
