@@ -1,0 +1,51 @@
+---
+title: "Social profiles for leads"
+description: "How Bolo finds Instagram, X, TikTok and YouTube profiles on a lead's own website, and how to turn the feature off."
+---
+
+When a lead has a website, Bolo can look for the business's own Instagram, X,
+TikTok and YouTube profiles and show them as icons in the leads table.
+
+## Where the requests come from
+
+Discovery runs inside your Bolo API and background worker, not in the browser
+and not through Google. For each lead, the worker requests the business's own
+website from the machine that runs Bolo. The site sees that machine's address.
+
+Requests are deliberately small and polite:
+
+- At most the homepage plus one contact page, and only profile links on those
+  pages are read.
+- `robots.txt` is checked first; if it disallows the page, nothing is fetched.
+- Each site gets one scan at a time, with a 15 second deadline, a 512 KB
+  response budget and at most four redirects.
+- Only public web addresses are fetched, so a lead website cannot make Bolo
+  reach a private or internal service.
+- Facebook, `fb.com` and `fb.me` pages are not fetched; a lead whose website is
+  only a Facebook page records no profiles.
+
+A profile is kept only when the handle matches the business. Template footers
+that link the site vendor's account and unrelated accounts with similar words
+(say, a pizza shop linking a pizza truck) are ignored. If a scan fails
+temporarily, existing icons stay and the lead is retried later with backoff.
+
+## Refreshing one lead
+
+Open a lead and use **Refresh social profiles** to scan again. This is rate
+limited per user and per organization, and only two scans per organization run
+at once.
+
+## Turning automatic discovery off
+
+Set the following for the API and worker services and restart them:
+
+```bash
+LEADS_SOCIAL_ENRICHMENT_ENABLED=false
+```
+
+New searches then skip the background scan and make no third-party requests.
+The per-lead refresh action still works when you trigger it yourself. Discovery
+is on by default.
+
+Profiles are also cleared when a lead's website changes — by you in the lead
+form or by a later scrape — so the new site is scanned from scratch.
