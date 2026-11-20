@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.db import db_client
 from api.db.models import (
@@ -50,6 +50,11 @@ from api.services.whatsapp.templates import (
 
 router = APIRouter(prefix="/whatsapp")
 
+# Column widths shared by the request schemas, so over-long input is rejected
+# with a 422 by Pydantic instead of failing inside the database.
+MAX_TEMPLATE_LANGUAGE_CHARS = 16
+MAX_SENDER_LABEL_CHARS = 255
+
 
 # ----------------------------------------------------------------------
 # Request / response schemas
@@ -73,14 +78,18 @@ class WhatsAppTemplateResponse(WhatsAppTemplateSummary):
 class CreateWhatsAppTemplateRequest(BaseModel):
     name: str
     body: str
-    language: str = "en"
+    # Matches the language column width, so an over-long code is a 422 instead
+    # of a database error.
+    language: str = Field(default="en", max_length=MAX_TEMPLATE_LANGUAGE_CHARS)
     category: str = "marketing"
 
 
 class UpdateWhatsAppTemplateRequest(BaseModel):
     name: Optional[str] = None
     body: Optional[str] = None
-    language: Optional[str] = None
+    language: Optional[str] = Field(
+        default=None, max_length=MAX_TEMPLATE_LANGUAGE_CHARS
+    )
     category: Optional[str] = None
 
 
@@ -95,14 +104,14 @@ class WhatsAppSenderResponse(BaseModel):
 
 
 class CreateWhatsAppSenderRequest(BaseModel):
-    label: str
+    label: str = Field(max_length=MAX_SENDER_LABEL_CHARS)
     phone: str
     country: str
     is_default: bool = False
 
 
 class UpdateWhatsAppSenderRequest(BaseModel):
-    label: Optional[str] = None
+    label: Optional[str] = Field(default=None, max_length=MAX_SENDER_LABEL_CHARS)
     phone: Optional[str] = None
     country: Optional[str] = None
     is_default: Optional[bool] = None

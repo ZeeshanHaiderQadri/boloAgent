@@ -266,6 +266,7 @@ export function WhatsAppTemplateDialog({
                                         value={language}
                                         onChange={(event) => setLanguage(event.target.value)}
                                         placeholder="en"
+                                        maxLength={16}
                                     />
                                 </div>
                             </div>

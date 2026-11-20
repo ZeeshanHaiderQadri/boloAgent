@@ -139,6 +139,32 @@ async def test_template_name_conflict_and_validation(db_session, test_client_fac
         assert at_limit.status_code == 201
 
 
+@pytest.mark.asyncio
+async def test_over_long_language_and_label_are_422_not_500(
+    db_session, test_client_factory
+):
+    """Values wider than their columns must fail validation, not the database."""
+    user, _ = await _user_and_org(db_session, "wa_lengths")
+    async with test_client_factory(user) as client:
+        long_language = await _create_template(
+            client, name="Long language", language="en-" + "a" * 30
+        )
+        assert long_language.status_code == 422
+
+        template = (await _create_template(client)).json()
+        patched = await client.patch(
+            f"/api/v1/whatsapp/templates/{template['uuid']}",
+            json={"language": "en-" + "a" * 30},
+        )
+        assert patched.status_code == 422
+
+        long_label = await _create_sender(client, label="x" * 256)
+        assert long_label.status_code == 422
+
+        at_limit = await _create_sender(client, label="x" * 255)
+        assert at_limit.status_code == 201
+
+
 # ----------------------------------------------------------------------
 # Senders
 # ----------------------------------------------------------------------

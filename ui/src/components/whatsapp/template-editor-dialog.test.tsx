@@ -124,6 +124,7 @@ describe("WhatsAppTemplateDialog", () => {
 
         const message = screen.getByLabelText("Message *") as HTMLTextAreaElement;
         expect(message.maxLength).toBe(1000);
+        expect((screen.getByLabelText("Language") as HTMLInputElement).maxLength).toBe(16);
 
         fireEvent.change(screen.getByLabelText("Name *"), {
             target: { value: "Long one" },
