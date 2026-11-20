@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, MessageCircle, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, Loader2, MessageCircle, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -28,6 +28,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ListRowSkeleton } from "@/components/ui/skeleton";
+import {
+    useWhatsAppDisclaimerPrompt,
+    WhatsAppDisclaimerDialog,
+} from "@/components/whatsapp/disclaimer-dialog";
 import { WhatsAppTemplateDialog } from "@/components/whatsapp/template-editor-dialog";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
@@ -50,6 +54,7 @@ export default function WhatsAppTemplatesPage() {
     const [deleteTarget, setDeleteTarget] = useState<WhatsAppTemplateSummary | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
+    const disclaimer = useWhatsAppDisclaimerPrompt();
 
     useEffect(() => {
         if (!authLoading && !user) redirectToLogin();
@@ -148,6 +153,19 @@ export default function WhatsAppTemplatesPage() {
                 title="WhatsApp templates"
                 description="Prepare click-to-chat messages for leads. Bolo never sends WhatsApp messages: templates only fill in a wa.me link you open yourself."
             >
+                <div
+                    role="note"
+                    className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm"
+                >
+                    <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600" />
+                    <p>
+                        WhatsApp can ban or restrict a number that sends unsolicited or
+                        bulk messages. If that happens it is your number and your
+                        responsibility; Bolo is not responsible for any action WhatsApp
+                        takes against your account or number.
+                    </p>
+                </div>
+
                 <PageSection
                     title="Templates"
                     description="Plain text with optional placeholders for the lead's business name, category and city. No Meta approval is needed."
@@ -290,6 +308,11 @@ export default function WhatsAppTemplatesPage() {
                     )}
                 </PageSection>
             </PageLayout>
+
+            <WhatsAppDisclaimerDialog
+                open={disclaimer.open}
+                onOpenChange={disclaimer.setOpen}
+            />
 
             <WhatsAppTemplateDialog
                 open={dialogOpen}

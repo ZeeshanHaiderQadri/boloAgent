@@ -9203,6 +9203,28 @@ export type WhatsAppConfigurationRequest = {
 };
 
 /**
+ * WhatsAppDisclaimerResponse
+ */
+export type WhatsAppDisclaimerResponse = {
+    /**
+     * Version
+     */
+    version: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * Accepted
+     */
+    accepted: boolean;
+    /**
+     * Accepted At
+     */
+    accepted_at?: string | null;
+};
+
+/**
  * WhatsAppLeadLinksResponse
  */
 export type WhatsAppLeadLinksResponse = {
@@ -17409,6 +17431,84 @@ export type ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetRespon
 };
 
 export type ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponse = ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponses[keyof ListCampaignMessagesApiV1EmailCampaignsCampaignUuidMessagesGetResponses];
+
+export type GetWhatsappDisclaimerApiV1WhatsappDisclaimerGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/whatsapp/disclaimer';
+};
+
+export type GetWhatsappDisclaimerApiV1WhatsappDisclaimerGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetWhatsappDisclaimerApiV1WhatsappDisclaimerGetError = GetWhatsappDisclaimerApiV1WhatsappDisclaimerGetErrors[keyof GetWhatsappDisclaimerApiV1WhatsappDisclaimerGetErrors];
+
+export type GetWhatsappDisclaimerApiV1WhatsappDisclaimerGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WhatsAppDisclaimerResponse;
+};
+
+export type GetWhatsappDisclaimerApiV1WhatsappDisclaimerGetResponse = GetWhatsappDisclaimerApiV1WhatsappDisclaimerGetResponses[keyof GetWhatsappDisclaimerApiV1WhatsappDisclaimerGetResponses];
+
+export type AcceptWhatsappDisclaimerApiV1WhatsappDisclaimerPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/whatsapp/disclaimer';
+};
+
+export type AcceptWhatsappDisclaimerApiV1WhatsappDisclaimerPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AcceptWhatsappDisclaimerApiV1WhatsappDisclaimerPostError = AcceptWhatsappDisclaimerApiV1WhatsappDisclaimerPostErrors[keyof AcceptWhatsappDisclaimerApiV1WhatsappDisclaimerPostErrors];
+
+export type AcceptWhatsappDisclaimerApiV1WhatsappDisclaimerPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WhatsAppDisclaimerResponse;
+};
+
+export type AcceptWhatsappDisclaimerApiV1WhatsappDisclaimerPostResponse = AcceptWhatsappDisclaimerApiV1WhatsappDisclaimerPostResponses[keyof AcceptWhatsappDisclaimerApiV1WhatsappDisclaimerPostResponses];
 
 export type ListWhatsappTemplatesApiV1WhatsappTemplatesGetData = {
     body?: never;

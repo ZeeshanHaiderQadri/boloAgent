@@ -28,6 +28,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ListRowSkeleton } from "@/components/ui/skeleton";
+import {
+    useWhatsAppDisclaimerPrompt,
+    WhatsAppDisclaimerDialog,
+} from "@/components/whatsapp/disclaimer-dialog";
 import { WhatsAppSenderDialog } from "@/components/whatsapp/sender-dialog";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
@@ -44,6 +48,7 @@ export default function WhatsAppSendersPage() {
     const [deleteTarget, setDeleteTarget] = useState<WhatsAppSenderResponse | null>(null);
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
+    const disclaimer = useWhatsAppDisclaimerPrompt();
 
     useEffect(() => {
         if (!authLoading && !user) redirectToLogin();
@@ -304,6 +309,11 @@ export default function WhatsAppSendersPage() {
                     </p>
                 </div>
             </PageLayout>
+
+            <WhatsAppDisclaimerDialog
+                open={disclaimer.open}
+                onOpenChange={disclaimer.setOpen}
+            />
 
             <WhatsAppSenderDialog
                 open={dialogOpen}

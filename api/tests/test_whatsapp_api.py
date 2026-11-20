@@ -59,6 +59,11 @@ async def _create_sender(client, **overrides):
     return await client.post("/api/v1/whatsapp/senders", json=payload)
 
 
+async def _accept_disclaimer(client):
+    response = await client.post("/api/v1/whatsapp/disclaimer")
+    assert response.status_code == 200, response.text
+
+
 # ----------------------------------------------------------------------
 # Templates
 # ----------------------------------------------------------------------
@@ -279,6 +284,7 @@ async def test_lead_links_render_every_template_for_an_e164_lead(
         country="US",
     )
     async with test_client_factory(user) as client:
+        await _accept_disclaimer(client)
         await _create_template(client)
         response = await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")
         assert response.status_code == 200
@@ -299,6 +305,7 @@ async def test_lead_links_fall_back_to_the_sender_default_country(
     user, org = await _user_and_org(db_session, "wa_links_country")
     lead_id = await _lead(db_session, org.id, phone="5125550188", phone_e164=None)
     async with test_client_factory(user) as client:
+        await _accept_disclaimer(client)
         await _create_sender(client, country="US")
         await _create_template(client)
         payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
@@ -318,6 +325,7 @@ async def test_lead_links_never_guess_a_country_without_a_sender(
         db_session, org.id, phone="+15125550166", phone_e164="+15125550166"
     )
     async with test_client_factory(user) as client:
+        await _accept_disclaimer(client)
         unknown = (
             await client.get(f"/api/v1/whatsapp/leads/{with_phone}/links")
         ).json()
@@ -344,6 +352,7 @@ async def test_lead_links_resolve_a_gb_lead_with_a_us_default_sender(
     user, org = await _user_and_org(db_session, "wa_links_gb")
     lead_id = await _lead(db_session, org.id, phone="020 7946 0018", country="GB")
     async with test_client_factory(user) as client:
+        await _accept_disclaimer(client)
         await _create_sender(client, country="US")
         await _create_template(client)
         payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
@@ -363,6 +372,7 @@ async def test_lead_links_never_rewrite_a_plus_number(db_session, test_client_fa
         country="US",
     )
     async with test_client_factory(user) as client:
+        await _accept_disclaimer(client)
         await _create_sender(client, country="US")
         await _create_template(client)
         payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
@@ -383,6 +393,7 @@ async def test_lead_links_ignore_a_stored_e164_that_contradicts_the_country(
         country="GB",
     )
     async with test_client_factory(user) as client:
+        await _accept_disclaimer(client)
         await _create_template(client)
         payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
         assert payload["phone_e164"] == "+442079460018"
@@ -396,6 +407,7 @@ async def test_lead_links_never_prefix_a_japanese_number_with_a_us_hint(
     japanese = await _lead(db_session, org.id, phone="03-1234-5678", country="Japan")
     unlabelled = await _lead(db_session, org.id, phone="03 1234 5678")
     async with test_client_factory(user) as client:
+        await _accept_disclaimer(client)
         await _create_sender(client, country="US")
         resolved = (await client.get(f"/api/v1/whatsapp/leads/{japanese}/links")).json()
         assert resolved["phone_e164"] == "+81312345678"
@@ -416,6 +428,7 @@ async def test_lead_links_do_not_trust_e164_without_a_known_country(
         db_session, org.id, phone="5125550177", phone_e164="+15125550177"
     )
     async with test_client_factory(user) as client:
+        await _accept_disclaimer(client)
         payload = (await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")).json()
         assert payload["available"] is False
         assert payload["reason"] == "country_unknown"
@@ -423,9 +436,59 @@ async def test_lead_links_do_not_trust_e164_without_a_known_country(
 
 @pytest.mark.asyncio
 async def test_lead_links_are_org_scoped(db_session, test_client_factory):
-    user_a, org_a = await _user_and_org(db_session, "wa_links_org_a")
+    _user_a, org_a = await _user_and_org(db_session, "wa_links_org_a")
     user_b, _ = await _user_and_org(db_session, "wa_links_org_b")
     lead_id = await _lead(db_session, org_a.id, phone_e164="+15125550155")
     async with test_client_factory(user_b) as client:
         response = await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")
         assert response.status_code == 404
+
+
+# ----------------------------------------------------------------------
+# Disclaimer
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_lead_links_require_the_disclaimer_once(db_session, test_client_factory):
+    user, org = await _user_and_org(db_session, "wa_disclaimer")
+    lead_id = await _lead(db_session, org.id, phone="+15125550155")
+    async with test_client_factory(user) as client:
+        status = (await client.get("/api/v1/whatsapp/disclaimer")).json()
+        assert status["accepted"] is False
+        assert status["accepted_at"] is None
+        assert status["version"]
+        assert "WhatsApp" in status["text"]
+
+        blocked = await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")
+        assert blocked.status_code == 403
+
+        accepted = await client.post("/api/v1/whatsapp/disclaimer")
+        assert accepted.status_code == 200
+        assert accepted.json()["accepted"] is True
+        assert accepted.json()["accepted_at"]
+
+        status = (await client.get("/api/v1/whatsapp/disclaimer")).json()
+        assert status["accepted"] is True
+
+        allowed = await client.get(f"/api/v1/whatsapp/leads/{lead_id}/links")
+        assert allowed.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_disclaimer_acceptance_is_per_user(db_session, test_client_factory):
+    user_a, org = await _user_and_org(db_session, "wa_disclaimer_user_a")
+    user_b, _ = await db_session.get_or_create_user_by_provider_id(
+        "wa_disclaimer_user_b"
+    )
+    await db_session.update_user_selected_organization(user_b.id, org.id)
+    snapshot_b = SimpleNamespace(
+        id=user_b.id, selected_organization_id=org.id, email=None
+    )
+
+    async with test_client_factory(user_a) as client:
+        assert (await client.post("/api/v1/whatsapp/disclaimer")).status_code == 200
+
+    async with test_client_factory(snapshot_b) as client:
+        status = (await client.get("/api/v1/whatsapp/disclaimer")).json()
+        assert status["accepted"] is False

@@ -2589,6 +2589,40 @@ class WhatsAppSenderModel(Base):
     )
 
 
+class WhatsAppDisclaimerModel(Base):
+    """One user's acknowledgement of the click-to-chat risk notice.
+
+    Keyed by user and organization: a colleague joining the organization sees
+    the notice themselves. ``text_version`` records which wording was accepted,
+    so new wording can ask again without a data migration.
+    """
+
+    __tablename__ = "whatsapp_disclaimer_acceptances"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    text_version = Column(String(32), nullable=False)
+    accepted_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "user_id",
+            name="uq_whatsapp_disclaimer_org_user",
+        ),
+        Index("ix_whatsapp_disclaimer_organization_id", "organization_id"),
+    )
+
+
 class EmailSuppressionModel(Base):
     """An address that must not receive further marketing email for this org."""
 

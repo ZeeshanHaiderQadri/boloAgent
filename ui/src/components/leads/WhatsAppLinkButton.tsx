@@ -4,7 +4,10 @@ import { ExternalLink, Loader2, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet } from "@/client";
+import {
+    getWhatsappDisclaimerApiV1WhatsappDisclaimerGet,
+    whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet,
+} from "@/client";
 import type { LeadResponse, WhatsAppLeadLinksResponse } from "@/client/types.gen";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +17,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { WhatsAppDisclaimerDialog } from "@/components/whatsapp/disclaimer-dialog";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -42,6 +46,7 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<WhatsAppLeadLinksResponse | null>(null);
+    const [disclaimerOpen, setDisclaimerOpen] = useState(false);
 
     const show = async () => {
         setOpen(true);
@@ -50,6 +55,15 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
         setData(null);
         try {
             const token = await getAccessToken();
+            const status = await getWhatsappDisclaimerApiV1WhatsappDisclaimerGet({
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (status.data && !status.data.accepted) {
+                // The backend refuses to build links until this is accepted.
+                setOpen(false);
+                setDisclaimerOpen(true);
+                return;
+            }
             const response = await whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet({
                 headers: { Authorization: `Bearer ${token}` },
                 path: { lead_id: lead.id },
@@ -166,6 +180,12 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
                     )}
                 </DialogContent>
             </Dialog>
+
+            <WhatsAppDisclaimerDialog
+                open={disclaimerOpen}
+                onOpenChange={setDisclaimerOpen}
+                onAccepted={() => void show()}
+            />
         </>
     );
 }

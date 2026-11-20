@@ -15,7 +15,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.db import db_client
-from api.db.models import UserModel, WhatsAppSenderModel, WhatsAppTemplateModel
+from api.db.models import (
+    UserModel,
+    WhatsAppDisclaimerModel,
+    WhatsAppSenderModel,
+    WhatsAppTemplateModel,
+)
 from api.db.whatsapp_client import WhatsAppConflictError
 from api.services.auth.depends import get_user
 from api.services.whatsapp.countries import (
@@ -27,6 +32,10 @@ from api.services.whatsapp.countries import (
     normalize_country_code,
     resolve_lead_phone,
     resolve_local,
+)
+from api.services.whatsapp.disclaimer import (
+    WHATSAPP_DISCLAIMER_TEXT,
+    WHATSAPP_DISCLAIMER_VERSION,
 )
 from api.services.whatsapp.templates import (
     MAX_TEMPLATE_NAME_CHARS,
@@ -113,6 +122,13 @@ class WhatsAppLeadLinksResponse(BaseModel):
     reason: Optional[str] = None
     phone_e164: Optional[str] = None
     links: list[WhatsAppTemplateLink]
+
+
+class WhatsAppDisclaimerResponse(BaseModel):
+    version: str
+    text: str
+    accepted: bool
+    accepted_at: Optional[datetime] = None
 
 
 # ----------------------------------------------------------------------
@@ -259,6 +275,46 @@ async def _sender_or_404(organization_id: int, sender_uuid: str) -> WhatsAppSend
     if sender is None:
         raise HTTPException(status_code=404, detail="WhatsApp sender not found")
     return sender
+
+
+def _disclaimer_response(
+    acceptance: Optional[WhatsAppDisclaimerModel],
+) -> WhatsAppDisclaimerResponse:
+    accepted = (
+        acceptance is not None
+        and acceptance.text_version == WHATSAPP_DISCLAIMER_VERSION
+    )
+    return WhatsAppDisclaimerResponse(
+        version=WHATSAPP_DISCLAIMER_VERSION,
+        text=WHATSAPP_DISCLAIMER_TEXT,
+        accepted=accepted,
+        accepted_at=acceptance.accepted_at if accepted else None,
+    )
+
+
+# ----------------------------------------------------------------------
+# Disclaimer
+# ----------------------------------------------------------------------
+
+
+@router.get("/disclaimer")
+async def get_whatsapp_disclaimer(
+    user: UserModel = Depends(get_user),
+) -> WhatsAppDisclaimerResponse:
+    organization_id = _require_organization(user)
+    acceptance = await db_client.get_whatsapp_disclaimer(organization_id, user.id)
+    return _disclaimer_response(acceptance)
+
+
+@router.post("/disclaimer")
+async def accept_whatsapp_disclaimer(
+    user: UserModel = Depends(get_user),
+) -> WhatsAppDisclaimerResponse:
+    organization_id = _require_organization(user)
+    acceptance = await db_client.accept_whatsapp_disclaimer(
+        organization_id, user.id, WHATSAPP_DISCLAIMER_VERSION
+    )
+    return _disclaimer_response(acceptance)
 
 
 # ----------------------------------------------------------------------
@@ -492,6 +548,13 @@ async def whatsapp_lead_links(
     lead = await db_client.get_lead(lead_id, organization_id)
     if lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
+
+    acceptance = await db_client.get_whatsapp_disclaimer(organization_id, user.id)
+    if acceptance is None or acceptance.text_version != WHATSAPP_DISCLAIMER_VERSION:
+        raise HTTPException(
+            status_code=403,
+            detail="Accept the WhatsApp disclaimer before opening message links.",
+        )
 
     resolution = resolve_lead_phone(lead.phone, lead.phone_e164, lead.country)
     if resolution.failure == "country_unknown":

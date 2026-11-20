@@ -11,7 +11,11 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from api.db.base_client import BaseDBClient
-from api.db.models import WhatsAppSenderModel, WhatsAppTemplateModel
+from api.db.models import (
+    WhatsAppDisclaimerModel,
+    WhatsAppSenderModel,
+    WhatsAppTemplateModel,
+)
 
 
 class WhatsAppConflictError(Exception):
@@ -23,6 +27,67 @@ class WhatsAppConflictError(Exception):
 
 class WhatsAppClient(BaseDBClient):
     """Organization-scoped WhatsApp template and sender operations."""
+
+    async def get_whatsapp_disclaimer(
+        self, organization_id: int, user_id: int
+    ) -> Optional[WhatsAppDisclaimerModel]:
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(WhatsAppDisclaimerModel).where(
+                    WhatsAppDisclaimerModel.organization_id == organization_id,
+                    WhatsAppDisclaimerModel.user_id == user_id,
+                )
+            )
+            return result.scalar_one_or_none()
+
+    async def accept_whatsapp_disclaimer(
+        self,
+        organization_id: int,
+        user_id: int,
+        text_version: str,
+    ) -> WhatsAppDisclaimerModel:
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(WhatsAppDisclaimerModel).where(
+                    WhatsAppDisclaimerModel.organization_id == organization_id,
+                    WhatsAppDisclaimerModel.user_id == user_id,
+                )
+            )
+            acceptance = result.scalar_one_or_none()
+            now = datetime.now(UTC)
+            if acceptance is not None:
+                acceptance.text_version = text_version
+                acceptance.accepted_at = now
+                await session.commit()
+                await session.refresh(acceptance)
+                return acceptance
+
+            acceptance = WhatsAppDisclaimerModel(
+                organization_id=organization_id,
+                user_id=user_id,
+                text_version=text_version,
+                accepted_at=now,
+            )
+            session.add(acceptance)
+            try:
+                await session.commit()
+            except IntegrityError:
+                # Another request accepted at the same moment; keep one row.
+                await session.rollback()
+                result = await session.execute(
+                    select(WhatsAppDisclaimerModel).where(
+                        WhatsAppDisclaimerModel.organization_id == organization_id,
+                        WhatsAppDisclaimerModel.user_id == user_id,
+                    )
+                )
+                acceptance = result.scalar_one_or_none()
+                if acceptance is None:
+                    raise
+                acceptance.text_version = text_version
+                acceptance.accepted_at = now
+                await session.commit()
+            await session.refresh(acceptance)
+            return acceptance
 
     async def list_whatsapp_templates(
         self, organization_id: int
