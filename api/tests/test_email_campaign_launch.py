@@ -161,6 +161,9 @@ def _allow_launch_limits(monkeypatch):
     monkeypatch.setattr(
         "api.routes.email_campaigns.allow_campaign_launch_attempt", allow
     )
+    monkeypatch.setattr(
+        "api.services.email.launch.allow_campaign_launch_attempt", allow
+    )
 
 
 async def _user_and_org(db_session, slug: str):
@@ -294,6 +297,7 @@ async def test_launch_freezes_and_queues_when_enabled(
         enqueued.append((function_name, args, kwargs))
 
     monkeypatch.setattr("api.routes.email_campaigns.enqueue_job", record_enqueue)
+    monkeypatch.setattr("api.services.email.launch.enqueue_job", record_enqueue)
 
     user, org = await _user_and_org(db_session, "launch_ready")
     lead_id = await _lead(db_session, org.id)
@@ -420,11 +424,11 @@ async def test_launch_attempts_are_rate_limited_and_fail_closed(
         url = f"/api/v1/email/campaigns/{created.json()['uuid']}/launch"
 
         monkeypatch.setattr(
-            "api.routes.email_campaigns.allow_campaign_launch_attempt", deny
+            "api.services.email.launch.allow_campaign_launch_attempt", deny
         )
         denied = await client.post(url)
         monkeypatch.setattr(
-            "api.routes.email_campaigns.allow_campaign_launch_attempt", unavailable
+            "api.services.email.launch.allow_campaign_launch_attempt", unavailable
         )
         down = await client.post(url)
 
@@ -481,6 +485,7 @@ async def _launched_campaign(db_session, test_client_factory, monkeypatch, slug)
     monkeypatch.setattr("api.constants.EMAIL_CAMPAIGN_SENDING_ENABLED", True)
     monkeypatch.setattr("api.constants.PUBLIC_BASE_URL", PUBLIC_URL)
     monkeypatch.setattr("api.routes.email_campaigns.enqueue_job", record_enqueue)
+    monkeypatch.setattr("api.services.email.launch.enqueue_job", record_enqueue)
 
     user, org = await _user_and_org(db_session, slug)
     lead_id = await _lead(db_session, org.id)

@@ -17,7 +17,12 @@ from api.services.copilot.tools import (
     _tag_leads,
 )
 
-GATED_TOOLS = {"tag_leads", "start_lead_search", "create_email_campaign_draft"}
+GATED_TOOLS = {
+    "tag_leads",
+    "start_lead_search",
+    "create_email_campaign_draft",
+    "launch_email_campaign",
+}
 
 
 def test_every_tool_documents_itself_and_has_a_risk():

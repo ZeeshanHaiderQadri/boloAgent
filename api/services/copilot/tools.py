@@ -31,6 +31,12 @@ from api.services.email.audience import (
     validate_audience_rule,
 )
 from api.services.email.campaign_rate_limits import allow_campaign_preview
+from api.services.email.launch import (
+    CampaignNotFoundError,
+    EmailLaunchError,
+    SendingDisabledError,
+    launch_campaign,
+)
 from api.services.leads.searches import (
     ProviderUnavailableError,
     SearchQueueUnavailableError,
@@ -566,9 +572,49 @@ async def _create_email_campaign_draft(
         "sender": sender.from_email if sender else None,
         "template": template.name if template else None,
         "note": (
-            "Draft saved. Nothing is sent, and launching is a separate step "
-            "that is not available in this chat yet."
+            "Draft saved. Nothing is sent until the campaign is launched, "
+            "which is a separate approved step."
         ),
+    }
+
+
+class LaunchEmailCampaignArgs(BaseModel):
+    campaign_uuid: str = Field(
+        min_length=1,
+        max_length=64,
+        description=(
+            "Campaign id from list_email_campaigns (the draft to send). "
+            "Only draft or ready campaigns can be launched."
+        ),
+    )
+
+
+async def _launch_email_campaign(
+    ctx: CopilotContext, args: LaunchEmailCampaignArgs
+) -> dict:
+    try:
+        result = await launch_campaign(
+            organization_id=ctx.organization_id,
+            user_id=ctx.user_id,
+            campaign_uuid=args.campaign_uuid.strip(),
+        )
+    except SendingDisabledError as exc:
+        raise ValueError(
+            "Campaign sending is disabled on this deployment, so nothing was "
+            "sent. The workspace owner can enable it in the server environment."
+        ) from exc
+    except CampaignNotFoundError as exc:
+        raise ValueError(
+            "Email campaign not found in this workspace. Use list_email_campaigns."
+        ) from exc
+    except EmailLaunchError as exc:
+        raise ValueError(str(exc)) from exc
+    return {
+        "launched": result.ready,
+        "status": result.status,
+        "queued_count": result.queued_count,
+        "preconditions": result.preconditions,
+        "message": result.message,
     }
 
 
@@ -724,12 +770,25 @@ TOOLS: dict[str, CopilotTool] = {
             description=(
                 "Save an email campaign draft with an audience, optional sender, "
                 "template and consent policy. The user approves it first. Nothing "
-                "is sent; launching is a separate step that is not available yet. "
-                "Preview the audience and name the recipient count before calling."
+                "is sent; launching is a separate approved step. Preview the "
+                "audience and name the recipient count before calling."
             ),
             args_schema=CreateEmailDraftArgs,
             risk=RISK_WRITE,
             handler=_create_email_campaign_draft,
+        ),
+        CopilotTool(
+            name="launch_email_campaign",
+            description=(
+                "Launch a saved email campaign: freeze its audience and queue real "
+                "emails to real recipients. This is irreversible, so the user must "
+                "approve each launch. Before calling, name the campaign and its "
+                "eligible recipient count. If launch is blocked, relay every "
+                "precondition instead of retrying."
+            ),
+            args_schema=LaunchEmailCampaignArgs,
+            risk=RISK_WRITE,
+            handler=_launch_email_campaign,
         ),
         CopilotTool(
             name="tag_leads",
