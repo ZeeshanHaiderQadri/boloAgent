@@ -73,13 +73,12 @@ def _initial_state():
 async def _copilot(replies, tools):
     with (
         patch.object(agent_module, "TOOLS", tools),
-        patch.object(agent_module, "db_client") as db,
+        patch.object(agent_module, "audit_tool_call", AsyncMock()) as audit,
     ):
-        db.record_copilot_tool_call = AsyncMock()
         graph = agent_module.build_copilot_graph(_FakeModel(replies), InMemorySaver())
         config = {"configurable": {"thread_id": "thread-1"}}
         await graph.ainvoke(_initial_state(), config)
-        yield graph, config, db
+        yield graph, config, audit
 
 
 @pytest.mark.asyncio
@@ -121,17 +120,14 @@ async def test_declining_never_runs_the_write_and_is_audited():
             AIMessage(content="Okay, nothing changed."),
         ],
         {"tag_test": write},
-    ) as (graph, config, db):
+    ) as (graph, config, audit):
         state = await graph.aget_state(config)
         approval_id = state.interrupts[0].id
         await graph.ainvoke(
             Command(resume={approval_id: {"decision": "decline"}}), config
         )
         final = await graph.aget_state(config)
-        statuses = [
-            call.kwargs["status"]
-            for call in db.record_copilot_tool_call.await_args_list
-        ]
+        statuses = [call.args[3] for call in audit.await_args_list]
 
     write.handler.assert_not_awaited()
     assert statuses == ["declined"]
@@ -152,16 +148,13 @@ async def test_approving_runs_the_write_with_the_authenticated_context():
             AIMessage(content="Tagged 1 lead."),
         ],
         {"tag_test": write},
-    ) as (graph, config, db):
+    ) as (graph, config, audit):
         state = await graph.aget_state(config)
         approval_id = state.interrupts[0].id
         await graph.ainvoke(
             Command(resume={approval_id: {"decision": "approve"}}), config
         )
-        statuses = [
-            call.kwargs["status"]
-            for call in db.record_copilot_tool_call.await_args_list
-        ]
+        statuses = [call.args[3] for call in audit.await_args_list]
 
     write.handler.assert_awaited_once()
     ctx, args = write.handler.await_args.args

@@ -1,5 +1,5 @@
-import api.routes.webrtc_signaling as webrtc_signaling
-from api.routes.webrtc_signaling import (
+import api.services.pipecat.webrtc_ice as webrtc_ice
+from api.services.pipecat.webrtc_ice import (
     NonRelayFilterPolicy,
     _keep_candidate,
     resolve_ice_filter_policies,
@@ -75,11 +75,11 @@ def _urls(servers):
 
 
 def _stub_turn(monkeypatch, *, host="100.64.1.10"):
-    monkeypatch.setattr(webrtc_signaling, "ENABLE_COTURN", True)
-    monkeypatch.setattr(webrtc_signaling, "TURN_HOST", host)
-    monkeypatch.setattr(webrtc_signaling, "TURN_SECRET", "s3cret")
+    monkeypatch.setattr(webrtc_ice, "ENABLE_COTURN", True)
+    monkeypatch.setattr(webrtc_ice, "TURN_HOST", host)
+    monkeypatch.setattr(webrtc_ice, "TURN_SECRET", "s3cret")
     monkeypatch.setattr(
-        webrtc_signaling,
+        webrtc_ice,
         "generate_turn_credentials",
         lambda user_id: {
             "uris": [f"turn:{host}:3478"],
@@ -96,10 +96,10 @@ def test_get_ice_servers_omits_public_stun_in_relay_only_mode(monkeypatch):
     # never a relay one, so it cannot help — it can only gather a public-IP
     # candidate that filter_outbound_sdp() then strips back out. The server
     # must agree with the client, which already skips STUN in this mode.
-    monkeypatch.setattr(webrtc_signaling, "FORCE_TURN_RELAY", True)
+    monkeypatch.setattr(webrtc_ice, "FORCE_TURN_RELAY", True)
     _stub_turn(monkeypatch)
 
-    urls = _urls(webrtc_signaling.get_ice_servers(user_id="1"))
+    urls = _urls(webrtc_ice.get_ice_servers(user_id="1"))
 
     assert not any(url.startswith("stun:") for url in urls)
     assert urls == ["turn:100.64.1.10:3478"]
@@ -107,18 +107,18 @@ def test_get_ice_servers_omits_public_stun_in_relay_only_mode(monkeypatch):
 
 def test_get_ice_servers_keeps_public_stun_when_not_relay_only(monkeypatch):
     # Unchanged behaviour off the relay-only path.
-    monkeypatch.setattr(webrtc_signaling, "FORCE_TURN_RELAY", False)
-    monkeypatch.setattr(webrtc_signaling, "ENABLE_COTURN", False)
+    monkeypatch.setattr(webrtc_ice, "FORCE_TURN_RELAY", False)
+    monkeypatch.setattr(webrtc_ice, "ENABLE_COTURN", False)
 
-    assert _urls(webrtc_signaling.get_ice_servers()) == ["stun:stun.l.google.com:19302"]
+    assert _urls(webrtc_ice.get_ice_servers()) == ["stun:stun.l.google.com:19302"]
 
 
 def test_get_ice_servers_relay_only_without_turn_returns_no_servers(monkeypatch):
     # No silent fallback to STUN when TURN is missing: an empty list is the
     # honest answer (the connection genuinely cannot succeed), and the error
     # logged alongside it is what makes that diagnosable.
-    monkeypatch.setattr(webrtc_signaling, "FORCE_TURN_RELAY", True)
-    monkeypatch.setattr(webrtc_signaling, "ENABLE_COTURN", False)
-    monkeypatch.setattr(webrtc_signaling, "TURN_HOST", "")
+    monkeypatch.setattr(webrtc_ice, "FORCE_TURN_RELAY", True)
+    monkeypatch.setattr(webrtc_ice, "ENABLE_COTURN", False)
+    monkeypatch.setattr(webrtc_ice, "TURN_HOST", "")
 
-    assert webrtc_signaling.get_ice_servers(user_id="1") == []
+    assert webrtc_ice.get_ice_servers(user_id="1") == []

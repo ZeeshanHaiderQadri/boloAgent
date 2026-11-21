@@ -9,6 +9,7 @@ from api.routes.agent_stream import router as agent_stream_router
 from api.routes.auth import router as auth_router
 from api.routes.campaign import router as campaign_router
 from api.routes.copilot import router as copilot_router
+from api.routes.copilot_voice import router as copilot_voice_router
 from api.routes.credentials import router as credentials_router
 from api.routes.email import router as email_router
 from api.routes.email_campaigns import router as email_campaigns_router
@@ -56,6 +57,7 @@ router.include_router(workflow_text_chat_router)
 router.include_router(user_router)
 router.include_router(campaign_router)
 router.include_router(copilot_router)
+router.include_router(copilot_voice_router)
 router.include_router(leads_router)
 router.include_router(lead_projects_router)
 router.include_router(credentials_router)

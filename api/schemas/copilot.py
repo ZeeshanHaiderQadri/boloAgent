@@ -58,3 +58,13 @@ class CopilotSnapshot(BaseModel):
     status: CopilotStatus
     messages: list[CopilotTranscriptMessage]
     pending_approvals: list[CopilotPendingApproval]
+
+
+class CopilotVoiceStatus(BaseModel):
+    """Whether the organization's own services can run a voice session."""
+
+    ready: bool
+    message: str | None = None
+    llm: str | None = None
+    stt: str | None = None
+    tts: str | None = None
