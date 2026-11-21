@@ -155,8 +155,10 @@ export function ExtendLeadSearchDialog({
                             onChange={(event) => setAdditional(event.target.value)}
                         />
                         <p className="text-xs text-muted-foreground">
-                            New target: {newTarget} lead(s). The scraper goes to
-                            deeper pages to discover businesses it has not seen yet.
+                            New target: {newTarget} lead(s). The search keeps going
+                            with new cities or neighbourhoods inside{" "}
+                            {search?.location ?? "the location"}; businesses already
+                            collected are kept.
                         </p>
                         {tooLarge && (
                             <p className="text-xs text-destructive">

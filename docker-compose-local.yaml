@@ -73,6 +73,11 @@ services:
     # 30s networkidle timeout), so a new search can sit at 0 results for a long
     # time. Four contexts keeps a fresh search moving.
     command: ["-web", "-addr", ":8080", "-data-folder", "/data", "-c", "4"]
+    environment:
+      # The scraper's PostHog call runs inside its job loop; when outbound
+      # telemetry is filtered the loop can stop picking up new jobs. Telemetry
+      # is not needed for operation.
+      DISABLE_TELEMETRY: "1"
     ports:
       - "127.0.0.1:8080:8080" # localhost only; the API runs on the host
     volumes:

@@ -9,6 +9,7 @@ class FunctionNames:
     COMPLETE_INACTIVE_TEXT_CHAT_SESSION = "complete_inactive_text_chat_session"
     FINALIZE_COMPLETED_TEXT_CHAT = "finalize_completed_text_chat"
     RUN_LEAD_SEARCH = "run_lead_search"
+    CANCEL_LEAD_SCRAPER = "cancel_lead_scraper"
     RUN_LEAD_AUTO_DISPATCH = "run_lead_auto_dispatch"
     ENRICH_LEAD_SOCIALS = "enrich_lead_socials"
     SYNC_LEAD_CALL_OUTCOMES = "sync_lead_call_outcomes"

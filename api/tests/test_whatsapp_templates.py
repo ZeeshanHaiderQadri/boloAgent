@@ -2,6 +2,7 @@
 
 import pytest
 
+from api.services.whatsapp.countries import resolve_lead_phone
 from api.services.whatsapp.templates import (
     WhatsAppTemplateError,
     build_wa_me_url,
@@ -59,6 +60,20 @@ def test_build_wa_me_url_uses_digits_only_and_encodes_text():
     url = build_wa_me_url("+15125550100", "Hi Apex, come by?")
     assert url.startswith("https://wa.me/15125550100?text=")
     assert "Hi%20Apex%2C%20come%20by%3F" in url
+
+
+@pytest.mark.parametrize(
+    "raw_phone", ["(510) 835-4483", "+1 510-835-4483", "+15108354483"]
+)
+def test_resolved_us_lead_phone_builds_digits_only_wa_me_url(raw_phone):
+    phone = resolve_lead_phone(
+        raw_phone=raw_phone, stored_e164=None, lead_country_value="US"
+    )
+    assert phone.phone_e164 == "+15108354483"
+
+    url = build_wa_me_url(phone.phone_e164, "")
+    assert url == "https://wa.me/15108354483"
+    assert url.removeprefix("https://wa.me/").isdigit()
 
 
 def test_build_wa_me_url_never_guesses_a_country():

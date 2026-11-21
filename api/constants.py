@@ -354,11 +354,54 @@ LEADS_SCRAPER_TIMEOUT_SECONDS = int(os.getenv("LEADS_SCRAPER_TIMEOUT_SECONDS", "
 LEADS_SCRAPER_POLL_INTERVAL_SECONDS = float(
     os.getenv("LEADS_SCRAPER_POLL_INTERVAL_SECONDS", "5")
 )
+# The scraper web loop can wedge after a completed job (its job picker stops
+# advancing) and leave later jobs pending forever. Fail a search that stays
+# pending this long instead of showing "Searching" indefinitely.
+LEADS_SCRAPER_PENDING_TIMEOUT_SECONDS = int(
+    os.getenv("LEADS_SCRAPER_PENDING_TIMEOUT_SECONDS", "180")
+)
+# A short scraper restart (container recreate, deploy) must not kill a search.
+LEADS_SCRAPER_UNAVAILABLE_TIMEOUT_SECONDS = int(
+    os.getenv("LEADS_SCRAPER_UNAVAILABLE_TIMEOUT_SECONDS", "60")
+)
 LEADS_MAX_SEARCH_DEPTH = int(os.getenv("LEADS_MAX_SEARCH_DEPTH", "10"))
 # The operator asks for this many leads up front; the worker stops the scraper
 # as soon as the search has that many results (instead of running to max_time).
 LEADS_DEFAULT_TARGET_RESULTS = int(os.getenv("LEADS_DEFAULT_TARGET_RESULTS", "25"))
 LEADS_MAX_TARGET_RESULTS = int(os.getenv("LEADS_MAX_TARGET_RESULTS", "1000"))
+# Google Maps ends a text query's result list after roughly one page of about
+# 20 businesses, so large targets are split into one query per populated place
+# inside the requested location. Place names come from OpenStreetMap (Overpass,
+# with Wikidata as the fallback while the public Overpass mirrors are at
+# capacity); any failure falls back to the original single query.
+LEADS_GEOCODER_URL = os.getenv(
+    "LEADS_GEOCODER_URL", "https://nominatim.openstreetmap.org"
+).rstrip("/")
+# Comma-separated Overpass mirrors, tried in order. The public instances time
+# out individually often enough that one is not reliable.
+LEADS_OVERPASS_URLS = [
+    url.strip()
+    for url in os.getenv(
+        "LEADS_OVERPASS_URLS",
+        "https://lz4.overpass-api.de/api/interpreter,"
+        "https://overpass-api.de/api/interpreter",
+    ).split(",")
+    if url.strip()
+]
+LEADS_GEOCODER_USER_AGENT = os.getenv(
+    "LEADS_GEOCODER_USER_AGENT", "bolo-leads/1.0 (+https://boloagent.com)"
+)
+# Wikidata Query Service. The public Overpass mirrors are frequently at
+# capacity; Wikidata answers the same "settlements inside this area" question
+# from its own store. The area's QID comes from the geocoder's extratags.
+LEADS_WIKIDATA_SPARQL_URL = os.getenv(
+    "LEADS_WIKIDATA_SPARQL_URL", "https://query.wikidata.org/sparql"
+).rstrip("/")
+# Planning estimate: how many businesses one query yields before the fan-out
+# adds another place. Lower values cover sparse categories, higher values
+# spend fewer queries on dense ones.
+LEADS_FANOUT_RESULTS_PER_QUERY = int(os.getenv("LEADS_FANOUT_RESULTS_PER_QUERY", "15"))
+LEADS_FANOUT_MAX_QUERIES = int(os.getenv("LEADS_FANOUT_MAX_QUERIES", "60"))
 # "google_maps" submits jobs to the scraper container and is the default;
 # "demo" generates deterministic sample businesses and is opt-in only.
 LEADS_DEFAULT_PROVIDER = os.getenv("LEADS_DEFAULT_PROVIDER", "google_maps")

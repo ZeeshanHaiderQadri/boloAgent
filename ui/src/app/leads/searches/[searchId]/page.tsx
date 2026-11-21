@@ -73,6 +73,33 @@ function statusVariant(status: string) {
     return "secondary" as const;
 }
 
+function formatElapsed(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) {
+        const rest = seconds % 60;
+        return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+    }
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function useElapsed(start: string | null | undefined, active: boolean): string {
+    const [now, setNow] = useState<number | null>(null);
+    useEffect(() => {
+        if (!active) {
+            setNow(null);
+            return;
+        }
+        setNow(Date.now());
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, [active, start]);
+    if (!active || !start || now === null) return "";
+    const started = Date.parse(start);
+    if (Number.isNaN(started)) return "";
+    return formatElapsed(Math.max(0, Math.floor((now - started) / 1000)));
+}
+
 export default function LeadSearchPage() {
     const { user, redirectToLogin, loading } = useAuth();
     const params = useParams<{ searchId: string }>();
@@ -111,7 +138,7 @@ export default function LeadSearchPage() {
         return response;
     }, [searchId]);
 
-    const fetchLeads = useCallback(async () => {
+    const fetchLeads = useCallback(async (resetSelection = true) => {
         if (loading || !user || !Number.isInteger(searchId)) return;
         const [leadsResponse, statsResponse] = await Promise.all([
             listLeadsApiV1LeadsGet({
@@ -133,7 +160,7 @@ export default function LeadSearchPage() {
         }
         setData(leadsResponse.data ?? null);
         setStats(statsResponse.data ?? null);
-        setSelectedIds([]);
+        if (resetSelection) setSelectedIds([]);
     }, [loading, user, searchId, appliedQuery, status, hasPhone, sort, page]);
 
     const loadAll = useCallback(
@@ -147,7 +174,7 @@ export default function LeadSearchPage() {
                     setError(detailFromError(response.error, "Search not found"));
                     return;
                 }
-                await fetchLeads();
+                await fetchLeads(showSkeleton);
             } catch (loadError) {
                 console.error("Failed to load lead search:", loadError);
                 setError("Could not load this search");
@@ -177,6 +204,18 @@ export default function LeadSearchPage() {
         return () => window.clearInterval(timer);
     }, [search, loadAll]);
 
+    const hasUncheckedWebsites = data?.leads.some(
+        (lead) => lead.website && !lead.socials_checked_at,
+    ) ?? false;
+
+    useEffect(() => {
+        if (!search || isLeadSearchActive(search.status) || !hasUncheckedWebsites) return;
+        const timer = window.setInterval(() => {
+            if (document.visibilityState === "visible") void fetchLeads(false);
+        }, 15000);
+        return () => window.clearInterval(timer);
+    }, [search, hasUncheckedWebsites, fetchLeads]);
+
     const handleCancel = async () => {
         setActionBusy(true);
         try {
@@ -205,7 +244,11 @@ export default function LeadSearchPage() {
                 return;
             }
             if (response.data) setSearch(response.data);
-            toast.success("Stopping — leads found so far are being saved");
+            if (response.data?.status === "stopped") {
+                toast.success("Search stopped — saved leads kept");
+            } else {
+                toast.info("The search changed while stopping. Check its latest status.");
+            }
             await loadAll(false);
         } finally {
             setActionBusy(false);
@@ -256,6 +299,12 @@ export default function LeadSearchPage() {
     const leads = data?.leads ?? [];
     const active = isLeadSearchActive(search?.status);
     const stopping = search?.status === "stopping";
+    const queued = search?.status === "queued";
+    // A queued search has no started_at yet; updated_at marks when it was queued.
+    const elapsed = useElapsed(
+        queued ? search?.updated_at : search?.started_at ?? search?.created_at,
+        active,
+    );
     const found = search?.results_count ?? 0;
     const target = search?.target_results ?? 0;
     const progress = target > 0 ? Math.min(100, Math.round((found / target) * 100)) : 0;
@@ -430,8 +479,9 @@ export default function LeadSearchPage() {
                         <span className="font-medium">
                             Only {found} of {target} lead(s) found.
                         </span>{" "}
-                        Extend the same search, or edit the category/location and
-                        run it again.
+                        {search?.provider === "google_maps" && search.status === "completed"
+                            ? "Google returned fewer businesses than requested for the cities and areas searched. Extend the search to cover more places, or widen the category or location."
+                            : "Extend the same search, or edit the category/location and run it again."}
                     </span>
                     <div className="flex flex-wrap gap-2">
                         <Button size="sm" variant="outline" onClick={() => setExtendOpen(true)}>
@@ -459,6 +509,12 @@ export default function LeadSearchPage() {
                                     ? `${found} of ${target} requested lead(s) found. Results appear as they are saved — the search stops automatically at the target.`
                                     : "Results appear here as they are found; you can safely navigate away."}
                             </p>
+                            {elapsed && (
+                                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <Timer className="h-3.5 w-3.5" aria-hidden />
+                                    {queued ? "Queued for" : "Running for"} {elapsed}
+                                </p>
+                            )}
                             {autoCallRequested && !search?.auto_call_campaign_id && (
                                 <p className="mt-1 text-muted-foreground">
                                     An outbound campaign will start automatically when the search

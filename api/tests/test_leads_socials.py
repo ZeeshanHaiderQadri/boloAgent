@@ -2,6 +2,7 @@
 
 import asyncio
 import socket
+import threading
 import time
 from urllib.parse import urlparse
 
@@ -427,6 +428,51 @@ async def test_pinned_transport_never_dials_the_second_dns_answer(monkeypatch):
     assert scan.links == {}
     assert dialled and set(dialled) == {"93.184.216.34"}
     assert loopback_site.hits == []
+
+
+@pytest.mark.asyncio
+async def test_blocked_resolver_does_not_block_event_loop_or_scan_deadline(monkeypatch):
+    loop = asyncio.get_running_loop()
+    entered = asyncio.Event()
+    finished = asyncio.Event()
+    release = threading.Event()
+
+    def blocked_resolver(url: str) -> PinnedTarget:
+        loop.call_soon_threadsafe(entered.set)
+        try:
+            # A finite fallback prevents a regression from hanging the test suite.
+            assert release.wait(timeout=5), "resolver was not released"
+            return PinnedTarget(
+                url=url, host="blocked.test", port=80, ip="93.184.216.34"
+            )
+        finally:
+            loop.call_soon_threadsafe(finished.set)
+
+    def no_network(_target):
+        raise AssertionError("a timed-out scan must not open a connection")
+
+    monkeypatch.setattr(socials, "_resolve_target", blocked_resolver)
+    monkeypatch.setattr(socials, "_pinned_client", no_network)
+    monkeypatch.setattr(socials, "SCAN_TIMEOUT_SECONDS", 0.1)
+
+    scan_task = asyncio.create_task(discover_social_links("http://blocked.test/"))
+    try:
+        # The loop must service this callback while the sync resolver is blocked.
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        assert not finished.is_set()
+
+        scan = await asyncio.wait_for(scan_task, timeout=2)
+        assert scan == SocialScan(
+            {}, checked=False, replace_links=False, error="timeout"
+        )
+        assert not finished.is_set()
+        assert not release.is_set()
+    finally:
+        # Cancellation cannot stop a running thread; release it even on failure.
+        scan_task.cancel()
+        release.set()
+        await asyncio.gather(scan_task, return_exceptions=True)
+        await asyncio.wait_for(finished.wait(), timeout=2)
 
 
 @pytest.mark.asyncio

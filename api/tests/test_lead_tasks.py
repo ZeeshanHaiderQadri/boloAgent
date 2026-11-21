@@ -63,7 +63,7 @@ def _search(**overrides):
         "new_leads_count": 0,
         "auto_call_campaign_id": None,
         "auto_call_error": None,
-        "started_at": NOW,
+        "started_at": datetime.now(UTC),
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -76,20 +76,41 @@ def _wire_db(monkeypatch, search, *, statuses=None):
 
     async def get_search(_search_id):
         status = next(status_iter, None)
-        if status is None:
-            return search
-        return SimpleNamespace(**{**vars(search), "status": status})
+        # Separate DB reads return snapshots, not the worker's mutable object.
+        return SimpleNamespace(**{**vars(search), "status": status or search.status})
 
     async def update_search(_search_id, _organization_id, **values):
+        expected_run = values.pop("expected_run", None)
+        expected_statuses = values.pop("expected_statuses", None)
+        if expected_run is not None and expected_run != (
+            search.started_at,
+            search.external_job_id,
+        ):
+            return None
+        if expected_statuses is not None and search.status not in expected_statuses:
+            return None
         updates.append(values)
+        for key, value in values.items():
+            setattr(search, key, value)
         return search
 
-    async def upsert(*, search_id, organization_id, leads):
+    async def upsert(*, search_id, organization_id, leads, expected_run=None):
+        if expected_run is not None and (
+            expected_run != (search.started_at, search.external_job_id)
+            or search.status != "running"
+        ):
+            return {
+                "results_count": 0,
+                "new_leads_count": 0,
+                "updated_leads_count": 0,
+            }
         new = 0
         for lead in leads:
             if lead["dedupe_key"] not in seen:
                 seen.add(lead["dedupe_key"])
                 new += 1
+        search.results_count = len(seen)
+        search.new_leads_count += new
         return {
             "results_count": len(leads),
             "new_leads_count": new,
@@ -108,6 +129,23 @@ def _wire_db(monkeypatch, search, *, statuses=None):
 
 
 @pytest.mark.asyncio
+async def test_pending_scraper_job_fails_with_actionable_error(monkeypatch):
+    provider = FakeProvider(poll_status="pending")
+    search = _search(external_job_id=None)
+    updates = _wire_db(monkeypatch, search)
+    monkeypatch.setattr(lead_tasks, "get_provider", lambda *args, **kwargs: provider)
+    monkeypatch.setattr(lead_tasks, "LEADS_SCRAPER_PENDING_TIMEOUT_SECONDS", -1)
+
+    result = await lead_tasks.run_lead_search({}, search.id)
+
+    assert result["status"] == "failed"
+    assert updates[-1]["error_message"].startswith(
+        "The Google Maps scraper has not started"
+    )
+    assert provider.cancelled is True
+
+
+@pytest.mark.asyncio
 async def test_search_completes_at_target_and_enqueues_auto_calls(monkeypatch):
     provider = FakeProvider()
     search = _search(target_results=2, params={"auto_call": True, "workflow_id": 9})
@@ -121,9 +159,37 @@ async def test_search_completes_at_target_and_enqueues_auto_calls(monkeypatch):
     assert result["results_count"] == 2
     assert provider.cancelled is True
     assert updates[-1]["status"] == "completed"
-    assert updates[-1]["results_count"] == 2
+    assert search.results_count == 2
     redis.enqueue_job.assert_any_await("run_lead_auto_dispatch", search.id)
-    redis.enqueue_job.assert_any_await("enrich_lead_socials", search.id)
+    redis.enqueue_job.assert_any_await(
+        "enrich_lead_socials", search.id, _job_id=f"lead-socials:{search.id}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_large_ingest_releases_search_between_small_batches(monkeypatch):
+    rows = [{"title": f"Cafe {i}", "place_id": f"p{i}"} for i in range(121)]
+    provider = FakeProvider(rows=rows, poll_status="completed")
+    search = _search()
+    _wire_db(monkeypatch, search)
+    upsert = AsyncMock(wraps=lead_tasks.db_client.upsert_leads_for_search)
+    monkeypatch.setattr(lead_tasks.db_client, "upsert_leads_for_search", upsert)
+    monkeypatch.setattr(lead_tasks, "get_provider", lambda *args, **kwargs: provider)
+
+    result = await asyncio.wait_for(
+        lead_tasks.run_lead_search({}, search.id), timeout=1
+    )
+
+    assert result["results_count"] == search.results_count == 121
+    assert result["new_leads_count"] == search.new_leads_count == 121
+    assert [len(call.kwargs["leads"]) for call in upsert.await_args_list] == [
+        50,
+        50,
+        21,
+        50,
+        50,
+        21,
+    ]
 
 
 @pytest.mark.asyncio
@@ -142,7 +208,7 @@ async def test_target_cancel_happens_after_the_final_ingest(monkeypatch):
     assert ("fetch", True) in provider.events
     assert provider.events[-1] == ("cancel",)
     assert updates[-1]["status"] == "completed"
-    assert updates[-1]["results_count"] == 2
+    assert search.results_count == 2
 
 
 @pytest.mark.asyncio
@@ -159,7 +225,7 @@ async def test_stop_request_keeps_leads_found_so_far(monkeypatch):
     assert result["results_count"] == 2
     assert provider.cancelled is True
     assert updates[-1]["status"] == "stopped"
-    assert updates[-1]["results_count"] == 2
+    assert search.results_count == 2
 
 
 @pytest.mark.asyncio
@@ -178,6 +244,214 @@ async def test_stop_before_the_worker_submits_never_starts_a_job(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("blocked_method", ["poll", "fetch_results"])
+async def test_search_deadline_interrupts_blocked_provider_io(
+    monkeypatch, blocked_method
+):
+    provider = FakeProvider()
+    search = _search()
+    updates = _wire_db(monkeypatch, search)
+    entered = asyncio.Event()
+    interrupted = asyncio.Event()
+
+    async def blocked(*args, **kwargs):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            interrupted.set()
+
+    monkeypatch.setattr(provider, blocked_method, blocked)
+    provider.cancel = AsyncMock()
+    monkeypatch.setattr(lead_tasks, "get_provider", lambda *args, **kwargs: provider)
+    monkeypatch.setattr(lead_tasks, "LEADS_SCRAPER_TIMEOUT_SECONDS", 0.05)
+
+    result = await asyncio.wait_for(
+        lead_tasks.run_lead_search({}, search.id), timeout=1
+    )
+
+    expected_count = 2 if blocked_method == "poll" else 0
+    expected_status = "completed" if expected_count else "failed"
+    assert entered.is_set() and interrupted.is_set()
+    assert result["status"] == search.status == expected_status
+    assert result["results_count"] == search.results_count == expected_count
+    assert search.new_leads_count == expected_count
+    assert updates[-1]["completed_at"] is not None
+    assert "time limit" in updates[-1]["error_message"]
+    provider.cancel.assert_awaited_once()
+    assert provider.cancel.await_args.args[0].external_job_id == "job-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rows, expected_status", [(ROWS, "stopped"), ([], "failed")])
+async def test_external_cancellation_persists_status_before_reraising(
+    monkeypatch, rows, expected_status
+):
+    provider = FakeProvider(rows=rows)
+    search = _search()
+    updates = _wire_db(monkeypatch, search)
+    entered = asyncio.Event()
+
+    async def blocked_poll(_search):
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(provider, "poll", blocked_poll)
+    provider.cancel = AsyncMock()
+    monkeypatch.setattr(lead_tasks, "get_provider", lambda *args, **kwargs: provider)
+    monkeypatch.setattr(lead_tasks, "LEADS_SOCIAL_ENRICHMENT_ENABLED", True)
+    redis = SimpleNamespace(enqueue_job=AsyncMock())
+    task = asyncio.create_task(lead_tasks.run_lead_search({"redis": redis}, search.id))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        assert search.results_count == len(rows)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=1)
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert search.status == expected_status
+    assert search.results_count == search.new_leads_count == len(rows)
+    assert await lead_tasks.db_client.count_search_results(search.id) == len(rows)
+    assert updates[-1]["status"] == expected_status
+    assert updates[-1]["completed_at"] is not None
+    assert "interrupted" in updates[-1]["error_message"]
+    provider.cancel.assert_awaited_once()
+    assert provider.cancel.await_args.args[0].external_job_id == "job-1"
+    redis.enqueue_job.assert_awaited_once_with(
+        "enrich_lead_socials", search.id, _job_id=f"lead-socials:{search.id}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stop_during_planning_does_not_submit_a_scraper_job(monkeypatch):
+    search = _search(status="queued", provider="google_maps", external_job_id=None)
+    _wire_db(monkeypatch, search)
+    provider = FakeProvider()
+    provider.name = "google_maps"
+    provider.submit = AsyncMock()
+    monkeypatch.setattr(lead_tasks, "get_provider", lambda *args, **kwargs: provider)
+
+    async def plan(_search):
+        search.status = "stopped"
+        return SimpleNamespace(keywords=["Coffee in Sacramento"], used_places=[])
+
+    monkeypatch.setattr(lead_tasks, "plan_fanout", plan)
+    result = await asyncio.wait_for(
+        lead_tasks.run_lead_search({}, search.id), timeout=1
+    )
+
+    assert result == {"status": "superseded"}
+    assert search.status == "stopped"
+    provider.submit.assert_not_awaited()
+    assert not provider.cancelled
+
+
+@pytest.mark.asyncio
+async def test_late_submit_after_stop_cancels_captured_job_without_writes(monkeypatch):
+    search = _search(status="queued", external_job_id=None)
+    updates = _wire_db(monkeypatch, search)
+    provider = FakeProvider()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def submit(_search):
+        entered.set()
+        await release.wait()
+        return "late-job"
+
+    monkeypatch.setattr(provider, "submit", submit)
+    provider.cancel = AsyncMock()
+    provider.fetch_results = AsyncMock()
+    provider.poll = AsyncMock()
+    monkeypatch.setattr(lead_tasks, "get_provider", lambda *args, **kwargs: provider)
+    redis = SimpleNamespace(enqueue_job=AsyncMock())
+    task = asyncio.create_task(lead_tasks.run_lead_search({"redis": redis}, search.id))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        search.status = "stopped"
+        search.completed_at = datetime.now(UTC)
+        stopped = dict(vars(search))
+        updates.clear()
+        release.set()
+        result = await asyncio.wait_for(task, timeout=1)
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert result == {"status": "superseded"}
+    assert vars(search) == stopped
+    assert updates == []
+    provider.fetch_results.assert_not_awaited()
+    provider.poll.assert_not_awaited()
+    provider.cancel.assert_awaited_once()
+    assert provider.cancel.await_args.args[0].external_job_id == "late-job"
+    redis.enqueue_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("successor", ["stopped", "new_started_at", "new_job_id"])
+async def test_inflight_worker_cannot_overwrite_stop_or_new_attempt(
+    monkeypatch, successor
+):
+    search = _search()
+    original_run = (search.started_at, search.external_job_id)
+    updates = _wire_db(monkeypatch, search)
+    upsert = AsyncMock(wraps=lead_tasks.db_client.upsert_leads_for_search)
+    monkeypatch.setattr(lead_tasks.db_client, "upsert_leads_for_search", upsert)
+    provider = FakeProvider()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def poll(_search):
+        entered.set()
+        await release.wait()
+        return ProviderJobStatus(status="completed")
+
+    monkeypatch.setattr(provider, "poll", poll)
+    provider.cancel = AsyncMock()
+    monkeypatch.setattr(lead_tasks, "get_provider", lambda *args, **kwargs: provider)
+    redis = SimpleNamespace(enqueue_job=AsyncMock())
+    task = asyncio.create_task(lead_tasks.run_lead_search({"redis": redis}, search.id))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        assert search.results_count == 2
+        if successor == "stopped":
+            search.status = "stopped"
+            search.completed_at = datetime.now(UTC)
+        elif successor == "new_started_at":
+            search.started_at += timedelta(seconds=1)
+        else:
+            search.external_job_id = "new-job"
+        newer = dict(vars(search))
+        updates.clear()
+        provider.rows = [*ROWS, {"title": "Late Cafe", "place_id": "p3"}]
+        release.set()
+        result = await asyncio.wait_for(task, timeout=1)
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert result == {"status": "superseded"}
+    assert vars(search) == newer
+    assert updates == []
+    assert upsert.await_count == 2
+    assert all(
+        call.kwargs["expected_run"] == original_run for call in upsert.await_args_list
+    )
+    assert await lead_tasks.db_client.count_search_results(search.id) == 2
+    assert ("fetch", True) in provider.events
+    provider.cancel.assert_awaited_once()
+    assert provider.cancel.await_args.args[0].external_job_id == "job-1"
+    redis.enqueue_job.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_website_filter_keeps_only_matching_leads(monkeypatch):
     rows = [
         {
@@ -193,7 +467,7 @@ async def test_website_filter_keeps_only_matching_leads(monkeypatch):
 
     stored: set[str] = set()
 
-    async def upsert(*, search_id, organization_id, leads):
+    async def upsert(*, search_id, organization_id, leads, expected_run=None):
         stored.update(lead["title"] for lead in leads)
         return {
             "results_count": len(stored),
@@ -288,6 +562,96 @@ async def test_auto_dispatch_explains_when_no_numbers_were_found(monkeypatch):
 
     assert result["status"] == "skipped"
     assert "No dialable phone numbers" in updates[-1]["auto_call_error"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status, results_count, expected_status",
+    [
+        ("queued", 0, "failed"),
+        ("running", 0, "failed"),
+        ("running", 2, "stopped"),
+        ("stopping", 0, "stopped"),
+    ],
+)
+async def test_sweep_recovers_stale_search_and_enqueues_due_socials(
+    monkeypatch, status, results_count, expected_status
+):
+    search = _search(
+        status=status,
+        started_at=datetime.now(UTC) - timedelta(hours=1),
+        results_count=results_count,
+        new_leads_count=results_count,
+    )
+    original_run = (search.started_at, search.external_job_id)
+    _wire_db(monkeypatch, search)
+    update = AsyncMock(wraps=lead_tasks.db_client.update_lead_search)
+    recovery = AsyncMock(return_value=[SimpleNamespace(**vars(search))])
+    due_socials = AsyncMock(return_value=[SimpleNamespace(id=99)])
+    monkeypatch.setattr(lead_tasks.db_client, "update_lead_search", update)
+    monkeypatch.setattr(
+        lead_tasks.db_client, "list_lead_searches_needing_recovery", recovery
+    )
+    monkeypatch.setattr(
+        lead_tasks.db_client, "list_searches_needing_socials", due_socials
+    )
+    monkeypatch.setattr(lead_tasks, "LEADS_SCRAPER_TIMEOUT_SECONDS", 60)
+    monkeypatch.setattr(lead_tasks, "LEADS_SOCIAL_ENRICHMENT_ENABLED", True)
+    redis = SimpleNamespace(enqueue_job=AsyncMock())
+    started = datetime.now(UTC)
+
+    await lead_tasks.sweep_lead_searches({"redis": redis})
+
+    recovery.assert_awaited_once()
+    cutoff = recovery.await_args.args[0]
+    grace = timedelta(seconds=60 + 120)
+    assert started - grace <= cutoff <= datetime.now(UTC) - grace
+    update.assert_awaited_once()
+    assert update.await_args.args == (search.id, search.organization_id)
+    assert update.await_args.kwargs["expected_run"] == original_run
+    assert update.await_args.kwargs["expected_statuses"] == {status}
+    assert search.status == expected_status
+    assert search.results_count == search.new_leads_count == results_count
+    assert search.completed_at >= started
+    assert "interrupted" in search.error_message
+    due_socials.assert_awaited_once_with()
+    assert redis.enqueue_job.await_count == 2
+    redis.enqueue_job.assert_any_await("cancel_lead_scraper", search.provider, "job-1")
+    redis.enqueue_job.assert_any_await(
+        "enrich_lead_socials", 99, _job_id="lead-socials:99"
+    )
+
+
+@pytest.mark.asyncio
+async def test_sweep_lost_fence_keeps_new_attempt_and_still_queues_due_socials(
+    monkeypatch,
+):
+    search = _search(started_at=datetime.now(UTC) - timedelta(hours=1))
+    stale = SimpleNamespace(**vars(search))
+    updates = _wire_db(monkeypatch, search)
+    search.started_at = datetime.now(UTC)
+    search.external_job_id = "new-job"
+    newer = dict(vars(search))
+    monkeypatch.setattr(
+        lead_tasks.db_client,
+        "list_lead_searches_needing_recovery",
+        AsyncMock(return_value=[stale]),
+    )
+    monkeypatch.setattr(
+        lead_tasks.db_client,
+        "list_searches_needing_socials",
+        AsyncMock(return_value=[SimpleNamespace(id=99)]),
+    )
+    monkeypatch.setattr(lead_tasks, "LEADS_SOCIAL_ENRICHMENT_ENABLED", True)
+    redis = SimpleNamespace(enqueue_job=AsyncMock())
+
+    await lead_tasks.sweep_lead_searches({"redis": redis})
+
+    assert updates == []
+    assert vars(search) == newer
+    redis.enqueue_job.assert_awaited_once_with(
+        "enrich_lead_socials", 99, _job_id="lead-socials:99"
+    )
 
 
 class FakeRedis:
@@ -425,6 +789,36 @@ async def test_social_enrichment_keeps_good_links_when_the_scan_fails(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_social_scan_exception_records_backoff_without_replacing_links(
+    monkeypatch,
+):
+    search = _search(provider="google_maps", status="completed")
+    lead = _lead(1, "https://apex.example", socials_attempts=1)
+    saved, marked, failures = _wire_social_db(monkeypatch, search, [lead])
+    monkeypatch.setattr(lead_tasks, "LEADS_SOCIAL_ENRICHMENT_ENABLED", True)
+    discover = AsyncMock(side_effect=RuntimeError("unexpected page failure"))
+    monkeypatch.setattr(lead_tasks, "discover_social_links", discover)
+    redis = FakeRedis()
+    started = datetime.now(UTC)
+
+    result = await lead_tasks.enrich_lead_socials({"redis": redis}, search.id)
+
+    assert result == {"status": "completed", "scanned": 1, "found": 0, "remaining": 0}
+    discover.assert_awaited_once_with("https://apex.example", business_name=lead.title)
+    assert saved == marked == []
+    assert len(failures) == 1
+    assert failures[0]["lead_id"] == lead.id
+    assert failures[0]["terminal_at"] is None
+    assert (
+        started + timedelta(hours=2)
+        <= failures[0]["next_attempt_at"]
+        <= datetime.now(UTC) + timedelta(hours=2)
+    )
+    assert redis.enqueued == []
+    assert len(redis.released) == 1
+
+
+@pytest.mark.asyncio
 async def test_social_enrichment_backs_off_exponentially(monkeypatch):
     search = _search(provider="google_maps", status="completed")
     lead = _lead(1, "https://apex.example", socials_attempts=2)
@@ -545,12 +939,7 @@ async def test_social_enrichment_defers_when_another_job_holds_the_lease(
 
     assert result == {"status": "deferred"}
     scan.assert_not_awaited()
-    assert redis.enqueued == [
-        (
-            ("enrich_lead_socials", search.id, 0),
-            {"_defer_by": timedelta(seconds=30)},
-        )
-    ]
+    assert redis.enqueued == []
 
 
 @pytest.mark.asyncio
@@ -587,6 +976,46 @@ async def test_social_enrichment_respects_the_batch_time_budget(monkeypatch):
     scan.assert_not_awaited()
     # The next short job picks up what the budget did not reach.
     assert redis.enqueued[0][0][2] == 1
+
+
+@pytest.mark.asyncio
+async def test_social_batch_deadline_interrupts_hung_scan_and_chains_pending(
+    monkeypatch,
+):
+    search = _search(provider="google_maps", status="completed")
+    leads = [_lead(1, "https://apex.example"), _lead(2, "https://hung.example")]
+    saved, marked, failures = _wire_social_db(monkeypatch, search, leads, remaining=1)
+    monkeypatch.setattr(lead_tasks, "LEADS_SOCIAL_ENRICHMENT_ENABLED", True)
+    monkeypatch.setattr(lead_tasks, "SOCIAL_ENRICH_BATCH_BUDGET_SECONDS", 0.05)
+    entered = asyncio.Event()
+    interrupted = asyncio.Event()
+    links = {"instagram": "https://www.instagram.com/apex/"}
+
+    async def discover(url, *, business_name=None):
+        if url == "https://apex.example":
+            return SocialScan(links, checked=True, replace_links=True)
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            interrupted.set()
+
+    monkeypatch.setattr(lead_tasks, "discover_social_links", discover)
+    redis = FakeRedis()
+
+    result = await asyncio.wait_for(
+        lead_tasks.enrich_lead_socials({"redis": redis}, search.id, run=2), timeout=1
+    )
+
+    assert entered.is_set() and interrupted.is_set()
+    assert result == {"status": "completed", "scanned": 1, "found": 1, "remaining": 1}
+    assert saved == [(1, links)]
+    # Deadline cancellation leaves the unfinished lead pending, not backed off.
+    assert marked == failures == []
+    assert redis.enqueued == [
+        (("enrich_lead_socials", search.id, 3), {"_defer_by": timedelta(seconds=5)})
+    ]
+    assert len(redis.released) == 1
 
 
 @pytest.mark.asyncio

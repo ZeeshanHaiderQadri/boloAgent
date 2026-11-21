@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlparse
 
@@ -19,17 +20,20 @@ from loguru import logger
 from api.constants import (
     LEADS_DISPATCH_MAX_LEADS,
     LEADS_ENABLE_DEMO_PROVIDER,
+    LEADS_SCRAPER_PENDING_TIMEOUT_SECONDS,
     LEADS_SCRAPER_POLL_INTERVAL_SECONDS,
     LEADS_SCRAPER_TIMEOUT_SECONDS,
+    LEADS_SCRAPER_UNAVAILABLE_TIMEOUT_SECONDS,
     LEADS_SOCIAL_ENRICHMENT_ENABLED,
 )
 from api.db import db_client
 from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
 from api.services.leads.call_outcomes import call_outcome, next_crm_status
+from api.services.leads.fanout import plan as plan_fanout
 from api.services.leads.normalization import normalize_rows
 from api.services.leads.providers import (
     LeadProviderError,
-    ProviderJobStatus,
+    LeadProviderUnavailable,
     get_provider,
 )
 from api.services.leads.social_scan_limits import (
@@ -53,7 +57,6 @@ SOCIAL_ENRICH_MAX_ATTEMPTS = 5
 SOCIAL_ENRICH_BASE_BACKOFF_SECONDS = 3600
 SOCIAL_ENRICH_MAX_BACKOFF_SECONDS = 86400
 SOCIAL_ENRICH_CHAIN_DELAY_SECONDS = 5
-SOCIAL_ENRICH_DEFER_SECONDS = 30
 
 
 async def _set_status(search_id: int, organization_id: int, **values: Any) -> None:
@@ -97,7 +100,11 @@ async def _enqueue_social_enrichment(ctx: dict, search_id: int) -> None:
     if redis is None:
         return
     try:
-        await redis.enqueue_job(FunctionNames.ENRICH_LEAD_SOCIALS, search_id)
+        await redis.enqueue_job(
+            FunctionNames.ENRICH_LEAD_SOCIALS,
+            search_id,
+            _job_id=f"lead-socials:{search_id}",
+        )
     except Exception as exc:  # enrichment is cosmetic; never fail the search
         logger.warning(
             "Could not queue social enrichment for search {}: {}", search_id, exc
@@ -162,222 +169,259 @@ async def _append_search_leads_to_campaign(search: Any) -> None:
         )
 
 
+async def cancel_lead_scraper(
+    ctx: dict, provider_name: str, job_id: str | None
+) -> None:
+    if not job_id:
+        return
+    try:
+        async with asyncio.timeout(5):
+            provider = get_provider(provider_name)
+            await provider.cancel(SimpleNamespace(external_job_id=job_id))
+    except Exception as exc:
+        logger.warning("Scraper cleanup failed for job {}: {}", job_id, exc)
+
+
+async def sweep_lead_searches(ctx: dict) -> None:
+    before = datetime.now(UTC) - timedelta(seconds=LEADS_SCRAPER_TIMEOUT_SECONDS + 120)
+    for search in await db_client.list_lead_searches_needing_recovery(before):
+        status = (
+            "stopped"
+            if search.results_count or search.status == "stopping"
+            else "failed"
+        )
+        updated = await db_client.update_lead_search(
+            search.id,
+            search.organization_id,
+            expected_run=(search.started_at, search.external_job_id),
+            expected_statuses={search.status},
+            status=status,
+            completed_at=datetime.now(UTC),
+            error_message="Search interrupted; saved leads were kept. You can extend or retry.",
+        )
+        if updated is not None:
+            await ctx["redis"].enqueue_job(
+                FunctionNames.CANCEL_LEAD_SCRAPER,
+                search.provider,
+                search.external_job_id,
+            )
+    if LEADS_SOCIAL_ENRICHMENT_ENABLED:
+        for search in await db_client.list_searches_needing_socials():
+            await _enqueue_social_enrichment(ctx, search.id)
+
+
 async def run_lead_search(ctx: dict, search_id: int) -> dict[str, Any]:
     search = await db_client.get_lead_search_unscoped(search_id)
     if search is None:
-        logger.warning("Lead search {} no longer exists", search_id)
         return {"status": "missing"}
-
-    if search.status in {"completed", "stopped", "cancelled"}:
+    if search.status not in {"queued", "running", "stopping"}:
         return {"status": search.status}
 
     organization_id = search.organization_id
-
+    original_run = (search.started_at, search.external_job_id)
     if search.status == "stopping":
-        await _set_status(
+        updated = await db_client.update_lead_search(
             search.id,
             organization_id,
+            expected_run=original_run,
+            expected_statuses={"stopping"},
             status="stopped",
             completed_at=datetime.now(UTC),
         )
-        await _enqueue_social_enrichment(ctx, search.id)
+        if updated is not None:
+            await _enqueue_social_enrichment(ctx, search.id)
+        await cancel_lead_scraper(ctx, search.provider, search.external_job_id)
         return {"status": "stopped"}
 
-    search.started_at = search.started_at or datetime.now(UTC)
-    await _set_status(
+    started_at = search.started_at or datetime.now(UTC)
+    claimed = await db_client.update_lead_search(
         search.id,
         organization_id,
+        expected_run=original_run,
+        expected_statuses={search.status},
         status="running",
-        started_at=search.started_at,
+        started_at=started_at,
         error_message=None,
     )
-
-    try:
-        provider = get_provider(
-            search.provider, include_demo=LEADS_ENABLE_DEMO_PROVIDER
-        )
-    except LeadProviderError as exc:
-        await _set_status(
-            search.id,
-            organization_id,
-            status="failed",
-            completed_at=datetime.now(UTC),
-            error_message=str(exc),
-        )
-        return {"status": "failed", "error": str(exc)}
-
+    if claimed is None:
+        return {"status": "superseded"}
+    search.started_at = started_at
     target = _target_results(search)
     website_filter = (search.params or {}).get("website_filter", "any")
-    total_results = await db_client.count_search_results(search.id)
+    total_results = int(search.results_count or 0)
     new_total = int(search.new_leads_count or 0)
 
-    async def sync_results(*, final: bool) -> int:
-        """Ingest the rows written to the scraper CSV so far."""
+    async def update_run(**values):
+        return await db_client.update_lead_search(
+            search.id,
+            organization_id,
+            expected_run=(search.started_at, search.external_job_id),
+            expected_statuses={"running", "stopping"},
+            **values,
+        )
+
+    async def sync_results(*, final: bool) -> None:
         nonlocal total_results, new_total
         raw_rows = await provider.fetch_results(search, final=final)
         leads = normalize_rows(
-            raw_rows,
-            country_hint=search.country_code,
-            source=search.provider,
+            raw_rows, country_hint=search.country_code, source=search.provider
         )
         if website_filter == "has_website":
             leads = [lead for lead in leads if lead.get("website")]
         elif website_filter == "no_website":
             leads = [lead for lead in leads if not lead.get("website")]
-        if not leads:
-            return total_results
-        counts = await db_client.upsert_leads_for_search(
-            search_id=search.id,
-            organization_id=organization_id,
-            leads=leads,
-        )
-        total_results = await db_client.count_search_results(search.id)
-        new_total += counts["new_leads_count"]
-        await _set_status(
-            search.id,
-            organization_id,
-            results_count=total_results,
-            new_leads_count=new_total,
-        )
-        return total_results
-
-    try:
-        if not search.external_job_id:
-            external_job_id = await provider.submit(search)
-            await _set_status(
-                search.id, organization_id, external_job_id=external_job_id
+        for offset in range(0, len(leads), 50):
+            counts = await db_client.upsert_leads_for_search(
+                search_id=search.id,
+                organization_id=organization_id,
+                leads=leads[offset : offset + 50],
+                expected_run=(search.started_at, search.external_job_id),
             )
-            search.external_job_id = external_job_id
+            if not counts["results_count"]:
+                return
+            total_results = await db_client.count_search_results(search.id)
+            new_total += counts["new_leads_count"]
 
-        deadline_seconds = LEADS_SCRAPER_TIMEOUT_SECONDS
-        waited = 0.0
-        final_status: ProviderJobStatus | None = None
-        stopped = False
-        # Cancelling a scraper job deletes its CSV, so the final ingest has to
-        # happen first. Track the cases where a cancel is still owed.
-        cancel_after_sync = False
+    status = "completed"
+    error = None
+    pending_since = started_at if search.external_job_id else None
+    unavailable_since: datetime | None = None
+    try:
+        provider = get_provider(
+            search.provider, include_demo=LEADS_ENABLE_DEMO_PROVIDER
+        )
+        elapsed = max(0, (datetime.now(UTC) - started_at).total_seconds())
+        async with asyncio.timeout(max(0, LEADS_SCRAPER_TIMEOUT_SECONDS - elapsed)):
+            if not search.external_job_id:
+                plan = (
+                    await plan_fanout(search)
+                    if provider.name == "google_maps"
+                    else None
+                )
+                current = await db_client.get_lead_search_unscoped(search.id)
+                if (
+                    current is None
+                    or current.status != "running"
+                    or (current.started_at, current.external_job_id)
+                    != (search.started_at, search.external_job_id)
+                ):
+                    return {"status": "superseded"}
+                if plan is not None:
+                    search.params = {**(search.params or {}), "keywords": plan.keywords}
+                external_job_id = await provider.submit(search)
+                pending_since = datetime.now(UTC)
+                values = {"external_job_id": external_job_id}
+                if plan is not None:
+                    params = dict(search.params)
+                    params.pop("keywords", None)
+                    params["fanout_places"] = plan.used_places
+                    values["params"] = params
+                updated = await update_run(**values)
+                search.external_job_id = external_job_id
+                if updated is None:
+                    return {"status": "superseded"}
+                if plan is not None:
+                    search.params = params
 
-        while True:
-            current = await db_client.get_lead_search_unscoped(search.id)
-            if current is None:
-                return {"status": "missing"}
-            if current.status == "cancelled":
-                await provider.cancel(search)
-                logger.info("Lead search {} cancelled", search.id)
-                return {"status": "cancelled"}
-            if current.status == "stopping":
-                stopped = True
-                # Ingest first: cancelling the scraper job also removes its
-                # CSV, and the operator wants the businesses found so far.
+            while True:
+                current = await db_client.get_lead_search_unscoped(search.id)
+                if current is None:
+                    return {"status": "missing"}
+                if (current.started_at, current.external_job_id) != (
+                    search.started_at,
+                    search.external_job_id,
+                ):
+                    return {"status": "superseded"}
+                if current.status not in {"running", "stopping"}:
+                    return {"status": current.status}
+                if current.status == "stopping":
+                    status = "stopped"
+                    break
                 try:
                     await sync_results(final=False)
-                except Exception as exc:
+                    if target and total_results >= target:
+                        await sync_results(final=True)
+                        break
+                    provider_status = await provider.poll(search)
+                except LeadProviderUnavailable as exc:
+                    unavailable_since = unavailable_since or datetime.now(UTC)
+                    down_for = (datetime.now(UTC) - unavailable_since).total_seconds()
+                    if down_for > LEADS_SCRAPER_UNAVAILABLE_TIMEOUT_SECONDS:
+                        raise
                     logger.warning(
-                        "Could not sync results while stopping search {}: {}",
+                        "Scraper unreachable for search {} ({:.0f}s): {}",
                         search.id,
+                        down_for,
                         exc,
                     )
-                await provider.cancel(search)
-                final_status = ProviderJobStatus(
-                    status="stopped", result_count=total_results
+                    await asyncio.sleep(LEADS_SCRAPER_POLL_INTERVAL_SECONDS)
+                    continue
+                unavailable_since = None
+                if provider_status.status == "failed":
+                    raise LeadProviderError(
+                        provider_status.error or "Discovery job failed"
+                    )
+                if provider_status.status == "pending":
+                    pending_since = pending_since or datetime.now(UTC)
+                    pending_for = (datetime.now(UTC) - pending_since).total_seconds()
+                    if pending_for > LEADS_SCRAPER_PENDING_TIMEOUT_SECONDS:
+                        raise LeadProviderError(
+                            "The Google Maps scraper has not started this job. "
+                            "It may be stuck; restart the scraper service, then retry."
+                        )
+                else:
+                    pending_since = None
+                if provider_status.status == "completed":
+                    await sync_results(final=True)
+                    break
+                await asyncio.sleep(LEADS_SCRAPER_POLL_INTERVAL_SECONDS)
+    except TimeoutError:
+        status = "completed" if total_results else "failed"
+        error = "Search time limit reached; saved leads were kept. Extend to search more places."
+    except asyncio.CancelledError:
+        try:
+            async with asyncio.timeout(10):
+                await update_run(
+                    status="stopped" if total_results else "failed",
+                    completed_at=datetime.now(UTC),
+                    error_message="Search interrupted; saved leads were kept. You can extend or retry.",
                 )
-                break
+                await _enqueue_social_enrichment(ctx, search.id)
+        except Exception:
+            logger.warning("Could not finalize interrupted lead search {}", search.id)
+        raise
+    except Exception as exc:
+        status = "failed"
+        error = str(exc)[:2000]
+        logger.exception("Lead search {} failed", search.id)
+    finally:
+        await cancel_lead_scraper(ctx, search.provider, search.external_job_id)
 
-            total_results = await sync_results(final=False)
-
-            if target and total_results >= target:
-                # The operator asked for this many leads; no need to keep the
-                # scraper running for the rest of its budget. The cancel below
-                # happens only after the final ingest, because it deletes the
-                # job's CSV.
-                cancel_after_sync = True
-                final_status = ProviderJobStatus(
-                    status="completed", result_count=total_results
-                )
-                logger.info(
-                    "Lead search {} reached its target of {} leads",
-                    search.id,
-                    target,
-                )
-                break
-
-            final_status = await provider.poll(search)
-            if final_status.status in {"completed", "failed"}:
-                break
-
-            if waited >= deadline_seconds:
-                raise LeadProviderError(
-                    "The discovery job did not finish within "
-                    f"{deadline_seconds} seconds"
-                )
-
-            await asyncio.sleep(LEADS_SCRAPER_POLL_INTERVAL_SECONDS)
-            waited += LEADS_SCRAPER_POLL_INTERVAL_SECONDS
-
-        if final_status is None or final_status.status == "failed":
-            raise LeadProviderError(
-                final_status.error if final_status else "Discovery job failed"
-            )
-
-        if stopped:
-            status = "stopped"
-        else:
-            # A finished job has a complete file; ingest the tail exactly once.
-            # This must precede the cancel for a target-triggered stop.
-            total_results = await sync_results(final=True)
-            status = "completed"
-
-        if cancel_after_sync:
-            await provider.cancel(search)
-
-        await _set_status(
-            search.id,
-            organization_id,
-            status=status,
-            results_count=total_results,
-            new_leads_count=new_total,
-            completed_at=datetime.now(UTC),
-            error_message=None,
-        )
-        logger.info(
-            "Lead search {} {}: {} results, {} new leads",
-            search.id,
-            status,
-            total_results,
-            new_total,
-        )
-
-        await _enqueue_social_enrichment(ctx, search.id)
-
+    updated = await update_run(
+        status=status, completed_at=datetime.now(UTC), error_message=error
+    )
+    if updated is None:
+        return {"status": "superseded"}
+    await _enqueue_social_enrichment(ctx, search.id)
+    if status == "completed":
         if (search.params or {}).get("auto_call") and not getattr(
             search, "auto_call_campaign_id", None
         ):
             await _enqueue_auto_calls(ctx, search.id)
-
         if (search.params or {}).get("add_to_campaign_id"):
             await _append_search_leads_to_campaign(search)
-
-        return {
-            "status": status,
-            "results_count": total_results,
-            "new_leads_count": new_total,
-        }
-
-    except asyncio.CancelledError:
-        await provider.cancel(search)
-        raise
-    except Exception as exc:
-        logger.exception("Lead search {} failed", search.id)
-        await _set_status(
-            search.id,
-            organization_id,
-            status="failed",
-            results_count=total_results,
-            new_leads_count=new_total,
-            completed_at=datetime.now(UTC),
-            error_message=str(exc)[:2000],
-        )
-        return {"status": "failed", "error": str(exc)}
+    logger.info(
+        "Lead search {} {}: {} results, {} new leads",
+        search.id,
+        status,
+        total_results,
+        new_total,
+    )
+    return {
+        "status": status,
+        "results_count": total_results,
+        "new_leads_count": new_total,
+    }
 
 
 async def run_lead_auto_dispatch(ctx: dict, search_id: int) -> dict[str, Any]:
@@ -562,21 +606,7 @@ async def enrich_lead_socials(
     except RateLimiterUnavailable:
         lease = None
     if lease is None:
-        # Another enrichment job holds the fleet-wide slot. Try again later
-        # rather than scanning alongside it.
-        try:
-            await redis.enqueue_job(
-                FunctionNames.ENRICH_LEAD_SOCIALS,
-                search_id,
-                run,
-                _defer_by=timedelta(seconds=SOCIAL_ENRICH_DEFER_SECONDS),
-            )
-        except Exception as exc:
-            logger.warning(
-                "Could not defer social enrichment for search {}: {}",
-                search_id,
-                exc,
-            )
+        # The recovery sweep retries pending leads without multiplying queued jobs.
         return {"status": "deferred"}
 
     try:
@@ -668,14 +698,20 @@ async def _scan_pending_socials(
                     )
                 except Exception as exc:  # one hostile page must not fail the batch
                     logger.warning("Social scan failed for {}: {}", url, exc)
-                    continue
+                    scan = SocialScan(
+                        {}, checked=False, replace_links=False, error=str(exc)
+                    )
                 for lead in group:
                     found += await _apply_scan_result(lead, scan, organization_id)
                 scanned += len(group)
 
-    await asyncio.gather(
-        *(worker() for _ in range(min(SOCIAL_ENRICH_CONCURRENCY, len(groups))))
-    )
+    try:
+        async with asyncio.timeout_at(deadline):
+            await asyncio.gather(
+                *(worker() for _ in range(min(SOCIAL_ENRICH_CONCURRENCY, len(groups))))
+            )
+    except TimeoutError:
+        logger.info("Social batch for search {} reached its time budget", search_id)
 
     remaining = await db_client.count_leads_needing_socials(
         organization_id, search_id=search_id

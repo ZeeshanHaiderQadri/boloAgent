@@ -16,6 +16,7 @@ from api.constants import (
     LEADS_ENABLE_DEMO_PROVIDER,
     LEADS_EXPORT_MAX_ROWS,
     LEADS_MAX_TARGET_RESULTS,
+    LEADS_SOCIAL_ENRICHMENT_ENABLED,
 )
 from api.db import db_client
 from api.db.models import UserModel
@@ -327,7 +328,6 @@ async def create_lead_search(
 
     await _enqueue_search(search.id, organization_id)
 
-    await db_client.update_lead_search(search.id, organization_id, status="queued")
     refreshed = await db_client.get_lead_search(search.id, organization_id)
     return LeadSearchResponse.model_validate(refreshed or search)
 
@@ -388,15 +388,47 @@ async def stop_lead_search(
     search = await db_client.get_lead_search(search_id, organization_id)
     if search is None:
         raise HTTPException(status_code=404, detail="Search not found")
+    if search.status == "stopped":
+        return LeadSearchResponse.model_validate(search)
     if search.status not in {"queued", "running", "stopping"}:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot stop a search in '{search.status}' state",
         )
     updated = await db_client.update_lead_search(
-        search_id, organization_id, status="stopping"
+        search_id,
+        organization_id,
+        expected_run=(search.started_at, search.external_job_id),
+        expected_statuses={"queued", "running", "stopping"},
+        status="stopped",
+        completed_at=datetime.now(UTC),
+        error_message=None,
     )
-    return LeadSearchResponse.model_validate(updated or search)
+    if updated is None:
+        current = await db_client.get_lead_search(search_id, organization_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="Search not found")
+        return LeadSearchResponse.model_validate(current)
+    try:
+        async with asyncio.timeout(1):
+            await enqueue_job(
+                FunctionNames.CANCEL_LEAD_SCRAPER,
+                search.provider,
+                search.external_job_id,
+            )
+    except Exception:
+        logger.warning("Could not queue scraper cleanup for search {}", search_id)
+    if LEADS_SOCIAL_ENRICHMENT_ENABLED:
+        try:
+            async with asyncio.timeout(1):
+                await enqueue_job(
+                    FunctionNames.ENRICH_LEAD_SOCIALS,
+                    search_id,
+                    _job_id=f"lead-socials:{search_id}",
+                )
+        except Exception:
+            logger.warning("Could not queue social enrichment for search {}", search_id)
+    return LeadSearchResponse.model_validate(updated)
 
 
 @router.delete("/searches/{search_id}")
@@ -433,9 +465,15 @@ async def retry_lead_search(
             detail="Only failed, cancelled, or stopped searches can be retried",
         )
 
+    # A failed/stopped run may have marked planned places as used before the
+    # scraper ever queried them. Re-plan them on retry instead of skipping.
+    params = dict(search.params or {})
+    params.pop("fanout_places", None)
+    params.pop("keywords", None)
     updated = await db_client.update_lead_search(
         search_id,
         organization_id,
+        params=params,
         status="queued",
         external_job_id=None,
         error_message=None,
@@ -565,8 +603,8 @@ async def extend_lead_search(
     """Keep the same query and collect more leads.
 
     The target becomes "everything collected so far + the requested extra".
-    Depth is raised as well, because the scraper only discovers new
-    businesses on deeper pages of the same query.
+    The worker plans additional city/neighbourhood queries inside the same
+    location and skips the places this search already covered.
     """
     organization_id = _organization_id(user)
     search = await db_client.get_lead_search(search_id, organization_id)
@@ -593,11 +631,11 @@ async def extend_lead_search(
         )
 
     params = dict(search.params or {})
-    cached_depth = int(params.get("depth", 3) or 3)
-    # Roughly 20 businesses per depth page; more pages are required to reach
-    # a larger target. Never lower the previous depth.
-    params["depth"] = min(20, max(cached_depth, math.ceil(new_target / 20)))
-
+    if search.status != "completed":
+        # Interrupted runs may not have queried every place they reserved;
+        # re-plan them so Extend does not silently search nothing new.
+        params.pop("fanout_places", None)
+        params.pop("keywords", None)
     updated = await db_client.update_lead_search(
         search_id,
         organization_id,
