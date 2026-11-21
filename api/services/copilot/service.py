@@ -121,7 +121,9 @@ def _config(conversation: CopilotConversationModel, user: UserModel) -> dict:
     }
 
 
-async def _load(conversation_id: int, user: UserModel) -> CopilotConversationModel:
+async def load_conversation(
+    conversation_id: int, user: UserModel
+) -> CopilotConversationModel:
     organization_id = user.selected_organization_id
     if organization_id is None:
         raise HTTPException(400, "Select an organization first")
@@ -165,7 +167,7 @@ async def list_conversations(
 
 
 async def get_snapshot(conversation_id: int, user: UserModel) -> CopilotSnapshot:
-    conversation = await _load(conversation_id, user)
+    conversation = await load_conversation(conversation_id, user)
     thread = _thread_id(conversation.organization_id, user.id, conversation.id)
     async with db_client.copilot_checkpointer(thread, readonly=True) as saver:
         graph = _graph_for(conversation, user, saver)
@@ -194,7 +196,7 @@ async def send_message(
     message: str,
     client_request_id: str | None,
 ) -> CopilotSnapshot:
-    conversation = await _load(conversation_id, user)
+    conversation = await load_conversation(conversation_id, user)
     if (
         client_request_id
         and conversation.last_request_id == client_request_id
@@ -256,7 +258,7 @@ async def decide_approval(
     decision: str,
     client_request_id: str | None,
 ) -> CopilotSnapshot:
-    conversation = await _load(conversation_id, user)
+    conversation = await load_conversation(conversation_id, user)
     if (
         client_request_id
         and conversation.last_request_id == client_request_id

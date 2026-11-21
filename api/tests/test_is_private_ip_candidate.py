@@ -1,5 +1,5 @@
 from api.enums import Environment
-from api.routes.webrtc_signaling import (
+from api.services.pipecat.webrtc_ice import (
     NonRelayFilterPolicy,
     _keep_candidate,
     is_local_or_cgnat_ip,

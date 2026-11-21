@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Annotated, Any
+from typing import Annotated
 
 from langchain_core.messages import (
     AIMessage,
@@ -28,8 +28,7 @@ from loguru import logger
 from pydantic import ValidationError
 from typing_extensions import TypedDict
 
-from api.db import db_client
-
+from .audit import audit_tool_call
 from .model import (
     CopilotChatModel,
     CopilotConfigurationError,
@@ -110,37 +109,6 @@ def _approval_payload(calls: list[dict]) -> dict:
     }
 
 
-async def _audit(
-    ctx: CopilotContext,
-    tool_name: str,
-    risk: str,
-    status: str,
-    arguments: dict,
-    *,
-    result: Any = None,
-    error: str | None = None,
-    duration_ms: int | None = None,
-) -> None:
-    try:
-        await db_client.record_copilot_tool_call(
-            organization_id=ctx.organization_id,
-            conversation_id=ctx.conversation_id,
-            tool_name=tool_name,
-            risk=risk,
-            status=status,
-            arguments=arguments,
-            result=result,
-            error=error,
-            duration_ms=duration_ms,
-        )
-    except Exception:
-        # Audit is best-effort: a ledger outage must not hide the tool result.
-        logger.exception(
-            "Failed to record copilot tool call for conversation {}",
-            ctx.conversation_id,
-        )
-
-
 async def _run_tool(ctx: CopilotContext, tool: CopilotTool, call: dict) -> ToolMessage:
     started = time.monotonic()
     try:
@@ -149,7 +117,7 @@ async def _run_tool(ctx: CopilotContext, tool: CopilotTool, call: dict) -> ToolM
         message = (
             f"Invalid arguments: {exc.error_count()} problem(s). Check the schema."
         )
-        await _audit(
+        await audit_tool_call(
             ctx,
             tool.name,
             tool.risk,
@@ -178,7 +146,7 @@ async def _run_tool(ctx: CopilotContext, tool: CopilotTool, call: dict) -> ToolM
         error = "The tool failed before completing."
 
     duration_ms = int((time.monotonic() - started) * 1000)
-    await _audit(
+    await audit_tool_call(
         ctx,
         tool.name,
         tool.risk,
@@ -243,7 +211,7 @@ def _tools_node():
                 )
                 continue
             if tool.requires_approval and not approved:
-                await _audit(
+                await audit_tool_call(
                     ctx,
                     tool.name,
                     tool.risk,
