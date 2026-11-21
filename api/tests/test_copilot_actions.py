@@ -10,15 +10,22 @@ from api.services.copilot import tools
 from api.services.copilot.tools import (
     CopilotContext,
     CreateEmailDraftArgs,
+    LaunchEmailCampaignArgs,
     LeadSearchStatusArgs,
     ListSearchesArgs,
     PreviewAudienceArgs,
     StartLeadSearchArgs,
     _create_email_campaign_draft,
+    _launch_email_campaign,
     _lead_search_status,
     _list_lead_searches,
     _preview_email_audience,
     _start_lead_search,
+)
+from api.services.email.launch import (
+    CampaignLaunchResult,
+    CampaignNotLaunchableError,
+    SendingDisabledError,
 )
 from api.services.leads.searches import SearchQueueUnavailableError
 
@@ -254,3 +261,69 @@ async def test_create_draft_requires_reason_for_unknown_consent():
             )
 
     db.create_email_campaign.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_launch_runs_through_the_shared_service():
+    result = CampaignLaunchResult(
+        status="sending",
+        ready=True,
+        message="Campaign launched: 7 recipient(s) queued for delivery.",
+        queued_count=7,
+    )
+    with patch.object(
+        tools, "launch_campaign", AsyncMock(return_value=result)
+    ) as launch:
+        output = await _launch_email_campaign(
+            CTX, LaunchEmailCampaignArgs(campaign_uuid="uuid-1")
+        )
+
+    launch.assert_awaited_once_with(
+        organization_id=42, user_id=9, campaign_uuid="uuid-1"
+    )
+    assert output["launched"] is True
+    assert output["queued_count"] == 7
+    assert output["preconditions"] == []
+
+
+@pytest.mark.asyncio
+async def test_launch_reports_blocked_preconditions_without_raising():
+    result = CampaignLaunchResult(
+        status="draft",
+        ready=False,
+        preconditions=["The sender is not verified."],
+        message="Launch is blocked.",
+    )
+    with patch.object(tools, "launch_campaign", AsyncMock(return_value=result)):
+        output = await _launch_email_campaign(
+            CTX, LaunchEmailCampaignArgs(campaign_uuid="uuid-1")
+        )
+
+    assert output["launched"] is False
+    assert output["preconditions"] == ["The sender is not verified."]
+
+
+@pytest.mark.asyncio
+async def test_launch_explains_disabled_sending():
+    with patch.object(
+        tools,
+        "launch_campaign",
+        AsyncMock(side_effect=SendingDisabledError("EMAIL_CAMPAIGN_SENDING_ENABLED")),
+    ):
+        with pytest.raises(ValueError, match="disabled"):
+            await _launch_email_campaign(
+                CTX, LaunchEmailCampaignArgs(campaign_uuid="uuid-1")
+            )
+
+
+@pytest.mark.asyncio
+async def test_launch_surfaces_service_refusals():
+    with patch.object(
+        tools,
+        "launch_campaign",
+        AsyncMock(side_effect=CampaignNotLaunchableError("already sending")),
+    ):
+        with pytest.raises(ValueError, match="already sending"):
+            await _launch_email_campaign(
+                CTX, LaunchEmailCampaignArgs(campaign_uuid="uuid-1")
+            )
