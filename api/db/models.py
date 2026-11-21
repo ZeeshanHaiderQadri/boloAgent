@@ -2652,3 +2652,86 @@ class EmailSuppressionModel(Base):
         ),
         Index("ix_email_suppressions_organization_id", "organization_id"),
     )
+
+
+class CopilotConversationModel(Base):
+    """One chat thread with the workspace copilot, owned by a user in an org.
+
+    The transcript and pending approvals live in the LangGraph checkpoint for
+    ``copilot:{organization_id}:{user_id}:{id}``. ``last_response`` is only a
+    replay guard: a retried request must not run tools a second time.
+    """
+
+    __tablename__ = "copilot_conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    title = Column(String(120), nullable=False, default="New conversation")
+    last_request_id = Column(String(64), nullable=True)
+    last_response = Column(JSONB, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_copilot_conversations_org_user_updated",
+            "organization_id",
+            "user_id",
+            "updated_at",
+        ),
+    )
+
+
+class CopilotToolCallModel(Base):
+    """Append-only audit row for one copilot tool execution."""
+
+    __tablename__ = "copilot_tool_calls"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    conversation_id = Column(
+        Integer,
+        ForeignKey("copilot_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tool_name = Column(String(64), nullable=False)
+    risk = Column(String(16), nullable=False)
+    status = Column(String(16), nullable=False)
+    arguments = Column(JSONB, nullable=False, default=dict)
+    result = Column(JSONB, nullable=True)
+    error = Column(Text, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_copilot_tool_calls_conversation_created",
+            "conversation_id",
+            "created_at",
+        ),
+        Index("ix_copilot_tool_calls_organization_id", "organization_id"),
+    )
