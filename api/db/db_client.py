@@ -2,6 +2,7 @@ from api.db.agent_trigger_client import AgentTriggerClient
 from api.db.api_key_client import APIKeyClient
 from api.db.builder_run_client import BuilderRunClient
 from api.db.campaign_client import CampaignClient
+from api.db.copilot_client import CopilotClient
 from api.db.email_audience_client import EmailAudienceClient
 from api.db.email_campaign_client import EmailCampaignClient
 from api.db.email_domain_client import EmailDomainClient
@@ -37,6 +38,7 @@ from api.db.workflow_template_client import WorkflowTemplateClient
 
 class DBClient(
     BuilderRunClient,
+    CopilotClient,
     WorkflowBuilderClient,
     ModelConnectionClient,
     WorkflowClient,

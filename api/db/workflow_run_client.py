@@ -729,3 +729,47 @@ class WorkflowRunClient(BaseDBClient):
                 }
                 for run in rows
             ]
+
+    async def list_recent_voice_runs(
+        self, organization_id: int, limit: int = 10
+    ) -> List[dict]:
+        """Completed voice calls across every agent in an organization.
+
+        Mirrors list_voice_runs_for_workflow but without a workflow filter, for
+        workspace-level reporting such as the copilot's overview tool.
+        """
+        voice_modes = [
+            m.value
+            for m in WorkflowRunMode
+            if m not in (WorkflowRunMode.TEXTCHAT, WorkflowRunMode.CHAT)
+        ]
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(WorkflowRunModel, WorkflowModel.name)
+                .join(WorkflowModel, WorkflowRunModel.workflow_id == WorkflowModel.id)
+                .where(
+                    WorkflowModel.organization_id == organization_id,
+                    WorkflowRunModel.is_completed == True,
+                    WorkflowRunModel.mode.in_(voice_modes),
+                )
+                .order_by(WorkflowRunModel.created_at.desc())
+                .limit(max(1, min(limit, 100)))
+            )
+            return [
+                {
+                    "id": run.id,
+                    "workflow_id": run.workflow_id,
+                    "workflow_name": workflow_name,
+                    "call_type": run.call_type,
+                    "duration_seconds": (run.usage_info or {}).get(
+                        "call_duration_seconds"
+                    ),
+                    "disposition": (run.gathered_context or {}).get(
+                        "mapped_call_disposition"
+                    ),
+                    "created_at": (
+                        run.created_at.isoformat() if run.created_at else None
+                    ),
+                }
+                for run, workflow_name in result.all()
+            ]
