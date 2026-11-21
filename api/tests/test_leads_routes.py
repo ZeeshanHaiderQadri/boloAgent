@@ -121,7 +121,9 @@ def test_create_search_enqueues_worker_and_scopes_to_organization():
     db.get_lead_search = AsyncMock(return_value=_search())
 
     with patch("api.routes.leads.db_client", db):
-        with patch("api.routes.leads.enqueue_job", new=AsyncMock()) as enqueue:
+        with patch(
+            "api.services.leads.searches.enqueue_job", new=AsyncMock()
+        ) as enqueue:
             response = _app().post(
                 "/leads/searches",
                 json={
@@ -165,8 +167,9 @@ def test_create_search_marks_failed_when_queue_is_down():
 
     with (
         patch("api.routes.leads.db_client", db),
+        patch("api.services.leads.searches.db_client", db),
         patch(
-            "api.routes.leads.enqueue_job",
+            "api.services.leads.searches.enqueue_job",
             new=AsyncMock(side_effect=RuntimeError("redis down")),
         ),
     ):
@@ -198,7 +201,7 @@ def test_create_search_passes_target_and_auto_call_options():
 
     with (
         patch("api.routes.leads.db_client", db),
-        patch("api.routes.leads.enqueue_job", new=AsyncMock()),
+        patch("api.services.leads.searches.enqueue_job", new=AsyncMock()),
     ):
         response = _app().post(
             "/leads/searches",
@@ -252,7 +255,7 @@ def test_stop_finishes_without_a_live_worker_or_queue(status):
     with (
         patch("api.routes.leads.db_client", db),
         patch(
-            "api.routes.leads.enqueue_job",
+            "api.services.leads.searches.enqueue_job",
             new=AsyncMock(side_effect=RuntimeError("queue down")),
         ),
     ):
@@ -690,7 +693,7 @@ def test_update_search_can_append_current_leads_to_existing_campaign():
     with (
         patch("api.routes.leads.db_client", db),
         patch("api.routes.leads.add_leads_to_campaign", new=AsyncMock()) as append,
-        patch("api.routes.leads.enqueue_job", new=AsyncMock()),
+        patch("api.services.leads.searches.enqueue_job", new=AsyncMock()),
     ):
         response = _app().patch(
             "/leads/searches/21",
@@ -743,7 +746,9 @@ def test_update_search_requeues_with_new_settings_and_keeps_leads():
     db.clear_search_results = AsyncMock()
 
     with patch("api.routes.leads.db_client", db):
-        with patch("api.routes.leads.enqueue_job", new=AsyncMock()) as enqueue:
+        with patch(
+            "api.services.leads.searches.enqueue_job", new=AsyncMock()
+        ) as enqueue:
             response = _app().patch("/leads/searches/21", json=_edit_payload())
 
     assert response.status_code == 200, response.text
@@ -775,7 +780,7 @@ def test_update_search_can_start_from_scratch():
     db.clear_search_results = AsyncMock()
 
     with patch("api.routes.leads.db_client", db):
-        with patch("api.routes.leads.enqueue_job", new=AsyncMock()):
+        with patch("api.services.leads.searches.enqueue_job", new=AsyncMock()):
             response = _app().patch(
                 "/leads/searches/21",
                 json=_edit_payload(target_results=25, keep_existing_results=False),
@@ -795,7 +800,9 @@ def test_update_search_rejects_target_below_existing_leads():
     db.update_lead_search = AsyncMock()
 
     with patch("api.routes.leads.db_client", db):
-        with patch("api.routes.leads.enqueue_job", new=AsyncMock()) as enqueue:
+        with patch(
+            "api.services.leads.searches.enqueue_job", new=AsyncMock()
+        ) as enqueue:
             response = _app().patch(
                 "/leads/searches/21", json=_edit_payload(target_results=50)
             )
@@ -834,7 +841,9 @@ def test_extend_search_raises_target_and_keeps_planned_places():
     db.update_lead_search = AsyncMock(return_value=updated)
 
     with patch("api.routes.leads.db_client", db):
-        with patch("api.routes.leads.enqueue_job", new=AsyncMock()) as enqueue:
+        with patch(
+            "api.services.leads.searches.enqueue_job", new=AsyncMock()
+        ) as enqueue:
             response = _app().post(
                 "/leads/searches/21/extend", json={"additional_results": 200}
             )
@@ -869,7 +878,7 @@ def test_extend_search_replans_places_when_the_previous_run_was_interrupted():
     db.update_lead_search = AsyncMock(return_value=updated)
 
     with patch("api.routes.leads.db_client", db):
-        with patch("api.routes.leads.enqueue_job", new=AsyncMock()):
+        with patch("api.services.leads.searches.enqueue_job", new=AsyncMock()):
             response = _app().post(
                 "/leads/searches/21/extend", json={"additional_results": 200}
             )
@@ -902,7 +911,9 @@ def test_retry_search_replans_reserved_places():
     db.update_lead_search = AsyncMock(return_value=updated)
 
     with patch("api.routes.leads.db_client", db):
-        with patch("api.routes.leads.enqueue_job", new=AsyncMock()) as enqueue:
+        with patch(
+            "api.services.leads.searches.enqueue_job", new=AsyncMock()
+        ) as enqueue:
             response = _app().post("/leads/searches/21/retry")
 
     assert response.status_code == 200, response.text
@@ -923,7 +934,9 @@ def test_extend_search_cannot_exceed_the_result_limit():
     db.update_lead_search = AsyncMock()
 
     with patch("api.routes.leads.db_client", db):
-        with patch("api.routes.leads.enqueue_job", new=AsyncMock()) as enqueue:
+        with patch(
+            "api.services.leads.searches.enqueue_job", new=AsyncMock()
+        ) as enqueue:
             response = _app().post(
                 "/leads/searches/21/extend", json={"additional_results": 200}
             )

@@ -45,6 +45,7 @@ from api.services.email.audience import (
     AudienceRule,
     normalized_manual_addresses,
     resolve_audience,
+    stored_audience,
     validate_audience_rule,
 )
 from api.services.email.campaign_dispatch import freeze_and_queue_campaign
@@ -303,23 +304,7 @@ def _rule_from_request(request: AudienceRuleRequest) -> AudienceRule:
 
 
 def _stored_audience(rule: AudienceRule) -> dict[str, Any]:
-    if rule.audience_type == EmailCampaignAudienceType.LEADS.value:
-        result: dict[str, Any] = {"lead_ids": list(rule.lead_ids)}
-    elif rule.audience_type == EmailCampaignAudienceType.PROJECT.value:
-        result = {"project_id": rule.project_id}
-    elif rule.audience_type == EmailCampaignAudienceType.TAG.value:
-        result = {"tag": rule.tag}
-    else:
-        result = {"filters": dict(rule.filters), "all_matching": True}
-    # Manual exclusions are stored inside the audience JSON so no migration is
-    # needed. The resolver re-applies them on every call.
-    if rule.excluded_lead_ids:
-        result["excluded_lead_ids"] = list(rule.excluded_lead_ids)
-    if rule.manual_emails:
-        result["manual_emails"] = list(rule.manual_emails)
-    if rule.extra_lead_ids:
-        result["extra_lead_ids"] = list(rule.extra_lead_ids)
-    return result
+    return stored_audience(rule)
 
 
 def _rule_from_stored(campaign: EmailCampaignModel) -> AudienceRule:

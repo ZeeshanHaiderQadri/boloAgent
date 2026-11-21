@@ -10,12 +10,35 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from api.constants import EMAIL_CONSENT_WARNING, LEADS_MAX_TARGET_RESULTS
 from api.db import db_client
-from api.schemas.leads import LEAD_CRM_STATUSES
+from api.db.email_campaign_client import EmailCampaignNameConflictError
+from api.schemas.leads import (
+    LEAD_CRM_STATUSES,
+    LeadProjectFilters,
+    LeadSearchParams,
+)
+from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
+from api.services.email.audience import (
+    AudienceError,
+    AudienceRule,
+    resolve_audience,
+    stored_audience,
+    validate_audience_rule,
+)
+from api.services.email.campaign_rate_limits import allow_campaign_preview
+from api.services.leads.searches import (
+    ProviderUnavailableError,
+    SearchQueueUnavailableError,
+    enqueue_search,
+    resolve_provider,
+    search_name,
+    search_params,
+)
 
 RISK_READ = "read"
 RISK_WRITE = "write"
@@ -23,6 +46,7 @@ RISK_WRITE = "write"
 MAX_LEAD_ROWS = 50
 MAX_TAGGED_LEADS = 100
 MAX_TAGS = 5
+MAX_SEARCH_ROWS = 10
 
 
 @dataclass(frozen=True)
@@ -195,6 +219,359 @@ async def _list_recent_calls(ctx: CopilotContext, args: ListCallsArgs) -> dict:
     return {"returned": len(calls), "calls": calls}
 
 
+class StartLeadSearchArgs(BaseModel):
+    category: str = Field(
+        min_length=1,
+        max_length=200,
+        description="Business category or niche, e.g. 'dentists' or 'coffee shops'.",
+    )
+    location: str = Field(
+        min_length=1,
+        max_length=200,
+        description="City or region, e.g. 'Austin, TX' or 'Berlin'.",
+    )
+    country_code: str = Field(
+        default="US", min_length=2, max_length=2, description="ISO country code."
+    )
+    language: str = Field(default="en", min_length=2, max_length=2)
+    target_results: int = Field(
+        default=25,
+        ge=1,
+        le=LEADS_MAX_TARGET_RESULTS,
+        description="Stop collecting after this many unique businesses.",
+    )
+    radius_km: int = Field(default=10, ge=1, le=100)
+    email: bool = Field(
+        default=False, description="Ask the scraper to capture public emails."
+    )
+    website_filter: Literal["any", "has_website", "no_website"] = "any"
+    provider: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Lead source; omit for the workspace default.",
+    )
+    name: str | None = Field(
+        default=None, max_length=255, description="Optional label for the search."
+    )
+
+
+async def _start_lead_search(ctx: CopilotContext, args: StartLeadSearchArgs) -> dict:
+    try:
+        params = LeadSearchParams(
+            name=args.name,
+            category=args.category,
+            location=args.location,
+            country_code=args.country_code,
+            language=args.language,
+            provider=args.provider,
+            radius_km=args.radius_km,
+            email=args.email,
+            website_filter=args.website_filter,
+            target_results=args.target_results,
+        )
+        provider = resolve_provider(args.provider)
+    except ValidationError as exc:
+        raise ValueError(
+            f"Invalid search settings: {exc.error_count()} problem(s)."
+        ) from exc
+    except ProviderUnavailableError as exc:
+        raise ValueError(str(exc)) from exc
+
+    search = await db_client.create_lead_search(
+        organization_id=ctx.organization_id,
+        created_by=ctx.user_id,
+        name=search_name(params),
+        category=params.category,
+        location=params.location,
+        country_code=params.country_code,
+        language=params.language,
+        provider=provider,
+        params=search_params(params),
+        target_results=params.target_results,
+    )
+    try:
+        await enqueue_search(search.id, ctx.organization_id)
+    except SearchQueueUnavailableError as exc:
+        raise ValueError(str(exc)) from exc
+    return {
+        "search_id": search.id,
+        "name": search.name,
+        "status": "queued",
+        "target_results": params.target_results,
+        "note": (
+            "The search runs in the background. Check it with lead_search_status; "
+            "new leads appear in the CRM when the run finishes."
+        ),
+    }
+
+
+class LeadSearchStatusArgs(BaseModel):
+    search_id: int = Field(
+        description="Search id from start_lead_search or list_lead_searches."
+    )
+
+
+async def _lead_search_status(ctx: CopilotContext, args: LeadSearchStatusArgs) -> dict:
+    search = await db_client.get_lead_search(args.search_id, ctx.organization_id)
+    if search is None:
+        raise ValueError("Search not found in this workspace.")
+    return {
+        "search_id": search.id,
+        "name": search.name,
+        "status": search.status,
+        "results_count": search.results_count,
+        "new_leads_count": search.new_leads_count,
+        "error_message": search.error_message,
+        "created_at": _iso(search.created_at),
+        "completed_at": _iso(search.completed_at),
+    }
+
+
+class ListSearchesArgs(BaseModel):
+    limit: int = Field(default=5, ge=1, le=MAX_SEARCH_ROWS)
+
+
+async def _list_lead_searches(ctx: CopilotContext, args: ListSearchesArgs) -> dict:
+    searches, total = await db_client.list_lead_searches(
+        ctx.organization_id, limit=args.limit
+    )
+    return {
+        "total": total,
+        "searches": [
+            {
+                "search_id": search.id,
+                "name": search.name,
+                "status": search.status,
+                "results_count": search.results_count,
+                "new_leads_count": search.new_leads_count,
+                "created_at": _iso(search.created_at),
+            }
+            for search in searches
+        ],
+    }
+
+
+class ListEmailAccountsArgs(BaseModel):
+    limit: int = Field(default=10, ge=1, le=25)
+
+
+async def _list_email_senders(ctx: CopilotContext, args: ListEmailAccountsArgs) -> dict:
+    senders = await db_client.list_email_senders(ctx.organization_id)
+    return {
+        "total": len(senders),
+        "senders": [
+            {
+                "sender_uuid": sender.sender_uuid,
+                "name": sender.name,
+                "from_email": sender.from_email,
+                "status": sender.status,
+            }
+            for sender in senders[: args.limit]
+        ],
+    }
+
+
+async def _list_email_templates(
+    ctx: CopilotContext, args: ListEmailAccountsArgs
+) -> dict:
+    templates = await db_client.list_email_templates(ctx.organization_id)
+    return {
+        "total": len(templates),
+        "templates": [
+            {
+                "template_uuid": template.template_uuid,
+                "name": template.name,
+                "subject": template.subject,
+                "has_unsubscribe_placeholder": template.has_unsubscribe_placeholder,
+            }
+            for template in templates[: args.limit]
+        ],
+    }
+
+
+class CampaignAudienceArgs(BaseModel):
+    audience_type: Literal["leads", "project", "tag", "filter"]
+    lead_ids: list[int] = Field(
+        default_factory=list,
+        max_length=1000,
+        description="For audience_type=leads: explicit lead ids from search_leads.",
+    )
+    project_id: int | None = Field(
+        default=None, description="For audience_type=project: saved lead project."
+    )
+    tag: str | None = Field(
+        default=None, max_length=40, description="For audience_type=tag."
+    )
+    filters: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "For audience_type=filter: leads-list filters such as category, city, "
+            "country, state, status, q, has_email, has_phone or tag."
+        ),
+    )
+    excluded_lead_ids: list[int] = Field(
+        default_factory=list, max_length=5000, description="Leads to skip."
+    )
+
+
+class _StrictCampaignFilters(LeadProjectFilters):
+    model_config = ConfigDict(extra="forbid")
+
+
+def _audience_rule(args: CampaignAudienceArgs) -> AudienceRule:
+    filters: dict[str, Any] = {}
+    if args.audience_type == "filter":
+        if not args.filters:
+            raise ValueError("audience_type 'filter' needs a filters object.")
+        try:
+            parsed = _StrictCampaignFilters.model_validate(args.filters)
+        except ValidationError as exc:
+            raise ValueError(
+                f"Invalid audience filters: {exc.error_count()} problem(s)."
+            ) from exc
+        filters = parsed.model_dump(exclude_none=True)
+        filters["all_matching"] = True
+    rule = AudienceRule(
+        audience_type=args.audience_type,
+        lead_ids=tuple(args.lead_ids),
+        project_id=args.project_id,
+        tag=args.tag,
+        filters=filters,
+        excluded_lead_ids=tuple(args.excluded_lead_ids),
+    )
+    try:
+        validate_audience_rule(rule)
+    except AudienceError as exc:
+        raise ValueError(str(exc)) from exc
+    return rule
+
+
+class PreviewAudienceArgs(CampaignAudienceArgs):
+    consent_policy: Literal["opted_in_only", "include_unknown"] = "opted_in_only"
+    consent_override_reason: str | None = Field(
+        default=None,
+        max_length=500,
+        description="Required with include_unknown; stored if a draft is created.",
+    )
+
+
+async def _preview_email_audience(
+    ctx: CopilotContext, args: PreviewAudienceArgs
+) -> dict:
+    rule = _audience_rule(args)
+    if (
+        args.consent_policy == "include_unknown"
+        and not (args.consent_override_reason or "").strip()
+    ):
+        raise ValueError("Including unknown-consent leads needs a written reason.")
+
+    try:
+        allowed = await allow_campaign_preview(
+            user_id=ctx.user_id, organization_id=ctx.organization_id
+        )
+    except RateLimiterUnavailable as exc:
+        raise ValueError("Audience preview is temporarily unavailable.") from exc
+    if not allowed:
+        raise ValueError("Too many audience previews; try again later.")
+
+    policy = args.consent_policy
+    try:
+        resolution = await resolve_audience(
+            ctx.organization_id, rule, consent_policy=policy
+        )
+    except AudienceError as exc:
+        raise ValueError(str(exc)) from exc
+
+    warnings: list[str] = []
+    if policy == "include_unknown" and resolution.unknown_lead_count:
+        warnings.append(
+            "Unknown-consent leads are included; the written reason and the "
+            "consent warning are stored with the campaign."
+        )
+    if resolution.eligible_count == 0:
+        warnings.append("No eligible recipients; launch would be blocked.")
+    return {
+        "counts": resolution.counters(),
+        "masked_sample": resolution.masked_sample,
+        "unknown_lead_count": resolution.unknown_lead_count,
+        "warnings": warnings,
+    }
+
+
+class CreateEmailDraftArgs(CampaignAudienceArgs):
+    name: str = Field(min_length=1, max_length=255)
+    sender_uuid: str | None = Field(
+        default=None, description="From list_email_senders; omit to choose later."
+    )
+    template_uuid: str | None = Field(
+        default=None, description="From list_email_templates; omit to choose later."
+    )
+    consent_policy: Literal["opted_in_only", "include_unknown"] = "opted_in_only"
+    consent_override_reason: str | None = Field(default=None, max_length=500)
+
+
+async def _create_email_campaign_draft(
+    ctx: CopilotContext, args: CreateEmailDraftArgs
+) -> dict:
+    name = args.name.strip()
+    if not name:
+        raise ValueError("Give the draft a name.")
+    rule = _audience_rule(args)
+
+    reason: str | None = None
+    warning: str | None = None
+    if args.consent_policy == "include_unknown":
+        reason = (args.consent_override_reason or "").strip()
+        if not reason:
+            raise ValueError("Including unknown-consent leads needs a written reason.")
+        warning = EMAIL_CONSENT_WARNING
+
+    sender = None
+    if args.sender_uuid:
+        sender = await db_client.get_email_sender(ctx.organization_id, args.sender_uuid)
+        if sender is None:
+            raise ValueError(
+                "Sender not found in this workspace. Use list_email_senders."
+            )
+    template = None
+    if args.template_uuid:
+        template = await db_client.get_email_template(
+            ctx.organization_id, args.template_uuid
+        )
+        if template is None:
+            raise ValueError(
+                "Template not found in this workspace. Use list_email_templates."
+            )
+
+    try:
+        campaign = await db_client.create_email_campaign(
+            organization_id=ctx.organization_id,
+            user_id=ctx.user_id,
+            name=name,
+            sender_id=sender.id if sender else None,
+            template_id=template.id if template else None,
+            audience_type=rule.audience_type,
+            audience=stored_audience(rule),
+            consent_policy=args.consent_policy,
+            consent_override_reason=reason,
+            consent_override_warning=warning,
+        )
+    except EmailCampaignNameConflictError as exc:
+        raise ValueError(f"A campaign named {name!r} already exists.") from exc
+
+    return {
+        "campaign_uuid": campaign.campaign_uuid,
+        "name": campaign.name,
+        "status": campaign.status,
+        "sender": sender.from_email if sender else None,
+        "template": template.name if template else None,
+        "note": (
+            "Draft saved. Nothing is sent, and launching is a separate step "
+            "that is not available in this chat yet."
+        ),
+    }
+
+
 class TagLeadsArgs(BaseModel):
     lead_ids: list[int] = Field(
         min_length=1,
@@ -277,6 +654,82 @@ TOOLS: dict[str, CopilotTool] = {
             args_schema=ListCallsArgs,
             risk=RISK_READ,
             handler=_list_recent_calls,
+        ),
+        CopilotTool(
+            name="start_lead_search",
+            description=(
+                "Start a new lead-generation search for a category and location. "
+                "It spends a scraper run and takes minutes, so the user approves "
+                "it first. Default to target_results=25 unless they ask for more. "
+                "Tell them what category, place and size you are about to search."
+            ),
+            args_schema=StartLeadSearchArgs,
+            risk=RISK_WRITE,
+            handler=_start_lead_search,
+        ),
+        CopilotTool(
+            name="lead_search_status",
+            description=(
+                "Check one lead search: status, results so far, new leads and "
+                "any error. Use after start_lead_search or when asked if a "
+                "search finished."
+            ),
+            args_schema=LeadSearchStatusArgs,
+            risk=RISK_READ,
+            handler=_lead_search_status,
+        ),
+        CopilotTool(
+            name="list_lead_searches",
+            description=(
+                "List recent lead searches with status and counts. Use to find "
+                "the search id for lead_search_status."
+            ),
+            args_schema=ListSearchesArgs,
+            risk=RISK_READ,
+            handler=_list_lead_searches,
+        ),
+        CopilotTool(
+            name="list_email_senders",
+            description=(
+                "List the workspace's email sending identities with verification "
+                "status. Use before creating an email draft."
+            ),
+            args_schema=ListEmailAccountsArgs,
+            risk=RISK_READ,
+            handler=_list_email_senders,
+        ),
+        CopilotTool(
+            name="list_email_templates",
+            description=(
+                "List reusable email templates and whether each has an "
+                "unsubscribe link. Use before creating an email draft."
+            ),
+            args_schema=ListEmailAccountsArgs,
+            risk=RISK_READ,
+            handler=_list_email_templates,
+        ),
+        CopilotTool(
+            name="preview_email_audience",
+            description=(
+                "Count who an email audience would reach and why leads are "
+                "excluded, without saving or sending anything. Review this "
+                "before creating a draft. Returns masked sample addresses only."
+            ),
+            args_schema=PreviewAudienceArgs,
+            risk=RISK_READ,
+            handler=_preview_email_audience,
+        ),
+        CopilotTool(
+            name="create_email_campaign_draft",
+            description=(
+                "Save an email campaign draft with an audience, optional sender, "
+                "template and consent policy. The user approves it first. Nothing "
+                "is sent; launching is a separate step that is not available yet. "
+                "Preview the audience and name the recipient count before calling."
+            ),
+            args_schema=CreateEmailDraftArgs,
+            risk=RISK_WRITE,
+            handler=_create_email_campaign_draft,
         ),
         CopilotTool(
             name="tag_leads",
