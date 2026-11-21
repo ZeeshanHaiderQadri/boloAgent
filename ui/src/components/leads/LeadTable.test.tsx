@@ -34,6 +34,7 @@ function lead(overrides: Partial<LeadResponse> = {}): LeadResponse {
         phone: "(415) 555-0142",
         phone_e164: "+14155550142",
         whatsapp_available: true,
+        whatsapp_reachability: "unverified",
         email: "hello@apex.example.com",
         website: "https://apex.example.com",
         place_id: "p1",
@@ -85,14 +86,14 @@ describe("LeadTable", () => {
         );
 
         expect(
-            screen.getByRole("button", { name: /open whatsapp message for apex/i }),
+            screen.getByRole("button", { name: /try whatsapp/i }),
         ).toBeTruthy();
     });
 
     it("hides the WhatsApp action when no link can be built", () => {
         render(<LeadTable leads={[lead({ whatsapp_available: false })]} />);
 
-        expect(screen.queryByRole("button", { name: /open whatsapp message/i })).toBeNull();
+        expect(screen.queryByRole("button", { name: /try whatsapp/i })).toBeNull();
     });
 
     it("wires row and select-all checkboxes to the parent", () => {

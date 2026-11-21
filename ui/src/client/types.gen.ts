@@ -4176,6 +4176,10 @@ export type LeadResponse = {
      */
     whatsapp_available?: boolean;
     /**
+     * Whatsapp Reachability
+     */
+    whatsapp_reachability?: 'unavailable' | 'likely' | 'unverified' | 'unlikely';
+    /**
      * Email
      */
     email?: string | null;

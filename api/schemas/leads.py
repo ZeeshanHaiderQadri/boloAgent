@@ -20,6 +20,8 @@ LeadCrmStatus = Literal[
     "do_not_call",
 ]
 
+WhatsAppReachability = Literal["unavailable", "likely", "unverified", "unlikely"]
+
 LEAD_CRM_STATUSES: list[str] = [
     "new",
     "contacted",
@@ -153,6 +155,9 @@ class LeadResponse(BaseModel):
     phone_e164: str | None = None
     # True when the WhatsApp chooser can build a link for this lead.
     whatsapp_available: bool = False
+    # Offline hint; "unavailable" when no link can be built. Never proof of
+    # registration — see api/services/whatsapp/reachability.py.
+    whatsapp_reachability: WhatsAppReachability = "unavailable"
     email: str | None = None
     website: str | None = None
     social_links: dict[str, str] = Field(default_factory=dict)
