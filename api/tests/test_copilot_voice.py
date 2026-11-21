@@ -56,6 +56,9 @@ def test_voice_tools_are_exactly_the_read_tools():
         "launch_email_campaign",
         "send_whatsapp_message",
         "tag_leads",
+        "start_voice_campaign",
+        "pause_voice_campaign",
+        "resume_voice_campaign",
     ):
         assert TOOLS[write_name].risk == RISK_WRITE
         assert write_name not in actual
