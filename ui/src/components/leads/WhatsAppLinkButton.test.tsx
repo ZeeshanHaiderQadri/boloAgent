@@ -34,6 +34,7 @@ function lead(overrides: Partial<LeadResponse> = {}): LeadResponse {
         phone: "(512) 555-0142",
         phone_e164: "+15125550142",
         whatsapp_available: true,
+        whatsapp_reachability: "unverified",
         email: null,
         website: null,
         place_id: "p1",
@@ -74,6 +75,26 @@ describe("WhatsAppLinkButton", () => {
         expect(whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet).not.toHaveBeenCalled();
     });
 
+    it("says a US or Canada number may be a landline", async () => {
+        render(
+            <WhatsAppLinkButton lead={lead({ whatsapp_reachability: "unverified" })} />
+        );
+
+        fireEvent.click(
+            screen.getByRole("button", { name: /mobile or landline unknown/i })
+        );
+        expect(await screen.findByText(/often landlines/i)).toBeTruthy();
+    });
+
+    it("warns that toll-free numbers cannot be consumer WhatsApp accounts", async () => {
+        render(<WhatsAppLinkButton lead={lead({ whatsapp_reachability: "unlikely" })} />);
+
+        fireEvent.click(screen.getByRole("button", { name: /toll-free number/i }));
+        expect(
+            await screen.findByText(/consumer WhatsApp accounts cannot use toll-free/i)
+        ).toBeTruthy();
+    });
+
     it("opens the chooser and links out with the backend-built wa.me URL", async () => {
         const fetchSpy = vi.spyOn(globalThis, "fetch");
         vi.mocked(whatsappLeadLinksApiV1WhatsappLeadsLeadIdLinksGet).mockResolvedValue({
@@ -95,7 +116,7 @@ describe("WhatsAppLinkButton", () => {
         } as never);
 
         render(<WhatsAppLinkButton lead={lead()} />);
-        fireEvent.click(screen.getByRole("button", { name: /open whatsapp message for apex/i }));
+        fireEvent.click(screen.getByRole("button", { name: /try whatsapp/i }));
 
         const name = await screen.findByText("First contact");
         expect(screen.getByText("+1 (512) 555-0142")).toBeTruthy();
@@ -120,7 +141,7 @@ describe("WhatsAppLinkButton", () => {
         } as never);
 
         render(<WhatsAppLinkButton lead={lead()} />);
-        fireEvent.click(screen.getByRole("button", { name: /open whatsapp message for apex/i }));
+        fireEvent.click(screen.getByRole("button", { name: /try whatsapp/i }));
 
         expect(
             await screen.findByRole("dialog", { name: "Before you message on WhatsApp" }),
@@ -139,7 +160,7 @@ describe("WhatsAppLinkButton", () => {
         } as never);
 
         render(<WhatsAppLinkButton lead={lead()} />);
-        fireEvent.click(screen.getByRole("button", { name: /open whatsapp message for apex/i }));
+        fireEvent.click(screen.getByRole("button", { name: /try whatsapp/i }));
 
         expect(await screen.findByText(/country for this number is unknown/i)).toBeTruthy();
         await waitFor(() =>
@@ -158,7 +179,7 @@ describe("WhatsAppLinkButton", () => {
         } as never);
 
         render(<WhatsAppLinkButton lead={lead()} />);
-        fireEvent.click(screen.getByRole("button", { name: /open whatsapp message for apex/i }));
+        fireEvent.click(screen.getByRole("button", { name: /try whatsapp/i }));
 
         expect(await screen.findByText("No WhatsApp templates yet.")).toBeTruthy();
     });
@@ -187,7 +208,7 @@ describe("WhatsAppLinkButton consent hints", () => {
         render(<WhatsAppLinkButton lead={target} />);
         fireEvent.click(
             screen.getByRole("button", {
-                name: `Open WhatsApp message for ${target.title}`,
+                name: /try whatsapp/i,
             })
         );
         await screen.findByText("First contact");
