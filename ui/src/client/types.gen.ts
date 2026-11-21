@@ -1686,6 +1686,34 @@ export type CopilotTranscriptMessage = {
 };
 
 /**
+ * CopilotVoiceStatus
+ *
+ * Whether the organization's own services can run a voice session.
+ */
+export type CopilotVoiceStatus = {
+    /**
+     * Ready
+     */
+    ready: boolean;
+    /**
+     * Message
+     */
+    message?: string | null;
+    /**
+     * Llm
+     */
+    llm?: string | null;
+    /**
+     * Stt
+     */
+    stt?: string | null;
+    /**
+     * Tts
+     */
+    tts?: string | null;
+};
+
+/**
  * CreateAPIKeyRequest
  */
 export type CreateApiKeyRequest = {
@@ -14462,6 +14490,45 @@ export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostRe
 };
 
 export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponse = DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponses[keyof DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponses];
+
+export type VoiceStatusApiV1CopilotVoiceGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/copilot/voice';
+};
+
+export type VoiceStatusApiV1CopilotVoiceGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type VoiceStatusApiV1CopilotVoiceGetError = VoiceStatusApiV1CopilotVoiceGetErrors[keyof VoiceStatusApiV1CopilotVoiceGetErrors];
+
+export type VoiceStatusApiV1CopilotVoiceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CopilotVoiceStatus;
+};
+
+export type VoiceStatusApiV1CopilotVoiceGetResponse = VoiceStatusApiV1CopilotVoiceGetResponses[keyof VoiceStatusApiV1CopilotVoiceGetResponses];
 
 export type GetLeadsMetaApiV1LeadsMetaGetData = {
     body?: never;
