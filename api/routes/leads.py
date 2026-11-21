@@ -87,6 +87,7 @@ from api.services.leads.socials import (
     normalize_website,
 )
 from api.services.whatsapp.countries import resolve_lead_phone
+from api.services.whatsapp.reachability import whatsapp_reachability
 from api.tasks.arq import enqueue_job
 from api.tasks.function_names import FunctionNames
 
@@ -139,6 +140,11 @@ async def _lead_responses(leads, organization_id: int) -> list[LeadResponse]:
         response = LeadResponse.model_validate(lead)
         response.whatsapp_available = (
             whatsapp_ready and resolution.phone_e164 is not None
+        )
+        response.whatsapp_reachability = (
+            whatsapp_reachability(resolution.phone_e164)
+            if response.whatsapp_available
+            else "unavailable"
         )
         responses.append(response)
     return responses

@@ -47,6 +47,15 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<WhatsAppLeadLinksResponse | null>(null);
     const [disclaimerOpen, setDisclaimerOpen] = useState(false);
+    // The backend only ever sees a valid E.164 number, so this is a hint, not
+    // proof of registration. US/Canada numbers are often business landlines.
+    const reachability = lead.whatsapp_reachability ?? "unverified";
+    const title =
+        reachability === "unlikely"
+            ? "WhatsApp unlikely (US/Canada toll-free number)"
+            : reachability === "unverified"
+              ? "Try WhatsApp (US/Canada number — mobile or landline unknown)"
+              : "Try WhatsApp (registration unverified)";
 
     const show = async () => {
         setOpen(true);
@@ -98,8 +107,8 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
         <>
             <button
                 type="button"
-                title="Try WhatsApp (registration unverified)"
-                aria-label={`Try WhatsApp (registration unverified) for ${lead.title}`}
+                title={title}
+                aria-label={`${title} for ${lead.title}`}
                 onClick={(event) => {
                     event.stopPropagation();
                     void show();
@@ -128,6 +137,20 @@ function WhatsAppChooser({ lead, className }: { lead: LeadResponse; className?: 
                         WhatsApp registration is not verified. This link only works if the
                         business uses WhatsApp; a valid phone number does not confirm that.
                     </p>
+
+                    {reachability === "unverified" && (
+                        <p className="text-sm text-amber-600">
+                            US and Canada business listings are often landlines, and
+                            WhatsApp accounts live on mobiles. This opens only if the
+                            business registered this number on WhatsApp.
+                        </p>
+                    )}
+                    {reachability === "unlikely" && (
+                        <p className="text-sm text-amber-600">
+                            This is a toll-free number. Consumer WhatsApp accounts cannot
+                            use toll-free numbers, so this link is unlikely to open a chat.
+                        </p>
+                    )}
 
                     <ConsentNote lead={lead} />
 

@@ -1081,8 +1081,8 @@ export const retryLeadSearchApiV1LeadsSearchesSearchIdRetryPost = <ThrowOnError 
  * Keep the same query and collect more leads.
  *
  * The target becomes "everything collected so far + the requested extra".
- * Depth is raised as well, because the scraper only discovers new
- * businesses on deeper pages of the same query.
+ * The worker plans additional city/neighbourhood queries inside the same
+ * location and skips the places this search already covered.
  */
 export const extendLeadSearchApiV1LeadsSearchesSearchIdExtendPost = <ThrowOnError extends boolean = false>(options: Options<ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostData, ThrowOnError>): RequestResult<ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostResponses, ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostErrors, ThrowOnError> => (options.client ?? client).post<ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostResponses, ExtendLeadSearchApiV1LeadsSearchesSearchIdExtendPostErrors, ThrowOnError>({
     url: '/api/v1/leads/searches/{search_id}/extend',

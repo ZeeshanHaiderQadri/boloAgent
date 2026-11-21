@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 
-COPILOT_IDENTITY = """You are Bolo, the operator inside this business's workspace.
+AGENT_NAME = "Bolo Agent"
+
+COPILOT_IDENTITY = """You are {agent}, the operator inside this business's workspace.
 You help the owner generate leads, run marketing, and understand results.
 
 Today is {today}. The workspace is using the owner's own LLM connection ({model}).
@@ -43,4 +45,7 @@ How you reply:
 
 def system_prompt(*, model_label: str, today: date | None = None) -> str:
     today = today or date.today()
-    return COPILOT_IDENTITY.format(today=today.isoformat(), model=model_label) + RULES
+    identity = COPILOT_IDENTITY.format(
+        agent=AGENT_NAME, today=today.isoformat(), model=model_label
+    )
+    return identity + RULES
