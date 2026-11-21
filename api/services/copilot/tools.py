@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any, Awaitable, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -23,6 +24,7 @@ from api.schemas.leads import (
     LeadSearchParams,
 )
 from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
+from api.services.campaign import launch as voice_campaigns
 from api.services.email.audience import (
     AudienceError,
     AudienceRule,
@@ -199,6 +201,90 @@ async def _list_voice_campaigns(ctx: CopilotContext, args: ListCampaignsArgs) ->
             for campaign in campaigns[: args.limit]
         ],
     }
+
+
+class VoiceCampaignArgs(BaseModel):
+    campaign_id: int = Field(ge=1, description="Campaign id from list_voice_campaigns.")
+
+
+def _voice_campaign_payload(progress: dict) -> dict:
+    source_sync = progress.get("source_sync") or {}
+    return {
+        "campaign_id": progress["campaign_id"],
+        "name": progress.get("name"),
+        "state": progress["state"],
+        "total_rows": progress["total_rows"],
+        "processed_rows": progress["processed_rows"],
+        "failed_calls": progress["failed_calls"],
+        "progress_percentage": round(progress["progress_percentage"], 1),
+        "source_sync_status": source_sync.get("status"),
+        "source_sync_error": source_sync.get("error"),
+        "rate_limit_per_second": progress["rate_limit"],
+        "started_at": _iso(progress["started_at"]),
+        "completed_at": _iso(progress["completed_at"]),
+    }
+
+
+async def _voice_campaign_status(ctx: CopilotContext, args: VoiceCampaignArgs) -> dict:
+    try:
+        progress = await voice_campaigns.campaign_progress(
+            organization_id=ctx.organization_id,
+            campaign_id=args.campaign_id,
+        )
+    except voice_campaigns.CampaignNotFoundError as exc:
+        raise ValueError(
+            "Voice campaign not found in this workspace. Use list_voice_campaigns."
+        ) from exc
+    except voice_campaigns.CampaignActionError as exc:
+        raise ValueError(str(exc)) from exc
+    return _voice_campaign_payload(progress)
+
+
+async def _change_voice_campaign_state(
+    ctx: CopilotContext, args: VoiceCampaignArgs, action: str
+) -> dict:
+    action_fn = getattr(voice_campaigns, f"{action}_campaign")
+    try:
+        await action_fn(
+            organization_id=ctx.organization_id,
+            campaign_id=args.campaign_id,
+            actor_user=SimpleNamespace(id=ctx.user_id),
+        )
+    except voice_campaigns.TelephonyNotConfiguredError as exc:
+        raise ValueError(
+            "Outbound calling is not set up in this workspace, so no call was "
+            "placed. Connect a telephony provider first."
+        ) from exc
+    except voice_campaigns.CampaignNotFoundError as exc:
+        raise ValueError(
+            "Voice campaign not found in this workspace. Use list_voice_campaigns."
+        ) from exc
+    except voice_campaigns.CampaignActionError as exc:
+        raise ValueError(str(exc)) from exc
+    return await _voice_campaign_status(ctx, args)
+
+
+async def _start_voice_campaign(ctx: CopilotContext, args: VoiceCampaignArgs) -> dict:
+    return await _change_voice_campaign_state(ctx, args, "start")
+
+
+async def _resume_voice_campaign(ctx: CopilotContext, args: VoiceCampaignArgs) -> dict:
+    return await _change_voice_campaign_state(ctx, args, "resume")
+
+
+async def _pause_voice_campaign(ctx: CopilotContext, args: VoiceCampaignArgs) -> dict:
+    try:
+        await voice_campaigns.pause_campaign(
+            organization_id=ctx.organization_id,
+            campaign_id=args.campaign_id,
+        )
+    except voice_campaigns.CampaignNotFoundError as exc:
+        raise ValueError(
+            "Voice campaign not found in this workspace. Use list_voice_campaigns."
+        ) from exc
+    except voice_campaigns.CampaignActionError as exc:
+        raise ValueError(str(exc)) from exc
+    return await _voice_campaign_status(ctx, args)
 
 
 async def _list_email_campaigns(ctx: CopilotContext, args: ListCampaignsArgs) -> dict:
@@ -786,6 +872,50 @@ TOOLS: dict[str, CopilotTool] = {
             args_schema=ListCampaignsArgs,
             risk=RISK_READ,
             handler=_list_voice_campaigns,
+        ),
+        CopilotTool(
+            name="voice_campaign_status",
+            description=(
+                "Get one voice campaign's state, dialed progress, failed calls "
+                "and source sync status. Use after start_voice_campaign or when "
+                "asked how a calling campaign is going."
+            ),
+            args_schema=VoiceCampaignArgs,
+            risk=RISK_READ,
+            handler=_voice_campaign_status,
+        ),
+        CopilotTool(
+            name="start_voice_campaign",
+            description=(
+                "Start an existing outbound voice calling campaign. This places "
+                "real phone calls to real contacts, so the user approves it "
+                "first. Before proposing it, name the campaign and how many "
+                "contacts it will dial. Use list_voice_campaigns for the id."
+            ),
+            args_schema=VoiceCampaignArgs,
+            risk=RISK_WRITE,
+            handler=_start_voice_campaign,
+        ),
+        CopilotTool(
+            name="pause_voice_campaign",
+            description=(
+                "Pause a running or syncing voice campaign so no new calls are "
+                "placed. Calls already in progress finish. The user approves it "
+                "first."
+            ),
+            args_schema=VoiceCampaignArgs,
+            risk=RISK_WRITE,
+            handler=_pause_voice_campaign,
+        ),
+        CopilotTool(
+            name="resume_voice_campaign",
+            description=(
+                "Resume a paused voice campaign. Dialing starts again, so the "
+                "user approves it first."
+            ),
+            args_schema=VoiceCampaignArgs,
+            risk=RISK_WRITE,
+            handler=_resume_voice_campaign,
         ),
         CopilotTool(
             name="list_email_campaigns",

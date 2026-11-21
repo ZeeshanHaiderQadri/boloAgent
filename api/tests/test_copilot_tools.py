@@ -23,6 +23,9 @@ GATED_TOOLS = {
     "create_email_campaign_draft",
     "launch_email_campaign",
     "send_whatsapp_message",
+    "start_voice_campaign",
+    "pause_voice_campaign",
+    "resume_voice_campaign",
 }
 
 
@@ -38,6 +41,11 @@ def test_every_tool_documents_itself_and_has_a_risk():
         "list_whatsapp_templates",
         "preview_whatsapp_message",
         "send_whatsapp_message",
+        "list_voice_campaigns",
+        "voice_campaign_status",
+        "start_voice_campaign",
+        "pause_voice_campaign",
+        "resume_voice_campaign",
     } <= set(TOOLS)
     for tool in TOOLS.values():
         assert tool.description.strip()
