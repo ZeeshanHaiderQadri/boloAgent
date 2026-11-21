@@ -12,14 +12,18 @@ from api.services.copilot.tools import (
     CreateEmailDraftArgs,
     LaunchEmailCampaignArgs,
     LeadSearchStatusArgs,
+    ListEmailAccountsArgs,
     ListSearchesArgs,
     PreviewAudienceArgs,
     StartLeadSearchArgs,
+    WhatsAppMessageArgs,
     _create_email_campaign_draft,
     _launch_email_campaign,
     _lead_search_status,
     _list_lead_searches,
+    _list_whatsapp_accounts,
     _preview_email_audience,
+    _send_whatsapp_message,
     _start_lead_search,
 )
 from api.services.email.launch import (
@@ -28,6 +32,7 @@ from api.services.email.launch import (
     SendingDisabledError,
 )
 from api.services.leads.searches import SearchQueueUnavailableError
+from api.services.whatsapp.messaging import WhatsAppMessagingError
 
 CTX = CopilotContext(organization_id=42, user_id=9, conversation_id=1)
 
@@ -327,3 +332,70 @@ async def test_launch_surfaces_service_refusals():
             await _launch_email_campaign(
                 CTX, LaunchEmailCampaignArgs(campaign_uuid="uuid-1")
             )
+
+
+def _whatsapp_messaging(**overrides):
+    api = SimpleNamespace(
+        send_message=AsyncMock(return_value={"message_id": "wamid.1"}),
+        preview_message=AsyncMock(return_value={"to_e164": "+15550000002"}),
+        list_accounts=AsyncMock(
+            return_value={
+                "accounts": [{"config_id": 1}, {"config_id": 2}],
+                "messaging_providers": ["whatsapp_cloud_api"],
+            }
+        ),
+        list_templates=AsyncMock(return_value={"templates": []}),
+    )
+    for key, value in overrides.items():
+        setattr(api, key, value)
+    return api
+
+
+@pytest.mark.asyncio
+async def test_send_whatsapp_uses_the_authenticated_context():
+    api = _whatsapp_messaging()
+    with patch.object(tools, "whatsapp_messaging", api):
+        result = await _send_whatsapp_message(
+            CTX,
+            WhatsAppMessageArgs(
+                lead_id=7,
+                template_name="promo",
+                body_params=["Acme"],
+            ),
+        )
+
+    api.send_message.assert_awaited_once_with(
+        42,
+        9,
+        lead_id=7,
+        template_name="promo",
+        language="en",
+        body_params=("Acme",),
+        config_id=None,
+        from_number=None,
+        provider_name=None,
+    )
+    assert result["message_id"] == "wamid.1"
+
+
+@pytest.mark.asyncio
+async def test_send_whatsapp_surfaces_refusals():
+    api = _whatsapp_messaging(
+        send_message=AsyncMock(side_effect=WhatsAppMessagingError("not approved"))
+    )
+    with patch.object(tools, "whatsapp_messaging", api):
+        with pytest.raises(ValueError, match="not approved"):
+            await _send_whatsapp_message(
+                CTX,
+                WhatsAppMessageArgs(lead_id=7, template_name="promo", language="en"),
+            )
+
+
+@pytest.mark.asyncio
+async def test_list_whatsapp_accounts_respects_the_limit():
+    api = _whatsapp_messaging()
+    with patch.object(tools, "whatsapp_messaging", api):
+        result = await _list_whatsapp_accounts(CTX, ListEmailAccountsArgs(limit=1))
+
+    api.list_accounts.assert_awaited_once_with(42)
+    assert result["accounts"] == [{"config_id": 1}]

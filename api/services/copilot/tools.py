@@ -45,6 +45,11 @@ from api.services.leads.searches import (
     search_name,
     search_params,
 )
+from api.services.whatsapp import messaging as whatsapp_messaging
+from api.services.whatsapp.messaging import (
+    MAX_BODY_PARAMS,
+    WhatsAppMessagingError,
+)
 
 RISK_READ = "read"
 RISK_WRITE = "write"
@@ -618,6 +623,107 @@ async def _launch_email_campaign(
     }
 
 
+class ListWhatsAppTemplatesArgs(BaseModel):
+    config_id: int | None = Field(
+        default=None,
+        description="WhatsApp account id from list_whatsapp_accounts; omit when there is one.",
+    )
+    provider: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Messaging provider; omit for the workspace default.",
+    )
+
+
+async def _list_whatsapp_accounts(
+    ctx: CopilotContext, args: ListEmailAccountsArgs
+) -> dict:
+    accounts = await whatsapp_messaging.list_accounts(ctx.organization_id)
+    accounts["accounts"] = accounts["accounts"][: args.limit]
+    return accounts
+
+
+async def _list_whatsapp_templates(
+    ctx: CopilotContext, args: ListWhatsAppTemplatesArgs
+) -> dict:
+    try:
+        return await whatsapp_messaging.list_templates(
+            ctx.organization_id,
+            config_id=args.config_id,
+            provider_name=args.provider,
+        )
+    except WhatsAppMessagingError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+class WhatsAppMessageArgs(BaseModel):
+    lead_id: int = Field(description="Lead id from search_leads.")
+    template_name: str = Field(
+        min_length=1,
+        max_length=512,
+        description="Approved Meta template name from list_whatsapp_templates.",
+    )
+    language: str = Field(
+        default="en", min_length=2, max_length=16, description="Template language."
+    )
+    body_params: list[str] = Field(
+        default_factory=list,
+        max_length=MAX_BODY_PARAMS,
+        description="Values for the template's body placeholders, in order.",
+    )
+    config_id: int | None = Field(
+        default=None, description="WhatsApp account id; omit when there is one."
+    )
+    from_number: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Sending number; omit when the account has one active number.",
+    )
+    provider: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Messaging provider; omit for the workspace default.",
+    )
+
+
+async def _preview_whatsapp_message(
+    ctx: CopilotContext, args: WhatsAppMessageArgs
+) -> dict:
+    try:
+        return await whatsapp_messaging.preview_message(
+            ctx.organization_id,
+            ctx.user_id,
+            lead_id=args.lead_id,
+            template_name=args.template_name,
+            language=args.language,
+            body_params=tuple(args.body_params),
+            config_id=args.config_id,
+            from_number=args.from_number,
+            provider_name=args.provider,
+        )
+    except WhatsAppMessagingError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+async def _send_whatsapp_message(
+    ctx: CopilotContext, args: WhatsAppMessageArgs
+) -> dict:
+    try:
+        return await whatsapp_messaging.send_message(
+            ctx.organization_id,
+            ctx.user_id,
+            lead_id=args.lead_id,
+            template_name=args.template_name,
+            language=args.language,
+            body_params=tuple(args.body_params),
+            config_id=args.config_id,
+            from_number=args.from_number,
+            provider_name=args.provider,
+        )
+    except WhatsAppMessagingError as exc:
+        raise ValueError(str(exc)) from exc
+
+
 class TagLeadsArgs(BaseModel):
     lead_ids: list[int] = Field(
         min_length=1,
@@ -789,6 +895,50 @@ TOOLS: dict[str, CopilotTool] = {
             args_schema=LaunchEmailCampaignArgs,
             risk=RISK_WRITE,
             handler=_launch_email_campaign,
+        ),
+        CopilotTool(
+            name="list_whatsapp_accounts",
+            description=(
+                "List the workspace's connected WhatsApp Business Accounts and "
+                "their sendable numbers. Use before any WhatsApp preview or send."
+            ),
+            args_schema=ListEmailAccountsArgs,
+            risk=RISK_READ,
+            handler=_list_whatsapp_accounts,
+        ),
+        CopilotTool(
+            name="list_whatsapp_templates",
+            description=(
+                "List Meta message templates on the workspace's WhatsApp "
+                "account, with approval status and parameter count. Only "
+                "approved templates can be sent. Use before previewing a send."
+            ),
+            args_schema=ListWhatsAppTemplatesArgs,
+            risk=RISK_READ,
+            handler=_list_whatsapp_templates,
+        ),
+        CopilotTool(
+            name="preview_whatsapp_message",
+            description=(
+                "Resolve one WhatsApp message without sending: recipient number, "
+                "sending number, approved template and the rendered body. Use "
+                "this and quote the recipient before proposing a send."
+            ),
+            args_schema=WhatsAppMessageArgs,
+            risk=RISK_READ,
+            handler=_preview_whatsapp_message,
+        ),
+        CopilotTool(
+            name="send_whatsapp_message",
+            description=(
+                "Send one approved WhatsApp template to one lead through the "
+                "workspace's own account. Real message to a real person, so the "
+                "user must approve it. Never batch: preview first and name the "
+                "recipient, account and template before calling."
+            ),
+            args_schema=WhatsAppMessageArgs,
+            risk=RISK_WRITE,
+            handler=_send_whatsapp_message,
         ),
         CopilotTool(
             name="tag_leads",
