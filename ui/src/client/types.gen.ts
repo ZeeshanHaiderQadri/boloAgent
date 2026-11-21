@@ -1544,6 +1544,148 @@ export type ContextDestinationRule = {
 };
 
 /**
+ * CopilotApprovalRequest
+ */
+export type CopilotApprovalRequest = {
+    /**
+     * Approval Id
+     */
+    approval_id: string;
+    /**
+     * Decision
+     */
+    decision: 'approve' | 'decline';
+    /**
+     * Client Request Id
+     */
+    client_request_id?: string | null;
+};
+
+/**
+ * CopilotConversationCreate
+ */
+export type CopilotConversationCreate = {
+    /**
+     * Title
+     */
+    title?: string | null;
+};
+
+/**
+ * CopilotConversationSummary
+ */
+export type CopilotConversationSummary = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * CopilotMessageRequest
+ */
+export type CopilotMessageRequest = {
+    /**
+     * Message
+     */
+    message: string;
+    /**
+     * Client Request Id
+     */
+    client_request_id?: string | null;
+};
+
+/**
+ * CopilotPendingApproval
+ */
+export type CopilotPendingApproval = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'tool_approval';
+    /**
+     * Calls
+     */
+    calls: Array<CopilotPendingCall>;
+};
+
+/**
+ * CopilotPendingCall
+ */
+export type CopilotPendingCall = {
+    /**
+     * Tool
+     */
+    tool: string;
+    /**
+     * Risk
+     */
+    risk: string;
+    /**
+     * Arguments
+     */
+    arguments: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * CopilotSnapshot
+ */
+export type CopilotSnapshot = {
+    /**
+     * Conversation Id
+     */
+    conversation_id: number;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Status
+     */
+    status: 'idle' | 'waiting_for_approval';
+    /**
+     * Messages
+     */
+    messages: Array<CopilotTranscriptMessage>;
+    /**
+     * Pending Approvals
+     */
+    pending_approvals: Array<CopilotPendingApproval>;
+};
+
+/**
+ * CopilotTranscriptMessage
+ */
+export type CopilotTranscriptMessage = {
+    /**
+     * Role
+     */
+    role: 'user' | 'assistant';
+    /**
+     * Content
+     */
+    content: string;
+};
+
+/**
  * CreateAPIKeyRequest
  */
 export type CreateApiKeyRequest = {
@@ -14103,6 +14245,223 @@ export type DownloadCampaignReportApiV1CampaignCampaignIdReportGetResponses = {
      */
     200: unknown;
 };
+
+export type ListConversationsApiV1CopilotConversationsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/copilot/conversations';
+};
+
+export type ListConversationsApiV1CopilotConversationsGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListConversationsApiV1CopilotConversationsGetError = ListConversationsApiV1CopilotConversationsGetErrors[keyof ListConversationsApiV1CopilotConversationsGetErrors];
+
+export type ListConversationsApiV1CopilotConversationsGetResponses = {
+    /**
+     * Response List Conversations Api V1 Copilot Conversations Get
+     *
+     * Successful Response
+     */
+    200: Array<CopilotConversationSummary>;
+};
+
+export type ListConversationsApiV1CopilotConversationsGetResponse = ListConversationsApiV1CopilotConversationsGetResponses[keyof ListConversationsApiV1CopilotConversationsGetResponses];
+
+export type CreateConversationApiV1CopilotConversationsPostData = {
+    body: CopilotConversationCreate;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/copilot/conversations';
+};
+
+export type CreateConversationApiV1CopilotConversationsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateConversationApiV1CopilotConversationsPostError = CreateConversationApiV1CopilotConversationsPostErrors[keyof CreateConversationApiV1CopilotConversationsPostErrors];
+
+export type CreateConversationApiV1CopilotConversationsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CopilotConversationSummary;
+};
+
+export type CreateConversationApiV1CopilotConversationsPostResponse = CreateConversationApiV1CopilotConversationsPostResponses[keyof CreateConversationApiV1CopilotConversationsPostResponses];
+
+export type GetConversationApiV1CopilotConversationsConversationIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: number;
+    };
+    query?: never;
+    url: '/api/v1/copilot/conversations/{conversation_id}';
+};
+
+export type GetConversationApiV1CopilotConversationsConversationIdGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetConversationApiV1CopilotConversationsConversationIdGetError = GetConversationApiV1CopilotConversationsConversationIdGetErrors[keyof GetConversationApiV1CopilotConversationsConversationIdGetErrors];
+
+export type GetConversationApiV1CopilotConversationsConversationIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CopilotSnapshot;
+};
+
+export type GetConversationApiV1CopilotConversationsConversationIdGetResponse = GetConversationApiV1CopilotConversationsConversationIdGetResponses[keyof GetConversationApiV1CopilotConversationsConversationIdGetResponses];
+
+export type SendMessageApiV1CopilotConversationsConversationIdMessagesPostData = {
+    body: CopilotMessageRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: number;
+    };
+    query?: never;
+    url: '/api/v1/copilot/conversations/{conversation_id}/messages';
+};
+
+export type SendMessageApiV1CopilotConversationsConversationIdMessagesPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SendMessageApiV1CopilotConversationsConversationIdMessagesPostError = SendMessageApiV1CopilotConversationsConversationIdMessagesPostErrors[keyof SendMessageApiV1CopilotConversationsConversationIdMessagesPostErrors];
+
+export type SendMessageApiV1CopilotConversationsConversationIdMessagesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CopilotSnapshot;
+};
+
+export type SendMessageApiV1CopilotConversationsConversationIdMessagesPostResponse = SendMessageApiV1CopilotConversationsConversationIdMessagesPostResponses[keyof SendMessageApiV1CopilotConversationsConversationIdMessagesPostResponses];
+
+export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostData = {
+    body: CopilotApprovalRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: number;
+    };
+    query?: never;
+    url: '/api/v1/copilot/conversations/{conversation_id}/approvals';
+};
+
+export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostError = DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostErrors[keyof DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostErrors];
+
+export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CopilotSnapshot;
+};
+
+export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponse = DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponses[keyof DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponses];
 
 export type GetLeadsMetaApiV1LeadsMetaGetData = {
     body?: never;
