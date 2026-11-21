@@ -22,6 +22,7 @@ GATED_TOOLS = {
     "start_lead_search",
     "create_email_campaign_draft",
     "launch_email_campaign",
+    "send_whatsapp_message",
 }
 
 
@@ -32,6 +33,11 @@ def test_every_tool_documents_itself_and_has_a_risk():
         "tag_leads",
         "start_lead_search",
         "create_email_campaign_draft",
+        "launch_email_campaign",
+        "list_whatsapp_accounts",
+        "list_whatsapp_templates",
+        "preview_whatsapp_message",
+        "send_whatsapp_message",
     } <= set(TOOLS)
     for tool in TOOLS.values():
         assert tool.description.strip()
