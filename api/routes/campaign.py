@@ -21,7 +21,7 @@ from api.schemas.campaign import (
     TrafficSplitResponse,
 )
 from api.services.auth.depends import get_user
-from api.services.campaign.runner import campaign_runner_service
+from api.services.campaign import launch as campaign_actions
 from api.services.campaign.source_sync import CampaignSourceSyncService
 from api.services.campaign.source_sync_factory import get_sync_service
 from api.services.campaign.traffic_split import (
@@ -33,7 +33,6 @@ from api.services.campaign.traffic_split import (
     traffic_stats,
     validate_variant_templates,
 )
-from api.services.quota_service import authorize_workflow_run_start
 from api.services.reports import generate_campaign_report_csv
 from api.services.storage import storage_fs
 from api.services.telephony.outbound_readiness import (
@@ -425,30 +424,6 @@ async def _get_telephony_configuration_name(
     return cfg.name if cfg else None
 
 
-async def _authorize_campaign_variants(campaign, user) -> None:
-    if (campaign.orchestrator_metadata or {}).get("traffic_split"):
-        try:
-            resolved = await resolve_variants(
-                db_client,
-                campaign_split(campaign)["variants"],
-                campaign.organization_id,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        selections = {(w.id, d.id) for w, d in resolved}
-    else:
-        selections = {(campaign.workflow_id, None)}
-    for workflow_id, definition_id in selections:
-        result = await authorize_workflow_run_start(
-            workflow_id=workflow_id,
-            organization_id=user.selected_organization_id,
-            actor_user=user,
-            **({"definition_id": definition_id} if definition_id is not None else {}),
-        )
-        if not result.has_quota:
-            raise HTTPException(status_code=402, detail=result.error_message)
-
-
 @router.get("/{campaign_id}/traffic-stats")
 async def get_campaign_traffic_stats(
     campaign_id: int, user: UserModel = Depends(get_user)
@@ -690,29 +665,22 @@ async def start_campaign(
     user: UserModel = Depends(get_user),
 ) -> CampaignResponse:
     """Start campaign execution"""
-    # Block start if the org has no telephony configuration at all.
-    configs = await db_client.list_telephony_configurations(
-        user.selected_organization_id
-    )
-    if not configs:
-        raise HTTPException(
-            status_code=401,
-            detail="You must configure telephony first by going to APP_URL/configure-telephony",
-        )
-
-    # Verify campaign exists and belongs to organization
-    campaign = await db_client.get_campaign(campaign_id, user.selected_organization_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    # Check Bolo quota before starting campaign (apply per-workflow
-    # model_overrides so we evaluate the keys this campaign will use).
-    await _authorize_campaign_variants(campaign, user)
-
-    # Start the campaign using the runner service
     try:
-        await campaign_runner_service.start_campaign(campaign_id)
-    except ValueError as e:
+        await campaign_actions.start_campaign(
+            organization_id=user.selected_organization_id,
+            campaign_id=campaign_id,
+            actor_user=user,
+        )
+    except campaign_actions.TelephonyNotConfiguredError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except campaign_actions.CampaignNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except campaign_actions.CampaignQuotaExceededError as e:
+        raise HTTPException(status_code=402, detail=str(e))
+    except (
+        campaign_actions.CampaignVariantsError,
+        campaign_actions.CampaignStateError,
+    ) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     # Get updated campaign
@@ -740,15 +708,14 @@ async def pause_campaign(
     user: UserModel = Depends(get_user),
 ) -> CampaignResponse:
     """Pause campaign execution"""
-    # Verify campaign exists and belongs to organization
-    campaign = await db_client.get_campaign(campaign_id, user.selected_organization_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    # Pause the campaign using the runner service
     try:
-        await campaign_runner_service.pause_campaign(campaign_id)
-    except ValueError as e:
+        await campaign_actions.pause_campaign(
+            organization_id=user.selected_organization_id,
+            campaign_id=campaign_id,
+        )
+    except campaign_actions.CampaignNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except campaign_actions.CampaignStateError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     # Get updated campaign
@@ -1050,29 +1017,22 @@ async def resume_campaign(
     user: UserModel = Depends(get_user),
 ) -> CampaignResponse:
     """Resume a paused campaign"""
-    # Block resume if the org has no telephony configuration at all.
-    configs = await db_client.list_telephony_configurations(
-        user.selected_organization_id
-    )
-    if not configs:
-        raise HTTPException(
-            status_code=401,
-            detail="You must configure telephony first by going to APP_URL/configure-telephony",
-        )
-
-    # Verify campaign exists and belongs to organization
-    campaign = await db_client.get_campaign(campaign_id, user.selected_organization_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    # Check Bolo quota before resuming campaign (apply per-workflow
-    # model_overrides so we evaluate the keys this campaign will use).
-    await _authorize_campaign_variants(campaign, user)
-
-    # Resume the campaign using the runner service
     try:
-        await campaign_runner_service.resume_campaign(campaign_id)
-    except ValueError as e:
+        await campaign_actions.resume_campaign(
+            organization_id=user.selected_organization_id,
+            campaign_id=campaign_id,
+            actor_user=user,
+        )
+    except campaign_actions.TelephonyNotConfiguredError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except campaign_actions.CampaignNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except campaign_actions.CampaignQuotaExceededError as e:
+        raise HTTPException(status_code=402, detail=str(e))
+    except (
+        campaign_actions.CampaignVariantsError,
+        campaign_actions.CampaignStateError,
+    ) as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     # Get updated campaign
@@ -1100,17 +1060,16 @@ async def get_campaign_progress(
     user: UserModel = Depends(get_user),
 ) -> CampaignProgressResponse:
     """Get current campaign progress and statistics"""
-    # Verify campaign exists and belongs to organization
-    campaign = await db_client.get_campaign(campaign_id, user.selected_organization_id)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-
-    # Get progress from runner service
     try:
-        progress = await campaign_runner_service.get_campaign_status(campaign_id)
-        return CampaignProgressResponse(**progress)
-    except ValueError as e:
+        progress = await campaign_actions.campaign_progress(
+            organization_id=user.selected_organization_id,
+            campaign_id=campaign_id,
+        )
+    except campaign_actions.CampaignNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except campaign_actions.CampaignStateError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    return CampaignProgressResponse(**progress)
 
 
 class CampaignSourceDownloadResponse(BaseModel):

@@ -16,15 +16,20 @@ from api.services.copilot.tools import (
     ListSearchesArgs,
     PreviewAudienceArgs,
     StartLeadSearchArgs,
+    VoiceCampaignArgs,
     WhatsAppMessageArgs,
     _create_email_campaign_draft,
     _launch_email_campaign,
     _lead_search_status,
     _list_lead_searches,
     _list_whatsapp_accounts,
+    _pause_voice_campaign,
     _preview_email_audience,
+    _resume_voice_campaign,
     _send_whatsapp_message,
     _start_lead_search,
+    _start_voice_campaign,
+    _voice_campaign_status,
 )
 from api.services.email.launch import (
     CampaignLaunchResult,
@@ -399,3 +404,128 @@ async def test_list_whatsapp_accounts_respects_the_limit():
 
     api.list_accounts.assert_awaited_once_with(42)
     assert result["accounts"] == [{"config_id": 1}]
+
+
+def _progress(**overrides):
+    values = {
+        "campaign_id": 5,
+        "name": "Spring cleaning",
+        "workflow_id": 3,
+        "state": "running",
+        "total_rows": 100,
+        "processed_rows": 40,
+        "failed_calls": 2,
+        "progress_percentage": 40.0,
+        "source_sync": {"status": "completed", "last_synced_at": None, "error": None},
+        "rate_limit": 5,
+        "started_at": None,
+        "completed_at": None,
+    }
+    values.update(overrides)
+    return values
+
+
+@pytest.mark.asyncio
+async def test_voice_campaign_status_is_org_scoped_and_compact():
+    with patch.object(
+        tools.voice_campaigns,
+        "campaign_progress",
+        AsyncMock(return_value=_progress()),
+    ) as progress:
+        result = await _voice_campaign_status(CTX, VoiceCampaignArgs(campaign_id=5))
+
+    progress.assert_awaited_once_with(organization_id=42, campaign_id=5)
+    assert result["name"] == "Spring cleaning"
+    assert result["processed_rows"] == 40
+    assert result["source_sync_status"] == "completed"
+    assert "source_sync" not in result
+
+
+@pytest.mark.asyncio
+async def test_voice_campaign_status_reports_unknown_campaign():
+    with patch.object(
+        tools.voice_campaigns,
+        "campaign_progress",
+        AsyncMock(side_effect=tools.voice_campaigns.CampaignNotFoundError("nope")),
+    ):
+        with pytest.raises(ValueError, match="not found in this workspace"):
+            await _voice_campaign_status(CTX, VoiceCampaignArgs(campaign_id=5))
+
+
+@pytest.mark.asyncio
+async def test_start_voice_campaign_acts_as_the_authenticated_user():
+    with (
+        patch.object(tools.voice_campaigns, "start_campaign", AsyncMock()) as start,
+        patch.object(
+            tools.voice_campaigns,
+            "campaign_progress",
+            AsyncMock(return_value=_progress()),
+        ),
+    ):
+        result = await _start_voice_campaign(CTX, VoiceCampaignArgs(campaign_id=5))
+
+    kwargs = start.await_args.kwargs
+    assert kwargs["organization_id"] == 42
+    assert kwargs["campaign_id"] == 5
+    assert kwargs["actor_user"].id == 9
+    assert result["state"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_start_voice_campaign_explains_missing_telephony():
+    with patch.object(
+        tools.voice_campaigns,
+        "start_campaign",
+        AsyncMock(
+            side_effect=tools.voice_campaigns.TelephonyNotConfiguredError("setup")
+        ),
+    ):
+        with pytest.raises(ValueError, match="not set up"):
+            await _start_voice_campaign(CTX, VoiceCampaignArgs(campaign_id=5))
+
+
+@pytest.mark.asyncio
+async def test_start_voice_campaign_surfaces_quota_refusals():
+    with patch.object(
+        tools.voice_campaigns,
+        "start_campaign",
+        AsyncMock(
+            side_effect=tools.voice_campaigns.CampaignQuotaExceededError(
+                "Your plan has no call credits left."
+            )
+        ),
+    ):
+        with pytest.raises(ValueError, match="no call credits"):
+            await _start_voice_campaign(CTX, VoiceCampaignArgs(campaign_id=5))
+
+
+@pytest.mark.asyncio
+async def test_pause_voice_campaign_reports_state_refusals():
+    with patch.object(
+        tools.voice_campaigns,
+        "pause_campaign",
+        AsyncMock(
+            side_effect=tools.voice_campaigns.CampaignStateError(
+                "Campaign must be in 'running' or 'syncing' state to pause"
+            )
+        ),
+    ):
+        with pytest.raises(ValueError, match="running"):
+            await _pause_voice_campaign(CTX, VoiceCampaignArgs(campaign_id=5))
+
+
+@pytest.mark.asyncio
+async def test_resume_voice_campaign_returns_updated_status():
+    with (
+        patch.object(tools.voice_campaigns, "resume_campaign", AsyncMock()) as resume,
+        patch.object(
+            tools.voice_campaigns,
+            "campaign_progress",
+            AsyncMock(return_value=_progress(state="running")),
+        ),
+    ):
+        result = await _resume_voice_campaign(CTX, VoiceCampaignArgs(campaign_id=5))
+
+    resume.assert_awaited_once()
+    assert resume.await_args.kwargs["actor_user"].id == 9
+    assert result["campaign_id"] == 5

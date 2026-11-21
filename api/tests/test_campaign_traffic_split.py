@@ -6,8 +6,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import ValidationError
 
-from api.routes.campaign import CreateCampaignRequest, _authorize_campaign_variants
+from api.routes.campaign import CreateCampaignRequest
 from api.schemas.campaign import TrafficSplitRequest
+from api.services.campaign import launch as campaign_actions
 from api.services.campaign.source_sync import ValidationResult
 from api.services.campaign.traffic_split import (
     build_split,
@@ -198,14 +199,15 @@ async def test_campaign_preflight_checks_each_resolved_version():
     )
     authorize = AsyncMock(return_value=SimpleNamespace(has_quota=True))
     with (
-        patch("api.routes.campaign.db_client", db),
-        patch("api.routes.campaign.authorize_workflow_run_start", authorize),
+        patch("api.services.campaign.launch.db_client", db),
+        patch("api.services.campaign.launch.authorize_workflow_run_start", authorize),
     ):
-        await _authorize_campaign_variants(
-            SimpleNamespace(
-                organization_id=2, orchestrator_metadata={"traffic_split": split}
+        await campaign_actions._authorize_quota(
+            organization_id=2,
+            campaign=SimpleNamespace(
+                workflow_id=1, orchestrator_metadata={"traffic_split": split}
             ),
-            SimpleNamespace(selected_organization_id=2),
+            actor_user=SimpleNamespace(id=7),
         )
     assert {call.kwargs["definition_id"] for call in authorize.await_args_list} == {
         8,
