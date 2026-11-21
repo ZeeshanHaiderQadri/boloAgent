@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.0.0 (2026-11-21)
+
+<!-- Release notes generated using configuration in .github/release.yml at main -->
+
+## What's Changed
+### Features
+* feat: encrypt stored third-party credentials at rest by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/2
+* feat(email): add the Email module schema and SMTP adapter by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/4
+* feat(email): reviewer follow-ups, deployment-mode guard, and the SES adapter by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/5
+* feat(email): sender and domain API, plus the senders screen by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/7
+* feat(email): templates API and a minimal template editor by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/11
+* feat(email): campaign tables, held recipients, sender snapshots (PR a) by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/12
+* feat(ui): motion, live audience preview and UI polish for the email flow by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/16
+* feat: lead social profiles and table icons by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/17
+* feat(leads): discover Facebook and LinkedIn profiles too by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/20
+* feat(leads): fan out large searches and surface stuck/queued state by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/21
+* feat(leads): flag US/Canada WhatsApp reachability as unverified by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/22
+* feat(copilot): BYOK workspace agent with risk-tiered tools by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/23
+* feat(copilot): lead search and email draft actions by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/24
+### Bug Fixes
+* fix(deploy): reviewer follow-ups for the deployment-mode guard and email adapters by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/6
+* fix(leads): bind email consent to the address it was given for by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/10
+* fix(leads): trust a lead's own country when normalizing phone_e164 by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/19
+### Other Changes
+* Record lead email consent with an audit trail by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/9
+* Separate outbound network policy from deployment mode; label SES untested by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/8
+* Email campaigns: audience resolver, preview and draft API (nothing sends) by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/13
+* Email campaigns UI: list, detail, preview, add-to-campaign (nothing sends) by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/14
+* Multi-step email campaign wizard with recipients endpoint and manual exclusions by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/15
+* WhatsApp templates, senders and click-to-chat links by @ZeeshanHaiderQadri in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/18
+
+## New Contributors
+* @ZeeshanHaiderQadri made their first contribution in https://github.com/ZeeshanHaiderQadri/boloAgent/pull/2
+
+**Full Changelog**: https://github.com/ZeeshanHaiderQadri/boloAgent/compare/bolo-v1.51.0...bolo-v2.0.0
+
 ## 1.51.0 (2026-11-04)
 
 <!-- Release notes generated using configuration in .github/release.yml at main -->
