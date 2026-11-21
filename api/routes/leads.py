@@ -42,7 +42,6 @@ from api.schemas.leads import (
     LeadSearchExtendRequest,
     LeadSearchLinkResponse,
     LeadSearchListResponse,
-    LeadSearchParams,
     LeadSearchResponse,
     LeadSearchUpdateRequest,
     LeadStatsResponse,
@@ -68,6 +67,14 @@ from api.services.leads.normalization import normalize_lead_phone
 from api.services.leads.providers import (
     available_providers,
     default_provider_name,
+)
+from api.services.leads.searches import (
+    ProviderUnavailableError,
+    SearchQueueUnavailableError,
+    enqueue_search,
+    resolve_provider,
+    search_name,
+    search_params,
 )
 from api.services.leads.social_scan_limits import (
     acquire_org_scan_slot,
@@ -213,50 +220,17 @@ def _email_consent_activity(
 
 
 def _available_provider(provider: str | None) -> str:
-    providers = available_providers(LEADS_ENABLE_DEMO_PROVIDER)
-    resolved = (provider or default_provider_name(LEADS_ENABLE_DEMO_PROVIDER)).strip()
-    if resolved not in providers:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Provider '{resolved}' is not available on this deployment",
-        )
-    return resolved
-
-
-def _search_params(request: LeadSearchParams) -> dict:
-    return {
-        "depth": request.depth,
-        "radius_km": request.radius_km,
-        "email": request.email,
-        "max_time_seconds": request.max_time_seconds,
-        "zoom": request.zoom,
-        "website_filter": request.website_filter,
-        "auto_call": request.auto_call,
-        "workflow_id": request.workflow_id,
-        "telephony_configuration_id": request.telephony_configuration_id,
-    }
-
-
-def _search_name(request: LeadSearchParams) -> str:
-    return (request.name or f"{request.category} in {request.location}").strip()[:255]
+    try:
+        return resolve_provider(provider)
+    except ProviderUnavailableError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def _enqueue_search(search_id: int, organization_id: int) -> None:
-    """Queue a search run, marking it failed if the queue is unavailable."""
     try:
-        await enqueue_job(FunctionNames.RUN_LEAD_SEARCH, search_id)
-    except Exception as exc:
-        logger.exception("Could not enqueue lead search {}", search_id)
-        await db_client.update_lead_search(
-            search_id,
-            organization_id,
-            status="failed",
-            completed_at=datetime.now(UTC),
-            error_message="Background queue unavailable; try again shortly.",
-        )
-        raise HTTPException(
-            status_code=503, detail="Background queue unavailable; try again shortly."
-        ) from exc
+        await enqueue_search(search_id, organization_id)
+    except SearchQueueUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/meta", response_model=LeadMetaResponse)
@@ -316,13 +290,13 @@ async def create_lead_search(
     search = await db_client.create_lead_search(
         organization_id=organization_id,
         created_by=user.id,
-        name=_search_name(request),
+        name=search_name(request),
         category=request.category,
         location=request.location,
         country_code=request.country_code,
         language=request.language,
         provider=provider,
-        params=_search_params(request),
+        params=search_params(request),
         target_results=request.target_results,
     )
 
@@ -563,11 +537,11 @@ async def update_lead_search(
                         exc,
                     )
 
-    params = _search_params(request)
+    params = search_params(request)
     params["add_to_campaign_id"] = request.add_to_campaign_id
 
     values: dict = {
-        "name": _search_name(request),
+        "name": search_name(request),
         "category": request.category,
         "location": request.location,
         "country_code": request.country_code,

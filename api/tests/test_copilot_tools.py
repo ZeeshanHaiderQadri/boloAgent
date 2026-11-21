@@ -17,20 +17,26 @@ from api.services.copilot.tools import (
     _tag_leads,
 )
 
+GATED_TOOLS = {"tag_leads", "start_lead_search", "create_email_campaign_draft"}
+
 
 def test_every_tool_documents_itself_and_has_a_risk():
-    assert {"business_overview", "search_leads", "tag_leads"} <= set(TOOLS)
+    assert {
+        "business_overview",
+        "search_leads",
+        "tag_leads",
+        "start_lead_search",
+        "create_email_campaign_draft",
+    } <= set(TOOLS)
     for tool in TOOLS.values():
         assert tool.description.strip()
         assert tool.risk in {RISK_READ, RISK_WRITE}
         assert issubclass(tool.args_schema, object)
 
 
-def test_only_tag_leads_requires_approval():
-    assert TOOLS["tag_leads"].requires_approval is True
-    for name, tool in TOOLS.items():
-        if name != "tag_leads":
-            assert tool.requires_approval is False
+def test_only_writes_require_approval():
+    gated = {name for name, tool in TOOLS.items() if tool.requires_approval}
+    assert gated == GATED_TOOLS
 
 
 def test_tag_leads_bounds_are_enforced_by_the_schema():
