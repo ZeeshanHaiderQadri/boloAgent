@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   getConversation: vi.fn(),
   send: vi.fn(),
   decide: vi.fn(),
+  voiceStatus: vi.fn(),
+  turnCredentials: vi.fn(),
   auth: { user: { id: 1 } as { id: number } | null, loading: false },
 }));
 
@@ -18,6 +20,8 @@ vi.mock("@/client/sdk.gen", () => ({
   getConversationApiV1CopilotConversationsConversationIdGet: mocks.getConversation,
   sendMessageApiV1CopilotConversationsConversationIdMessagesPost: mocks.send,
   decideApprovalApiV1CopilotConversationsConversationIdApprovalsPost: mocks.decide,
+  voiceStatusApiV1CopilotVoiceGet: mocks.voiceStatus,
+  getTurnCredentialsApiV1TurnCredentialsGet: mocks.turnCredentials,
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -52,6 +56,7 @@ beforeEach(() => {
   mocks.auth.loading = false;
   mocks.list.mockResolvedValue({ data: [conversation] });
   mocks.getConversation.mockResolvedValue({ data: snapshot });
+  mocks.voiceStatus.mockResolvedValue({ data: { ready: true } });
 });
 
 describe("Bolo Agent page", () => {
@@ -177,5 +182,34 @@ describe("Bolo Agent page", () => {
     expect(
       await screen.findByText("Connect your own model before chatting."),
     ).toBeTruthy();
+  });
+
+  it("enables the call button once the workspace has voice services", async () => {
+    render(<AgentPage />);
+
+    const button = await screen.findByRole("button", { name: "Start voice call" });
+    await waitFor(() =>
+      expect((button as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
+  it("explains why calling is unavailable and disables the button", async () => {
+    mocks.voiceStatus.mockResolvedValue({
+      data: {
+        ready: false,
+        message: "Connect your own LLM, STT and TTS to enable voice.",
+      },
+    });
+
+    render(<AgentPage />);
+
+    expect(
+      await screen.findByText("Connect your own LLM, STT and TTS to enable voice."),
+    ).toBeTruthy();
+    expect(
+      (screen.getByRole("button", {
+        name: "Start voice call",
+      }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });

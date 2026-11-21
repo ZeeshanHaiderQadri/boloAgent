@@ -5,6 +5,8 @@ import {
   ArrowUp,
   Loader2,
   MessageSquarePlus,
+  Phone,
+  PhoneOff,
   ShieldCheck,
   Sparkles,
   ThumbsDown,
@@ -34,6 +36,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+
+import { useAgentVoice } from "./hooks/useAgentVoice";
 
 const TOOL_LABELS: Record<string, string> = {
   tag_leads: "Tag leads",
@@ -145,6 +149,7 @@ function ApprovalCard({
 
 export default function AgentPage() {
   const { user, loading: authLoading, getAccessToken, redirectToLogin } = useAuth();
+  const voice = useAgentVoice();
 
   const [conversations, setConversations] = useState<
     CopilotConversationSummary[] | null
@@ -344,6 +349,12 @@ export default function AgentPage() {
   const pending = snapshot?.pending_approvals ?? [];
   const hasConversation = activeId !== null;
   const visibleConversations = conversations ?? [];
+  const callBusy = voice.callState === "connecting";
+  const canStartCall =
+    hasConversation &&
+    voice.callState === "idle" &&
+    (voice.voiceStatus?.ready ?? false);
+  const callDisabled = voice.callState === "idle" && !canStartCall;
 
   return (
     <PageShell className="flex flex-col">
@@ -431,6 +442,7 @@ export default function AgentPage() {
         </Card>
 
         <Card className="flex h-[calc(100dvh-14rem)] min-h-[560px] flex-col overflow-hidden">
+          <audio ref={voice.audioRef} autoPlay aria-hidden="true" className="hidden" />
           <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">
@@ -440,16 +452,101 @@ export default function AgentPage() {
                 Runs on your workspace model connection.
               </p>
             </div>
-            <Badge
-              variant="outline"
-              className={cn(
-                "shrink-0 transition-colors duration-500",
-                pending.length > 0 && "border-amber-500/50 text-amber-500",
-              )}
-            >
-              {pending.length > 0 ? "Awaiting approval" : "Ready"}
-            </Badge>
+            <div className="flex shrink-0 items-center gap-2">
+              <Badge
+                variant="outline"
+                className={cn(
+                  "transition-colors duration-500",
+                  pending.length > 0 && "border-amber-500/50 text-amber-500",
+                  voice.callState === "live" && "border-emerald-500/60 text-emerald-500",
+                )}
+              >
+                {voice.callState === "live"
+                  ? "On call"
+                  : pending.length > 0
+                    ? "Awaiting approval"
+                    : "Ready"}
+              </Badge>
+              <Button
+                variant={voice.callState === "live" ? "destructive" : "outline"}
+                size="sm"
+                onClick={() => {
+                  if (voice.callState === "live" || callBusy) voice.stop();
+                  else if (activeId !== null) void voice.start(activeId);
+                }}
+                disabled={callDisabled}
+                title={
+                  voice.callState === "live"
+                    ? "End the voice call"
+                    : callBusy
+                      ? "Cancel the call"
+                      : canStartCall
+                        ? "Talk to Bolo Agent by voice"
+                        : (voice.voiceStatus?.message ??
+                          (voice.statusLoading ? "Checking voice…" : undefined))
+                }
+                aria-label={
+                  voice.callState === "live" ? "End voice call" : "Start voice call"
+                }
+              >
+                {callBusy ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : voice.callState === "live" ? (
+                  <PhoneOff className="mr-2 h-4 w-4" />
+                ) : (
+                  <Phone className="mr-2 h-4 w-4" />
+                )}
+                {voice.callState === "live"
+                  ? "End call"
+                  : callBusy
+                    ? "Connecting"
+                    : "Talk"}
+              </Button>
+            </div>
           </div>
+
+          {voice.error ? (
+            <div className="flex items-start gap-2 border-b px-5 py-2 text-xs text-destructive transition-colors duration-300">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1">{voice.error}</span>
+              <button
+                type="button"
+                onClick={voice.clearError}
+                className="text-muted-foreground transition-colors duration-300 hover:text-foreground"
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : voice.notice ? (
+            <div className="flex items-center gap-2 border-b px-5 py-2 text-xs text-muted-foreground transition-colors duration-300">
+              <span className="min-w-0 flex-1">{voice.notice}</span>
+              <button
+                type="button"
+                onClick={voice.clearNotice}
+                className="transition-colors duration-300 hover:text-foreground"
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : voice.callState === "live" ? (
+            <div className="flex items-center gap-2 border-b px-5 py-2 text-xs text-muted-foreground transition-colors duration-500">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+              <span className="min-w-0 truncate">
+                On call — speak normally.
+                {voice.voiceStatus
+                  ? ` ${[voice.voiceStatus.llm, voice.voiceStatus.stt, voice.voiceStatus.tts]
+                      .filter(Boolean)
+                      .join(" · ")}`
+                  : ""}
+              </span>
+            </div>
+          ) : !voice.statusLoading &&
+            voice.voiceStatus &&
+            !voice.voiceStatus.ready ? (
+            <p className="border-b px-5 py-2 text-xs text-amber-500 transition-colors duration-300">
+              {voice.voiceStatus.message ?? "Voice is not configured for this workspace."}
+            </p>
+          ) : null}
 
           <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
             {snapshotLoading ? (
