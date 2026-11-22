@@ -13,7 +13,7 @@ An embedding API key (configured in **AI Models Configuration → Embedding**) i
 
 ## How It Works
 
-1. You **upload** a document (PDF, DOCX, TXT, or JSON) to the Knowledge Base
+1. You **upload** a document (PDF, DOCX, XLSX, CSV, TXT, or JSON) to the Knowledge Base
 2. You **choose a retrieval mode** — Full Document or Chunked Search
 3. Bolo **processes** the document based on the selected mode
 4. You **attach** the document to one or more workflow nodes
@@ -25,10 +25,15 @@ An embedding API key (configured in **AI Models Configuration → Embedding**) i
 |--------|-----------|
 | PDF    | `.pdf`    |
 | Word   | `.docx`, `.doc` |
-| Text   | `.txt`    |
+| Excel  | `.xlsx`   |
+| CSV    | `.csv`    |
+| Text   | `.txt`, `.md` |
 | JSON   | `.json`   |
 
 Maximum file size: **5 MB**
+
+Spreadsheets (`.xlsx`, `.csv`) are parsed locally in your Bolo instance; other
+formats are converted by the document processing service.
 
 ## Uploading Documents
 

@@ -5,6 +5,8 @@ this task downloads the file from S3, calls MPS, then handles the embedding
 and DB writes locally.
 """
 
+import csv
+import io
 import os
 import tempfile
 
@@ -18,6 +20,153 @@ from api.services.storage import storage_fs
 
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
 EMBEDDING_BATCH_SIZE = 64
+
+# Spreadsheets are converted locally instead of going through MPS.
+SPREADSHEET_EXTENSIONS = {".xlsx", ".csv"}
+SPREADSHEET_ROWS_PER_CHUNK = 40
+MAX_SPREADSHEET_ROWS = 5_000
+MAX_SPREADSHEET_COLUMNS = 50
+
+
+def _is_spreadsheet(filename: str) -> bool:
+    return os.path.splitext(filename)[1].lower() in SPREADSHEET_EXTENSIONS
+
+
+def _clean_spreadsheet_row(raw_row) -> list[str]:
+    cells = ["" if value is None else str(value).strip() for value in raw_row]
+    cells = cells[:MAX_SPREADSHEET_COLUMNS]
+    while cells and not cells[-1]:
+        cells.pop()
+    return cells
+
+
+def _read_xlsx_sheets(path: str) -> list[tuple[str, list[list[str]]]]:
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    remaining = MAX_SPREADSHEET_ROWS
+    sheets: list[tuple[str, list[list[str]]]] = []
+    try:
+        for worksheet in workbook.worksheets:
+            rows: list[list[str]] = []
+            for raw_row in worksheet.iter_rows(values_only=True):
+                cleaned = _clean_spreadsheet_row(raw_row)
+                if not cleaned:
+                    continue
+                rows.append(cleaned)
+                remaining -= 1
+                if remaining <= 0:
+                    break
+            if rows:
+                sheets.append((worksheet.title or "Sheet", rows))
+            if remaining <= 0:
+                break
+    finally:
+        workbook.close()
+    return sheets
+
+
+def _read_csv_rows(path: str) -> list[list[str]]:
+    with open(path, "rb") as handle:
+        payload = handle.read()
+    try:
+        text = payload.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        # CSVs saved by desktop Excel are often cp1252, not UTF-8.
+        text = payload.decode("cp1252", errors="replace")
+
+    try:
+        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+
+    rows: list[list[str]] = []
+    for raw_row in csv.reader(io.StringIO(text), dialect):
+        cleaned = _clean_spreadsheet_row(raw_row)
+        if cleaned:
+            rows.append(cleaned)
+        if len(rows) >= MAX_SPREADSHEET_ROWS:
+            break
+    return rows
+
+
+def _read_spreadsheet_sheets(
+    path: str, extension: str, display_name: str
+) -> list[tuple[str, list[list[str]]]]:
+    if extension == ".xlsx":
+        sheets = _read_xlsx_sheets(path)
+    else:
+        rows = _read_csv_rows(path)
+        sheet_name = os.path.splitext(display_name)[0]
+        sheets = [(sheet_name, rows)] if rows else []
+    if not sheets:
+        raise ValueError("The spreadsheet has no readable rows.")
+    return sheets
+
+
+def _markdown_table(rows: list[list[str]]) -> str:
+    width = max(len(row) for row in rows)
+
+    def render(cells: list[str]) -> str:
+        padded = cells + [""] * (width - len(cells))
+        escaped = [cell.replace("|", "\\|").replace("\n", " ") for cell in padded]
+        return "| " + " | ".join(escaped) + " |"
+
+    header, *body = rows
+    lines = [render(header), "| " + " | ".join(["---"] * width) + " |"]
+    lines.extend(render(row) for row in body)
+    return "\n".join(lines)
+
+
+def _spreadsheet_markdown(
+    display_name: str, sheets: list[tuple[str, list[list[str]]]]
+) -> str:
+    blocks = [f"# {display_name}"]
+    for name, rows in sheets:
+        blocks.append(f"## Sheet: {name}\n\n{_markdown_table(rows)}")
+    return "\n\n".join(blocks)
+
+
+def _spreadsheet_metadata(
+    sheets: list[tuple[str, list[list[str]]]],
+) -> dict:
+    return {
+        "conversion": "local_spreadsheet",
+        "sheets": [name for name, _ in sheets],
+        "rows": sum(len(rows) for _, rows in sheets),
+    }
+
+
+def _spreadsheet_chunks(
+    display_name: str, sheets: list[tuple[str, list[list[str]]]]
+) -> list[dict]:
+    chunks: list[dict] = []
+    for name, rows in sheets:
+        header, body = rows[0], rows[1:]
+        for start in range(0, len(body), SPREADSHEET_ROWS_PER_CHUNK):
+            group = body[start : start + SPREADSHEET_ROWS_PER_CHUNK]
+            row_start = start + 2
+            row_end = start + 1 + len(group)
+            text = (
+                f"{display_name} — sheet {name}, rows {row_start}-{row_end}\n\n"
+                + _markdown_table([header, *group])
+            )
+            chunks.append(
+                {
+                    "chunk_text": text,
+                    "chunk_index": len(chunks),
+                    "chunk_metadata": {
+                        "source": "spreadsheet",
+                        "sheet": name,
+                        "row_start": row_start,
+                        "row_end": row_end,
+                    },
+                    "token_count": max(len(text) // 4, 1),
+                }
+            )
+    if not chunks:
+        raise ValueError("The spreadsheet has no data rows below its header to index.")
+    return chunks
 
 
 async def _embed_texts_in_batches(
@@ -173,21 +322,41 @@ async def process_knowledge_base_document(
                     f"model={embeddings_model}"
                 )
 
-        logger.info(f"Delegating document processing to MPS (mode={retrieval_mode})")
-        mps_response = await mps_service_key_client.process_document(
-            file_path=temp_file_path,
-            filename=filename,
-            content_type=mime_type or "application/octet-stream",
-            retrieval_mode=retrieval_mode,
-            max_tokens=max_tokens,
-            organization_id=document.organization_id,
-            created_by=created_by_provider_id,
+        is_spreadsheet = _is_spreadsheet(filename)
+        sheets = (
+            _read_spreadsheet_sheets(temp_file_path, file_extension.lower(), filename)
+            if is_spreadsheet
+            else []
         )
 
-        docling_metadata = mps_response.get("docling_metadata", {})
+        mps_response: dict = {}
+        if is_spreadsheet:
+            logger.info(
+                f"Converting spreadsheet locally: {len(sheets)} sheet(s), "
+                f"mode={retrieval_mode}"
+            )
+            docling_metadata = _spreadsheet_metadata(sheets)
+        else:
+            logger.info(
+                f"Delegating document processing to MPS (mode={retrieval_mode})"
+            )
+            mps_response = await mps_service_key_client.process_document(
+                file_path=temp_file_path,
+                filename=filename,
+                content_type=mime_type or "application/octet-stream",
+                retrieval_mode=retrieval_mode,
+                max_tokens=max_tokens,
+                organization_id=document.organization_id,
+                created_by=created_by_provider_id,
+            )
+            docling_metadata = mps_response.get("docling_metadata", {})
 
         if retrieval_mode == "full_document":
-            full_text = mps_response.get("full_text") or ""
+            full_text = (
+                _spreadsheet_markdown(filename, sheets)
+                if is_spreadsheet
+                else mps_response.get("full_text") or ""
+            )
             await db_client.update_document_full_text(document_id, full_text)
             await db_client.update_document_status(
                 document_id,
@@ -225,7 +394,10 @@ async def process_knowledge_base_document(
             resolve_correlation=True,
         )
 
-        mps_chunks = mps_response.get("chunks", [])
+        if is_spreadsheet:
+            mps_chunks = _spreadsheet_chunks(filename, sheets)
+        else:
+            mps_chunks = mps_response.get("chunks", [])
         if not mps_chunks:
             logger.warning(f"Document {document_id}: MPS returned zero chunks")
 
