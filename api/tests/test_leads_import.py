@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
 
-from api.routes.leads import router
+from api.routes.leads import preview_lead_import, router
 from api.services.auth.depends import get_user
 from api.services.leads.imports import (
     TEMPLATE_HEADERS,
@@ -291,3 +291,39 @@ async def test_import_creates_updates_and_preserves_crm_fields(
         owner_user_id=other_user.id,
     )
     assert other_summary == {"created": 1, "updated": 0, "duplicates": 0}
+
+
+@pytest.mark.asyncio
+async def test_preview_counts_leads_already_in_the_crm(db_session):
+    from starlette.datastructures import Headers, UploadFile
+
+    user, org = await _org(db_session)
+    _, seeded = _prepare("Business name,Phone\nAcme Roofing,+1 512 555 0100\n")
+    await db_session.upsert_imported_leads(
+        organization_id=org.id,
+        leads=seeded.leads,
+        owner_user_id=user.id,
+    )
+
+    upload = UploadFile(
+        file=io.BytesIO(
+            _csv(
+                "Business name,Phone\n"
+                "Acme Roofing,+1 512 555 0100\n"
+                "Cedar Works,+1 512 555 0199\n"
+            )
+        ),
+        filename="leads.csv",
+        headers=Headers({"content-type": "text/csv"}),
+    )
+    result = await preview_lead_import(
+        file=upload,
+        country_code="US",
+        user=SimpleNamespace(id=user.id, selected_organization_id=org.id),
+    )
+
+    assert result.ready_rows == 2
+    assert result.existing_rows == 1
+    rows = {row.title: row for row in result.leads}
+    assert rows["Acme Roofing"].existing is True
+    assert rows["Cedar Works"].existing is False

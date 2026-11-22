@@ -626,6 +626,51 @@ class LeadClient(BaseDBClient):
                 remember(row)
         return phone_keys, email_keys, matches
 
+    async def match_imported_leads(
+        self,
+        *,
+        organization_id: int,
+        leads: Iterable[dict[str, Any]],
+    ) -> set[str]:
+        """Dedupe keys of import rows this organization already has.
+
+        Uses the same phone/email/key resolution as ``upsert_imported_leads``
+        so a preview reports exactly the rows an import would update.
+        """
+        rows = [dict(row) for row in leads]
+        if not rows:
+            return set()
+        phones = sorted({row["phone_e164"] for row in rows if row.get("phone_e164")})
+        emails = sorted({row["email"].lower() for row in rows if row.get("email")})
+        keys = sorted({key for row in rows if (key := row.get("dedupe_key"))})
+        if not phones and not emails and not keys:
+            return set()
+
+        async with self.async_session() as session:
+            phone_keys, email_keys, matches = await self._import_matches(
+                session,
+                organization_id,
+                phones=phones,
+                emails=emails,
+                keys=keys,
+            )
+
+        existing: set[str] = set()
+        for row in rows:
+            key = row.get("dedupe_key")
+            if not key:
+                continue
+            phone = row.get("phone_e164")
+            email = row.get("email")
+            resolved = phone_keys.get(phone) if phone else None
+            if resolved is None and email:
+                resolved = email_keys.get(email.lower())
+            if resolved is None:
+                resolved = key
+            if resolved in matches:
+                existing.add(key)
+        return existing
+
     async def upsert_imported_leads(
         self,
         *,

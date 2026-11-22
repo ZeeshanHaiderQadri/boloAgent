@@ -4251,6 +4251,10 @@ export type LeadImportPreviewResponse = {
      */
     duplicate_rows: number;
     /**
+     * Existing Rows
+     */
+    existing_rows?: number;
+    /**
      * Mapped Columns
      */
     mapped_columns?: {
@@ -4282,6 +4286,10 @@ export type LeadImportPreviewRow = {
      * Row Number
      */
     row_number: number;
+    /**
+     * Existing
+     */
+    existing?: boolean;
     /**
      * Title
      */

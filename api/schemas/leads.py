@@ -195,6 +195,9 @@ class LeadListResponse(BaseModel):
 class LeadImportPreviewRow(BaseModel):
     sheet: str
     row_number: int
+    # True when a lead with the same phone, email or identity key is already
+    # in this organization's CRM, so the import will update it.
+    existing: bool = False
     title: str | None = None
     phone: str | None = None
     phone_e164: str | None = None
@@ -215,6 +218,7 @@ class LeadImportPreviewResponse(BaseModel):
     ready_rows: int
     skipped_rows: int
     duplicate_rows: int
+    existing_rows: int = 0
     mapped_columns: dict[str, str] = Field(default_factory=dict)
     ignored_columns: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
