@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 from fastapi import HTTPException
+from pipecat.frames.frames import ErrorFrame
+from pipecat.processors.frame_processor import FrameDirection
 from pydantic import BaseModel
 from starlette.websockets import WebSocketState
 
@@ -154,6 +156,82 @@ async def test_voice_configuration_reports_unreachable_speaches(monkeypatch):
     message = str(excinfo.value)
     assert "The voice service does not answer at http://localhost:11434/v1" in message
     assert "host.docker.internal" in message
+
+
+class _ModelsResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _ModelsClient:
+    def __init__(self, payload):
+        self._payload = payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def get(self, url, headers=None):
+        return _ModelsResponse(self._payload)
+
+
+@pytest.mark.asyncio
+async def test_voice_configuration_rejects_a_model_the_endpoint_does_not_serve(
+    monkeypatch,
+):
+    config = _effective(
+        tts=_Config(
+            provider="openai",
+            model="gpt-4o-mini-tts",
+            base_url="http://host.docker.internal:31415/v1",
+        )
+    )
+    monkeypatch.setattr(
+        voice.httpx,
+        "AsyncClient",
+        lambda **kwargs: _ModelsClient(
+            {"data": [{"id": "auto"}, {"id": "llama-3.3-70b"}]}
+        ),
+    )
+    with patch.object(
+        voice,
+        "get_resolved_ai_model_configuration",
+        AsyncMock(return_value=_resolved(config)),
+    ):
+        with pytest.raises(voice.VoiceConfigurationError) as excinfo:
+            await voice.voice_configuration(42)
+
+    message = str(excinfo.value)
+    assert "does not serve model 'gpt-4o-mini-tts'" in message
+    assert "auto" in message
+
+
+@pytest.mark.asyncio
+async def test_voice_configuration_accepts_auto_and_listed_custom_models(monkeypatch):
+    monkeypatch.setattr(
+        voice.httpx,
+        "AsyncClient",
+        lambda **kwargs: _ModelsClient({"data": [{"id": "auto"}, {"id": "tts-model"}]}),
+    )
+    for model in ("auto", "tts-model"):
+        config = _effective(
+            tts=_Config(provider="openai", model=model, base_url="http://router/v1")
+        )
+        with patch.object(
+            voice,
+            "get_resolved_ai_model_configuration",
+            AsyncMock(return_value=_resolved(config)),
+        ):
+            resolved = await voice.voice_configuration(42)
+        assert resolved is config
 
 
 @pytest.mark.asyncio
@@ -331,7 +409,10 @@ async def test_offer_starts_pipeline_with_org_slot_and_read_only_scope():
 
     acquire.assert_awaited_once_with(42, source="copilot_voice", timeout=0)
     assert connection.initialized == {"sdp": "offer-sdp", "type": "offer"}
-    run.assert_awaited_once_with(connection, session.ctx)
+    run.assert_awaited_once()
+    run_args, run_kwargs = run.await_args
+    assert run_args == (connection, session.ctx)
+    assert callable(run_kwargs["on_error"])
     assert session.ctx == CTX
     assert session.websocket.sent[0]["type"] == "answer"
     assert session.websocket.sent[0]["payload"]["pc_id"] == "pc-1"
@@ -433,3 +514,75 @@ async def test_call_end_notification_closes_the_socket_once():
     assert session.websocket.sent[0]["payload"]["reason"] == "peer_connection_closed"
     assert session.websocket.close.await_count == 1
     assert session.websocket.close.await_args.kwargs["code"] == 1000
+
+
+class _PeerConnection:
+    def __init__(self, ready: bool = False):
+        self.ready = ready
+        self.handlers = {}
+
+    def is_connected(self) -> bool:
+        return self.ready
+
+    def event_handler(self, name):
+        def register(handler):
+            self.handlers[name] = handler
+            return handler
+
+        return register
+
+    async def fire(self, name):
+        await self.handlers[name](self)
+
+
+@pytest.mark.asyncio
+async def test_wait_for_peer_returns_when_already_connected():
+    await voice._wait_for_peer(_PeerConnection(ready=True), timeout=0.01)
+
+
+@pytest.mark.asyncio
+async def test_wait_for_peer_blocks_until_the_connection_event():
+    connection = _PeerConnection()
+    waiter = asyncio.create_task(voice._wait_for_peer(connection, timeout=1))
+    await asyncio.sleep(0)
+
+    assert not waiter.done()
+    await connection.fire("connected")
+    await asyncio.wait_for(waiter, timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_wait_for_peer_times_out_with_a_clear_error():
+    with pytest.raises(voice.VoiceConfigurationError) as excinfo:
+        await voice._wait_for_peer(_PeerConnection(), timeout=0.01)
+
+    assert "audio channel did not open" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_voice_error_relay_reports_the_first_error_once():
+    reported = AsyncMock()
+    relay = voice._VoiceErrorRelay(reported)
+    raw = "Unknown error occurred: Error code: 400 - speech error: Unknown audio model 'gpt-4o-mini-tts'."
+
+    await relay.process_frame(ErrorFrame(error=raw), FrameDirection.DOWNSTREAM)
+    await relay.process_frame(ErrorFrame(error=f"  {raw}  "), FrameDirection.DOWNSTREAM)
+
+    reported.assert_awaited_once()
+    assert "gpt-4o-mini-tts" in reported.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_audio_errors_end_the_call_with_an_actionable_message():
+    session = _session()
+
+    await session._on_audio_error(
+        "Unknown error occurred: Error code: 400 - speech error: "
+        "Unknown audio model 'gpt-4o-mini-tts'."
+    )
+
+    assert [m["type"] for m in session.websocket.sent] == ["error", "call-ended"]
+    error = session.websocket.sent[0]["payload"]
+    assert error["error_type"] == "voice_pipeline_failed"
+    assert "rejected speech synthesis" in error["message"]
+    assert "gpt-4o-mini-tts" in error["message"]

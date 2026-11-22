@@ -161,7 +161,9 @@ class CopilotVoiceSession:
                 await self._notify_call_ended("peer_connection_closed")
 
             self.pipeline_task = asyncio.create_task(
-                voice.run_voice_pipeline(connection, self.ctx)
+                voice.run_voice_pipeline(
+                    connection, self.ctx, on_error=self._on_audio_error
+                )
             )
             self.pipeline_task.add_done_callback(self._on_pipeline_done)
 
@@ -248,6 +250,16 @@ class CopilotVoiceSession:
                 "and voice connections in Model connections."
             )
         asyncio.create_task(self._fail_session(message))
+
+    async def _on_audio_error(self, error: str) -> None:
+        """A speech service failed mid-call; the caller would otherwise sit in silence."""
+        if self.closed:
+            return
+        logger.warning(
+            f"Copilot voice audio error for conversation "
+            f"{self.conversation.id}: {error}"
+        )
+        await self._fail_session(voice.voice_error_message(error))
 
     async def _fail_session(self, message: str) -> None:
         await self._send_error(message, error_type="voice_pipeline_failed")

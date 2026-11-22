@@ -21,12 +21,13 @@ import httpx
 from loguru import logger
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
-from pipecat.frames.frames import TTSSpeakFrame
+from pipecat.frames.frames import ErrorFrame, Frame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
 )
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.services.llm_service import FunctionCallParams
 from pydantic import ValidationError
 
@@ -55,6 +56,18 @@ from .tools import TOOLS, CopilotContext, CopilotTool
 
 VOICE_GREETING = "Hi, this is Bolo Agent. What would you like to look up?"
 
+# Speech endpoints that expose an OpenAI-style ``/models`` list, so a
+# misconfigured model name can be caught before the call starts.
+_PROBED_SPEECH_PROVIDERS = {
+    ServiceProviders.SPEACHES.value,
+    ServiceProviders.OPENAI.value,
+}
+
+# The turn pipeline greets immediately. Starting it before ICE finishes writes
+# audio into a connection that is still negotiating, and ten failed writes
+# cancel the pipeline.
+PEER_CONNECT_TIMEOUT_SECS = 20.0
+
 
 class VoiceConfigurationError(Exception):
     """The organization cannot run a voice session on its own connections."""
@@ -68,13 +81,76 @@ def _label(connection: Any) -> str:
     return f"{_provider(connection)} / {connection.model}"
 
 
+async def _wait_for_peer(
+    connection: Any, timeout: float = PEER_CONNECT_TIMEOUT_SECS
+) -> None:
+    """Hold the pipeline until the peer connection is up.
+
+    The greeting is spoken as soon as the pipeline starts. Starting it while
+    ICE is still gathering writes audio into a connection that is not ready,
+    and the output transport cancels the pipeline after ten failed writes.
+    """
+    if connection.is_connected():
+        return
+    connected = asyncio.Event()
+
+    @connection.event_handler("connected")
+    async def _on_connected(_connection):
+        connected.set()
+
+    try:
+        await asyncio.wait_for(connected.wait(), timeout=timeout)
+    except TimeoutError as exc:
+        raise VoiceConfigurationError(
+            "The call reached the server but its audio channel did not open. "
+            "Check your network and try again."
+        ) from exc
+
+
+class _VoiceErrorRelay(FrameProcessor):
+    """Report the first pipeline error to the call UI.
+
+    Speech failures arrive as non-fatal ``ErrorFrame``s, so without this the
+    call stays "live" and silent instead of telling the caller what went wrong.
+    """
+
+    def __init__(self, on_error: Callable[[str], Awaitable[None]]):
+        super().__init__()
+        self._on_error = on_error
+        self._reported: str | None = None
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if isinstance(frame, ErrorFrame):
+            message = " ".join(str(frame.error or "").split())
+            if message and message != self._reported:
+                self._reported = message
+                await self._on_error(message)
+        await self.push_frame(frame, direction)
+
+
+def voice_error_message(error: str) -> str:
+    """A short, actionable sentence for the call UI."""
+    text = " ".join(str(error or "").split())
+    lowered = text.lower()
+    if "speech error" in lowered or "audio model" in lowered:
+        return (
+            "The voice provider rejected speech synthesis. Check the TTS model "
+            f"in Model connections. ({text[:220]})"
+        )
+    return f"The voice session stopped on an audio error. ({text[:220]})"
+
+
 async def _speech_problem(role: str, connection: Any) -> str | None:
     """Why a self-hosted speech endpoint would leave the call silent, if it would.
 
     The readiness check used to verify presence only, so an unreachable
-    Speaches endpoint produced a connected call with no audio and no clue.
+    Speaches endpoint produced a connected call with no audio and no clue. We
+    now probe any custom OpenAI-compatible endpoint and require it to serve the
+    configured model, which is how a router rejecting the model gets caught
+    before the call instead of during it.
     """
-    if _provider(connection) != ServiceProviders.SPEACHES.value:
+    if _provider(connection) not in _PROBED_SPEECH_PROVIDERS:
         return None
     base_url = (getattr(connection, "base_url", None) or "").rstrip("/")
     if not base_url:
@@ -87,6 +163,7 @@ async def _speech_problem(role: str, connection: Any) -> str | None:
         async with httpx.AsyncClient(timeout=3) as client:
             response = await client.get(f"{base_url}/models", headers=headers)
         response.raise_for_status()
+        payload = response.json()
     except (httpx.HTTPError, ValueError):
         host = urlsplit(base_url).hostname
         hint = (
@@ -96,6 +173,20 @@ async def _speech_problem(role: str, connection: Any) -> str | None:
             else ""
         )
         return f"The {role} service does not answer at {base_url}.{hint}"
+
+    model = getattr(connection, "model", None)
+    if not model or model == "auto":
+        return None
+    items = payload.get("data", []) if isinstance(payload, dict) else []
+    offered = {
+        str(item["id"]) for item in items if isinstance(item, dict) and item.get("id")
+    }
+    if offered and model not in offered:
+        return (
+            f"The {role} endpoint at {base_url} does not serve model "
+            f"'{model}'. Pick 'auto' or a model this endpoint lists in Model "
+            "connections."
+        )
     return None
 
 
@@ -258,9 +349,11 @@ def voice_tools_schema(ctx: CopilotContext) -> ToolsSchema:
 async def run_voice_pipeline(
     webrtc_connection,
     ctx: CopilotContext,
+    on_error: Callable[[str], Awaitable[None]] | None = None,
 ) -> None:
     """Run one voice session until the peer connection closes."""
     config = await voice_configuration(ctx.organization_id)
+    await _wait_for_peer(webrtc_connection)
     audio_config = create_audio_config(WorkflowRunMode.SMALLWEBRTC.value)
 
     transport = await create_webrtc_transport(
@@ -281,17 +374,18 @@ async def run_voice_pipeline(
     )
     aggregators = LLMContextAggregatorPair(context)
 
-    pipeline = Pipeline(
-        [
-            transport.input(),
-            stt,
-            aggregators.user(),
-            llm,
-            tts,
-            transport.output(),
-            aggregators.assistant(),
-        ]
-    )
+    processors = [
+        transport.input(),
+        stt,
+        aggregators.user(),
+        llm,
+        tts,
+    ]
+    if on_error is not None:
+        processors.append(_VoiceErrorRelay(on_error))
+    processors.extend([transport.output(), aggregators.assistant()])
+
+    pipeline = Pipeline(processors)
     task = create_pipeline_task(
         pipeline,
         ctx.conversation_id,
