@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { WebAccessSection } from "@/components/WebAccessSection";
 
 export default function SettingsPage() {
   return (
@@ -29,6 +30,28 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <OrganizationPreferencesSection />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Bolo Agent web access</CardTitle>
+          <CardDescription>
+            Choose which web search connectors the Bolo Agent may use. Exa is
+            free and on by default; add a key for Tavily, Firecrawl, Serper or
+            SerpAPI.{" "}
+            <a
+              href="https://docs.boloagent.com/integrations/web-access"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 underline"
+            >
+              Learn more <ExternalLink className="h-3 w-3" />
+            </a>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <WebAccessSection />
         </CardContent>
       </Card>
 

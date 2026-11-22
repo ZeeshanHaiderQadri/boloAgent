@@ -1756,6 +1756,90 @@ export type CopilotVoiceStatus = {
 };
 
 /**
+ * CopilotWebAccessSettings
+ */
+export type CopilotWebAccessSettings = {
+    /**
+     * Providers
+     */
+    providers: Array<CopilotWebProvider>;
+    /**
+     * Any Enabled
+     */
+    any_enabled: boolean;
+};
+
+/**
+ * CopilotWebAccessUpdate
+ */
+export type CopilotWebAccessUpdate = {
+    /**
+     * Providers
+     */
+    providers: Array<CopilotWebProviderUpdate>;
+};
+
+/**
+ * CopilotWebProvider
+ */
+export type CopilotWebProvider = {
+    /**
+     * Name
+     */
+    name: 'exa' | 'tavily' | 'firecrawl' | 'serper' | 'serpapi';
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Keyless
+     */
+    keyless: boolean;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Configured
+     */
+    configured: boolean;
+    /**
+     * Supports Search
+     */
+    supports_search: boolean;
+    /**
+     * Supports Fetch
+     */
+    supports_fetch: boolean;
+    /**
+     * Docs Url
+     */
+    docs_url: string;
+};
+
+/**
+ * CopilotWebProviderUpdate
+ */
+export type CopilotWebProviderUpdate = {
+    /**
+     * Name
+     */
+    name: 'exa' | 'tavily' | 'firecrawl' | 'serper' | 'serpapi';
+    /**
+     * Enabled
+     */
+    enabled?: boolean | null;
+    /**
+     * Api Key
+     */
+    api_key?: string | null;
+    /**
+     * Clear Key
+     */
+    clear_key?: boolean;
+};
+
+/**
  * CreateAPIKeyRequest
  */
 export type CreateApiKeyRequest = {
@@ -14784,6 +14868,84 @@ export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostRe
 };
 
 export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponse = DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponses[keyof DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostResponses];
+
+export type GetWebAccessApiV1CopilotWebAccessGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/copilot/web-access';
+};
+
+export type GetWebAccessApiV1CopilotWebAccessGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetWebAccessApiV1CopilotWebAccessGetError = GetWebAccessApiV1CopilotWebAccessGetErrors[keyof GetWebAccessApiV1CopilotWebAccessGetErrors];
+
+export type GetWebAccessApiV1CopilotWebAccessGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CopilotWebAccessSettings;
+};
+
+export type GetWebAccessApiV1CopilotWebAccessGetResponse = GetWebAccessApiV1CopilotWebAccessGetResponses[keyof GetWebAccessApiV1CopilotWebAccessGetResponses];
+
+export type UpdateWebAccessApiV1CopilotWebAccessPutData = {
+    body: CopilotWebAccessUpdate;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/copilot/web-access';
+};
+
+export type UpdateWebAccessApiV1CopilotWebAccessPutErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateWebAccessApiV1CopilotWebAccessPutError = UpdateWebAccessApiV1CopilotWebAccessPutErrors[keyof UpdateWebAccessApiV1CopilotWebAccessPutErrors];
+
+export type UpdateWebAccessApiV1CopilotWebAccessPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: CopilotWebAccessSettings;
+};
+
+export type UpdateWebAccessApiV1CopilotWebAccessPutResponse = UpdateWebAccessApiV1CopilotWebAccessPutResponses[keyof UpdateWebAccessApiV1CopilotWebAccessPutResponses];
 
 export type VoiceStatusApiV1CopilotVoiceGetData = {
     body?: never;
