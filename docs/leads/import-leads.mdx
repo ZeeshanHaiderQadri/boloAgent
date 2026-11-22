@@ -1,0 +1,74 @@
+---
+title: "Import your own leads"
+description: "Upload a spreadsheet of businesses you already know and turn its columns into CRM leads with the same phone, WhatsApp and social-profile icons as a Google Maps search."
+---
+
+If you already have a list of businesses — from a trade show, a customer list
+or another tool — you do not need to run a Google Maps search for them. Bolo
+can read an Excel or CSV file and turn each row into a CRM lead.
+
+## Download the template
+
+Open **Leads → Import** (the same button exists on the CRM page) and choose
+**Excel template** or **CSV template**. The Excel file has a short "How to fill
+this in" sheet and two example rows you should delete before uploading.
+
+Keep the header row and put one business per row. Column order does not
+matter, and the header names are matched loosely: `Business Phone`, `Mobile`,
+`E-mail`, `Instagram URL` and similar spellings are recognized, while a header
+like `Street` is read as the address.
+
+## Columns Bolo understands
+
+| Column | Notes |
+|---|---|
+| Business name | Required. Rows without a name are skipped and listed as warnings. |
+| Category | Used by CRM filters and campaigns. |
+| Phone | The first number that parses as a valid phone number is kept. International format is best; a country on the row helps read national numbers. |
+| Email | First valid address is kept. Email consent starts as **Unknown**. |
+| Website | `acme.com` and `https://acme.com` both work. Changing it later clears cached social profiles. |
+| Address, City, State, Country, Postal code | Stored as location fields. `US` and `United States` both work. |
+| Instagram, LinkedIn, Facebook, X, TikTok, YouTube | A full profile link or an `@handle`. Handles are expanded to the platform's profile URL. |
+| Status | New, Contacted, Interested, Not interested, Won, Lost or Do not call. |
+| Tags | Comma-separated, up to 20 tags of 64 characters each. |
+| Notes | Free text, up to 20,000 characters. |
+| Rating, Reviews | Optional, carried over from the sheet. |
+
+## Preview before importing
+
+Select the file and press **Preview**. Bolo parses the sheet without writing
+anything and shows:
+
+- how many rows are ready, skipped or duplicated inside the file,
+- which columns were recognized and which were ignored,
+- per-row warnings (missing business name, a social cell that is not a profile
+  link, a phone that could not be parsed),
+- a table of the first rows exactly as they will be saved.
+
+Only after you press **Import** are leads written.
+
+## What happens to existing leads
+
+Rows are matched against your organization's CRM by phone number (E.164),
+website domain or email address — the same keys a Google Maps search uses.
+
+- **Match found:** business fields from the sheet refresh the lead (name,
+  phone, email, website, location, socials, rating). Your outreach state —
+  CRM status, tags, notes and consent — is left as it is. Provenance and the
+  original provider data are not overwritten.
+- **Email address changed:** the old consent decision was evidence about the
+  old mailbox, so consent resets to **Unknown** and a timeline entry explains
+  why.
+- **No match:** a new lead is created with source `import`.
+
+Importing the same file twice updates the same leads instead of duplicating
+them, and rows that repeat inside one file are counted as duplicates.
+
+## Limits
+
+- Files up to 5 MB and 5,000 data rows. Split larger lists and import the
+  parts one after another; the adjustment is transparent because the second
+  file updates instead of duplicating.
+- `.xlsx` and `.csv` only. In Excel files, the first sheet with a recognizable
+  header row is used, so a "Read me" sheet is ignored.
+- The upload is parsed in-process; nothing is sent to a third party.

@@ -27,6 +27,7 @@ import type {
 } from "@/client/types.gen";
 import type { LeadResponse } from "@/client/types.gen";
 import { PageLayout, PageSection } from "@/components/layout/PageLayout";
+import { ImportLeadsButton } from "@/components/leads/ImportLeadsButton";
 import { LeadTable } from "@/components/leads/LeadTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -138,6 +139,7 @@ export default function LeadsPage() {
                             Projects
                         </Link>
                     </Button>
+                    <ImportLeadsButton onImported={() => void fetchOverview()} />
                     <Button asChild>
                         <Link href="/leads/new">
                             <Plus className="h-4 w-4" />

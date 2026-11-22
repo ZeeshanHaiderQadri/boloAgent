@@ -1,6 +1,7 @@
 """Organization-scoped database access for lead generation and CRM records."""
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -63,6 +64,25 @@ _LEAD_REFRESH_FIELDS = (
     "raw_data",
     "source",
 )
+
+# An import may refresh the business fields of an existing lead, but it must
+# not rewrite provenance or throw away provider data it never supplied.
+_IMPORT_REFRESH_FIELDS = tuple(
+    field for field in _LEAD_REFRESH_FIELDS if field not in {"source", "raw_data"}
+)
+
+
+@dataclass
+class _ImportLeadMatch:
+    id: int
+    email: str | None
+    email_consent: str
+    website: str | None
+
+
+def _chunks(values: list[str], size: int = 400):
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
 
 
 def _lead_filters(
@@ -527,6 +547,221 @@ class LeadClient(BaseDBClient):
             "new_leads_count": new_leads,
             "updated_leads_count": updated_leads,
         }
+
+    async def _import_matches(
+        self,
+        session,
+        organization_id: int,
+        *,
+        phones: list[str],
+        emails: list[str],
+        keys: list[str],
+    ) -> tuple[dict[str, str], dict[str, str], dict[str, _ImportLeadMatch]]:
+        """Find leads an import row already represents.
+
+        A spreadsheet has no place id, so identity comes from the contact
+        details the operator supplied. Matching against existing scrape
+        results here keeps a lead imported once from splitting in two when
+        the same business was also collected from Google Maps.
+        """
+        matches: dict[str, _ImportLeadMatch] = {}
+        phone_keys: dict[str, str] = {}
+        email_keys: dict[str, str] = {}
+
+        def remember(row) -> None:
+            match = _ImportLeadMatch(
+                id=row.id,
+                email=row.email,
+                email_consent=row.email_consent or "unknown",
+                website=row.website,
+            )
+            matches.setdefault(row.dedupe_key, match)
+            if row.phone_e164:
+                phone_keys.setdefault(row.phone_e164, row.dedupe_key)
+            if row.email:
+                email_keys.setdefault(row.email.lower(), row.dedupe_key)
+
+        columns = (
+            LeadModel.id,
+            LeadModel.dedupe_key,
+            LeadModel.phone_e164,
+            LeadModel.email,
+            LeadModel.email_consent,
+            LeadModel.website,
+        )
+        for chunk in _chunks(phones):
+            result = await session.execute(
+                select(*columns)
+                .where(
+                    LeadModel.organization_id == organization_id,
+                    LeadModel.phone_e164.in_(chunk),
+                )
+                .order_by(LeadModel.id)
+            )
+            for row in result.all():
+                remember(row)
+        for chunk in _chunks(emails):
+            result = await session.execute(
+                select(*columns)
+                .where(
+                    LeadModel.organization_id == organization_id,
+                    func.lower(LeadModel.email).in_(chunk),
+                )
+                .order_by(LeadModel.id)
+            )
+            for row in result.all():
+                remember(row)
+
+        missing = [key for key in dict.fromkeys(keys) if key not in matches]
+        for chunk in _chunks(missing):
+            result = await session.execute(
+                select(*columns)
+                .where(
+                    LeadModel.organization_id == organization_id,
+                    LeadModel.dedupe_key.in_(chunk),
+                )
+                .order_by(LeadModel.id)
+            )
+            for row in result.all():
+                remember(row)
+        return phone_keys, email_keys, matches
+
+    async def upsert_imported_leads(
+        self,
+        *,
+        organization_id: int,
+        leads: Iterable[dict[str, Any]],
+        owner_user_id: int | None = None,
+    ) -> dict[str, int]:
+        """Insert or refresh leads uploaded from an operator spreadsheet.
+
+        Unlike scraped rows these are not linked to a search. Rows that match
+        an existing lead (same phone, email or dedupe key) refresh its business
+        fields only: CRM status, tags, notes, owner and source are preserved.
+        New leads are owned by the operator who imported them.
+        """
+        rows = [dict(row) for row in leads]
+        if not rows:
+            return {"created": 0, "updated": 0, "duplicates": 0}
+
+        phones = sorted({row["phone_e164"] for row in rows if row.get("phone_e164")})
+        emails = sorted({row["email"].lower() for row in rows if row.get("email")})
+        keys = [row.get("dedupe_key") for row in rows if row.get("dedupe_key")]
+
+        created = 0
+        updated = 0
+        duplicates = 0
+        seen: set[str] = set()
+
+        async with self.async_session() as session:
+            phone_keys, email_keys, matches = await self._import_matches(
+                session,
+                organization_id,
+                phones=phones,
+                emails=emails,
+                keys=keys,
+            )
+            now = datetime.now(UTC)
+
+            for row in rows:
+                key = None
+                phone = row.get("phone_e164")
+                email = row.get("email")
+                if phone and phone in phone_keys:
+                    key = phone_keys[phone]
+                elif email and email.lower() in email_keys:
+                    key = email_keys[email.lower()]
+                else:
+                    key = row.get("dedupe_key")
+                if not key:
+                    continue
+                if key in seen:
+                    duplicates += 1
+                    continue
+                seen.add(key)
+
+                previous = matches.get(key)
+                insert_values = {
+                    "organization_id": organization_id,
+                    **row,
+                    "dedupe_key": key,
+                }
+                if previous is None and owner_user_id is not None:
+                    insert_values["owner_user_id"] = owner_user_id
+                if row.get("social_links"):
+                    insert_values["socials_checked_at"] = now
+
+                insert_stmt = pg_insert(LeadModel).values(**insert_values)
+                # A sparse spreadsheet must not blank fields the lead already
+                # has; only values the operator actually supplied are refreshed.
+                refresh = {
+                    field: getattr(insert_stmt.excluded, field)
+                    for field in _IMPORT_REFRESH_FIELDS
+                    if row.get(field) not in (None, "")
+                }
+
+                if previous is not None and row.get("website"):
+                    old_website = (previous.website or "").strip() or None
+                    new_website = (row.get("website") or "").strip() or None
+                    if new_website != old_website:
+                        refresh.update(
+                            social_links={},
+                            socials_checked_at=None,
+                            socials_attempts=0,
+                            socials_next_attempt_at=None,
+                        )
+                if row.get("social_links"):
+                    refresh["social_links"] = getattr(
+                        insert_stmt.excluded, "social_links"
+                    )
+                    refresh["socials_checked_at"] = now
+
+                new_email = row.get("email")
+                if (
+                    previous is not None
+                    and new_email
+                    and email_address_changed(previous.email, new_email)
+                ):
+                    if previous.email_consent != "unknown":
+                        refresh.update(consent_reset_values())
+                    if has_address_bound_decision(
+                        previous.email, previous.email_consent
+                    ):
+                        activity = email_change_activity(
+                            organization_id=organization_id,
+                            lead_id=previous.id,
+                            user_id=owner_user_id,
+                            previous_email=previous.email,
+                            new_email=new_email,
+                            previous_consent=previous.email_consent,
+                            source="import",
+                        )
+                    else:
+                        activity = plain_email_change_activity(
+                            organization_id=organization_id,
+                            lead_id=previous.id,
+                            user_id=owner_user_id,
+                            previous_email=previous.email,
+                            new_email=new_email,
+                            source="import",
+                        )
+                    session.add(LeadActivityModel(**activity))
+
+                refresh["updated_at"] = now
+                await session.execute(
+                    insert_stmt.on_conflict_do_update(
+                        constraint="uq_leads_organization_dedupe_key",
+                        set_=refresh,
+                    )
+                )
+                if previous is None:
+                    created += 1
+                else:
+                    updated += 1
+
+            await session.commit()
+
+        return {"created": created, "updated": updated, "duplicates": duplicates}
 
     async def clear_search_results(self, search_id: int, organization_id: int) -> None:
         """Unlink every business from a search, keeping the org-wide leads.

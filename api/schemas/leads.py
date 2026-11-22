@@ -192,6 +192,44 @@ class LeadListResponse(BaseModel):
     total_pages: int
 
 
+class LeadImportPreviewRow(BaseModel):
+    sheet: str
+    row_number: int
+    title: str | None = None
+    phone: str | None = None
+    phone_e164: str | None = None
+    email: str | None = None
+    website: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    social_platforms: list[str] = Field(default_factory=list)
+    crm_status: str = "new"
+    issues: list[str] = Field(default_factory=list)
+
+
+class LeadImportPreviewResponse(BaseModel):
+    file_name: str
+    sheets: list[str] = Field(default_factory=list)
+    total_rows: int
+    ready_rows: int
+    skipped_rows: int
+    duplicate_rows: int
+    mapped_columns: dict[str, str] = Field(default_factory=dict)
+    ignored_columns: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    leads: list[LeadImportPreviewRow] = Field(default_factory=list)
+
+
+class LeadImportResponse(BaseModel):
+    total_rows: int
+    created: int
+    updated: int
+    duplicates: int
+    skipped: int
+    warnings: list[str] = Field(default_factory=list)
+
+
 class LeadFacetsResponse(BaseModel):
     """Filter values available in the CRM for the current organization."""
 

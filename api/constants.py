@@ -417,4 +417,8 @@ LEADS_SOCIAL_ENRICHMENT_ENABLED = (
 # Hard caps so a wide filter cannot exhaust memory or fill a PDF/PNG file.
 LEADS_EXPORT_MAX_ROWS = int(os.getenv("LEADS_EXPORT_MAX_ROWS", "5000"))
 LEADS_EXPORT_MAX_TABLE_ROWS = int(os.getenv("LEADS_EXPORT_MAX_TABLE_ROWS", "250"))
+# Operator spreadsheets are parsed in-process, so both the upload and the row
+# count are bounded before a single lead is written.
+LEADS_IMPORT_MAX_BYTES = int(os.getenv("LEADS_IMPORT_MAX_BYTES", str(5 * 1024 * 1024)))
+LEADS_IMPORT_MAX_ROWS = int(os.getenv("LEADS_IMPORT_MAX_ROWS", "5000"))
 LEADS_DISPATCH_MAX_LEADS = int(os.getenv("LEADS_DISPATCH_MAX_LEADS", "1000"))
