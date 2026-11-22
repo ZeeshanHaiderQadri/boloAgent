@@ -8,7 +8,12 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   getConversation: vi.fn(),
   send: vi.fn(),
+  remove: vi.fn(),
   decide: vi.fn(),
+  regenerate: vi.fn(),
+  uploadUrl: vi.fn(),
+  processDocument: vi.fn(),
+  getDocument: vi.fn(),
   voiceStatus: vi.fn(),
   turnCredentials: vi.fn(),
   auth: { user: { id: 1 } as { id: number } | null, loading: false },
@@ -19,7 +24,13 @@ vi.mock("@/client/sdk.gen", () => ({
   createConversationApiV1CopilotConversationsPost: mocks.create,
   getConversationApiV1CopilotConversationsConversationIdGet: mocks.getConversation,
   sendMessageApiV1CopilotConversationsConversationIdMessagesPost: mocks.send,
+  deleteConversationApiV1CopilotConversationsConversationIdDelete: mocks.remove,
   decideApprovalApiV1CopilotConversationsConversationIdApprovalsPost: mocks.decide,
+  regenerateReplyApiV1CopilotConversationsConversationIdRegeneratePost:
+    mocks.regenerate,
+  getUploadUrlApiV1KnowledgeBaseUploadUrlPost: mocks.uploadUrl,
+  processDocumentApiV1KnowledgeBaseProcessDocumentPost: mocks.processDocument,
+  getDocumentApiV1KnowledgeBaseDocumentsDocumentUuidGet: mocks.getDocument,
   voiceStatusApiV1CopilotVoiceGet: mocks.voiceStatus,
   getTurnCredentialsApiV1TurnCredentialsGet: mocks.turnCredentials,
 }));
@@ -52,6 +63,7 @@ const snapshot = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   mocks.auth.user = { id: 1 };
   mocks.auth.loading = false;
   mocks.list.mockResolvedValue({ data: [conversation] });
@@ -211,5 +223,176 @@ describe("Bolo Agent page", () => {
         name: "Start voice call",
       }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it("deletes a conversation after confirmation", async () => {
+    mocks.remove.mockResolvedValue({});
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Delete conversation Q3 pipeline" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete conversation" }),
+    );
+
+    await waitFor(() =>
+      expect(mocks.remove).toHaveBeenCalledWith(
+        expect.objectContaining({ path: { conversation_id: 7 } }),
+      ),
+    );
+    expect(await screen.findByText("No conversations yet. Send the first message to start one.")).toBeTruthy();
+  });
+
+  it("attaches a file and sends its document id with the next message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true }),
+    );
+    mocks.uploadUrl.mockResolvedValue({
+      data: {
+        upload_url: "https://storage.test/upload",
+        document_uuid: "doc-1",
+        s3_key: "org/files/notes.txt",
+      },
+    });
+    mocks.processDocument.mockResolvedValue({ data: { status: "queued" } });
+    mocks.getDocument.mockResolvedValue({
+      data: { processing_status: "completed" },
+    });
+    mocks.send.mockResolvedValue({ data: snapshot });
+
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    const input = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["hello"], "notes.txt", { type: "text/plain" })],
+      },
+    });
+
+    expect(await screen.findByText("notes.txt")).toBeTruthy();
+    await waitFor(() =>
+      expect(mocks.processDocument).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            document_uuid: "doc-1",
+            retrieval_mode: "full_document",
+          }),
+        }),
+      ),
+    );
+
+    fireEvent.change(screen.getByLabelText("Message Bolo Agent"), {
+      target: { value: "Summarize the attached file" },
+    });
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() =>
+      expect(mocks.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            message: "Summarize the attached file",
+            attachments: ["doc-1"],
+          }),
+        }),
+      ),
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("regenerates the latest assistant reply in place", async () => {
+    mocks.regenerate.mockResolvedValue({
+      data: {
+        ...snapshot,
+        messages: [
+          snapshot.messages[0],
+          { role: "assistant", content: "A fresh pipeline summary." },
+        ],
+      },
+    });
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Regenerate reply" }));
+
+    await waitFor(() =>
+      expect(mocks.regenerate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { conversation_id: 7 },
+          body: expect.objectContaining({
+            client_request_id: expect.any(String),
+          }),
+        }),
+      ),
+    );
+    expect(await screen.findByText("A fresh pipeline summary.")).toBeTruthy();
+    expect(screen.queryByText("Here is your pipeline summary.")).toBeNull();
+  });
+
+  it("records a thumbs rating on an assistant reply", async () => {
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    const down = screen.getByRole("button", { name: "Bad reply" });
+    fireEvent.click(down);
+    expect(down.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(down);
+    expect(down.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("copies a reply to the clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    const copyButtons = screen.getAllByRole("button", { name: "Copy message" });
+    fireEvent.click(copyButtons[copyButtons.length - 1]);
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("Here is your pipeline summary."),
+    );
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+  });
+
+  it("stops an in-flight turn when the user interrupts it", async () => {
+    mocks.send.mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError")),
+          );
+        }),
+    );
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    fireEvent.change(screen.getByLabelText("Message Bolo Agent"), {
+      target: { value: "Think for a long time" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByText("Thinking…")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop response" }));
+
+    expect(await screen.findByText("Response stopped.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Send message" }),
+    ).toBeTruthy();
   });
 });

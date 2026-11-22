@@ -1,6 +1,6 @@
 """Workspace copilot API: conversations, turns, and approvals."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from api.db.models import UserModel
 from api.schemas.copilot import (
@@ -8,6 +8,7 @@ from api.schemas.copilot import (
     CopilotConversationCreate,
     CopilotConversationSummary,
     CopilotMessageRequest,
+    CopilotRegenerateRequest,
     CopilotSnapshot,
 )
 from api.services.auth.depends import get_user
@@ -40,6 +41,15 @@ async def get_conversation(
     return await service.get_snapshot(conversation_id, user)
 
 
+@router.delete("/conversations/{conversation_id}", status_code=204)
+async def delete_conversation(
+    conversation_id: int,
+    user: UserModel = Depends(get_user),
+):
+    await service.delete_conversation(conversation_id, user)
+    return Response(status_code=204)
+
+
 @router.post(
     "/conversations/{conversation_id}/messages",
     response_model=CopilotSnapshot,
@@ -53,6 +63,23 @@ async def send_message(
         conversation_id,
         user,
         request.message,
+        request.client_request_id,
+        attachments=request.attachments,
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/regenerate",
+    response_model=CopilotSnapshot,
+)
+async def regenerate_reply(
+    conversation_id: int,
+    request: CopilotRegenerateRequest,
+    user: UserModel = Depends(get_user),
+):
+    return await service.regenerate(
+        conversation_id,
+        user,
         request.client_request_id,
     )
 

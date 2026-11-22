@@ -11,9 +11,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
-from api.db.models import CopilotConversationModel, CopilotToolCallModel
+from api.db.models import (
+    CheckpointBlobModel,
+    CheckpointModel,
+    CheckpointWriteModel,
+    CopilotConversationModel,
+    CopilotToolCallModel,
+)
 from api.db.workflow_builder import WorkflowBuilderClient
 
 
@@ -51,6 +57,26 @@ class CopilotClient(WorkflowBuilderClient):
                 )
             )
             return result.scalar_one_or_none()
+
+    async def delete_copilot_conversation(
+        self, conversation_id: int, organization_id: int, thread_id: str
+    ) -> bool:
+        """Delete the conversation and its LangGraph thread in one transaction."""
+        async with self.async_session() as session:
+            conversation = await session.get(CopilotConversationModel, conversation_id)
+            if conversation is None or conversation.organization_id != organization_id:
+                return False
+            for checkpoint in (
+                CheckpointWriteModel,
+                CheckpointBlobModel,
+                CheckpointModel,
+            ):
+                await session.execute(
+                    delete(checkpoint).where(checkpoint.thread_id == thread_id)
+                )
+            await session.delete(conversation)
+            await session.commit()
+            return True
 
     async def list_copilot_conversations(
         self, organization_id: int, user_id: int, limit: int = 50

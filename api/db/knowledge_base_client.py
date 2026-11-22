@@ -642,6 +642,8 @@ class KnowledgeBaseClient(BaseDBClient):
             ".pdf": "application/pdf",
             ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ".doc": "application/msword",
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".csv": "text/csv",
             ".txt": "text/plain",
             ".json": "application/json",
             ".html": "text/html",

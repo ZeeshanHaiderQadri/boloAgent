@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from pydantic import BaseModel
@@ -27,6 +28,7 @@ class _Config(BaseModel):
     provider: str
     model: str
     api_key: str = "sk-test"
+    base_url: str = ""
 
 
 def _effective(**overrides):
@@ -118,6 +120,40 @@ async def test_voice_configuration_accepts_own_text_stack():
         "stt": "deepgram / nova-3",
         "tts": "cartesia / sonic-2",
     }
+
+
+@pytest.mark.asyncio
+async def test_voice_configuration_reports_unreachable_speaches(monkeypatch):
+    config = _effective(
+        tts=_Config(
+            provider="speaches",
+            model="kokoro",
+            base_url="http://localhost:11434/v1",
+        )
+    )
+
+    class _Unreachable:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, headers=None):
+            raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(voice.httpx, "AsyncClient", lambda **kwargs: _Unreachable())
+    with patch.object(
+        voice,
+        "get_resolved_ai_model_configuration",
+        AsyncMock(return_value=_resolved(config)),
+    ):
+        with pytest.raises(voice.VoiceConfigurationError) as excinfo:
+            await voice.voice_configuration(42)
+
+    message = str(excinfo.value)
+    assert "The voice service does not answer at http://localhost:11434/v1" in message
+    assert "host.docker.internal" in message
 
 
 @pytest.mark.asyncio
