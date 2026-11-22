@@ -68,12 +68,31 @@ How you reply:
 """
 
 
-def system_prompt(*, model_label: str, today: date | None = None) -> str:
+WEB_ACCESS_ON = """
+Web access is on through {providers}. Use web_search for current public facts
+and web_fetch before quoting a page; name the source URL. Workspace data still
+comes only from the workspace tools.
+"""
+
+WEB_ACCESS_OFF = """
+Web access is off, so web_search and web_fetch are unavailable. If the request
+needs current external facts, say the owner can enable a provider under
+Settings -> Web access.
+"""
+
+
+def system_prompt(
+    *,
+    model_label: str,
+    web_access: str | None = None,
+    today: date | None = None,
+) -> str:
     today = today or date.today()
     identity = COPILOT_IDENTITY.format(
         agent=AGENT_NAME, today=today.isoformat(), model=model_label
     )
-    return identity + RULES
+    web = WEB_ACCESS_ON.format(providers=web_access) if web_access else WEB_ACCESS_OFF
+    return identity + web + RULES
 
 
 VOICE_RULES = """

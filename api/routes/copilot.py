@@ -1,6 +1,6 @@
 """Workspace copilot API: conversations, turns, and approvals."""
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from api.db.models import UserModel
 from api.schemas.copilot import (
@@ -10,11 +10,20 @@ from api.schemas.copilot import (
     CopilotMessageRequest,
     CopilotRegenerateRequest,
     CopilotSnapshot,
+    CopilotWebAccessSettings,
+    CopilotWebAccessUpdate,
 )
 from api.services.auth.depends import get_user
-from api.services.copilot import service
+from api.services.copilot import service, web_access
 
 router = APIRouter(prefix="/copilot", tags=["copilot"])
+
+
+def _organization_id(user: UserModel) -> int:
+    organization_id = user.selected_organization_id
+    if organization_id is None:
+        raise HTTPException(400, "Select an organization first")
+    return organization_id
 
 
 @router.post("/conversations", response_model=CopilotConversationSummary)
@@ -100,3 +109,24 @@ async def decide_approval(
         request.decision,
         request.client_request_id,
     )
+
+
+@router.get("/web-access", response_model=CopilotWebAccessSettings)
+async def get_web_access(
+    user: UserModel = Depends(get_user),
+):
+    return await web_access.public_settings(_organization_id(user))
+
+
+@router.put("/web-access", response_model=CopilotWebAccessSettings)
+async def update_web_access(
+    request: CopilotWebAccessUpdate,
+    user: UserModel = Depends(get_user),
+):
+    try:
+        return await web_access.update_settings(
+            _organization_id(user),
+            [item.model_dump() for item in request.providers],
+        )
+    except web_access.WebAccessError as exc:
+        raise HTTPException(400, str(exc)) from exc

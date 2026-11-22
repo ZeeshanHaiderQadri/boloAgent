@@ -1,0 +1,65 @@
+---
+title: "Bolo Agent Web Access"
+description: "Give the Bolo Agent live web search and page reading through Exa, Tavily, Firecrawl, Serper or SerpAPI"
+---
+
+## Overview
+
+Web access lets the Bolo Agent look up current public information while it works in your workspace: a company's website, a recent announcement, a job posting, or a definition it should not guess. It is separate from your workspace data — leads, campaigns, calls and files still come only from Bolo.
+
+You choose which connectors are available. When more than one is on, the agent uses the first enabled provider in this order: Exa, Tavily, Firecrawl, Serper, SerpAPI. Page reading uses Firecrawl when it is enabled and a direct fetch otherwise.
+
+## Configure web access
+
+1. Open **Settings → Bolo Agent web access**.
+2. Turn on the connectors you want.
+3. For providers that need a key, paste the key and select **Save key** before enabling the switch.
+
+<Note>
+Exa needs no key. It is free at a limited rate and is turned on by default, so a new workspace can search the web immediately.
+</Note>
+
+## Providers
+
+| Provider | Key required | Search | Page reading | Notes |
+|---|---|---|---|---|
+| **Exa** | No | Yes | Yes | Keyless MCP server at `https://mcp.exa.ai/mcp`; free rate limit |
+| **Tavily** | Yes | Yes | No | Search API |
+| **Firecrawl** | Yes | Yes | Yes | Search plus clean Markdown page extraction |
+| **Serper** | Yes | Yes | No | Google search results |
+| **SerpAPI** | Yes | Yes | No | Google search results |
+
+Get keys from each provider's dashboard:
+
+- [Exa](https://exa.ai/docs/get-started/exa-mcp) — no key needed
+- [Tavily](https://docs.tavily.com)
+- [Firecrawl](https://docs.firecrawl.dev)
+- [Serper](https://serper.dev)
+- [SerpAPI](https://serpapi.com)
+
+## How the agent uses it
+
+When at least one connector is active, the Bolo Agent gains two read-only tools:
+
+- `web_search` returns a short list of public results with titles, URLs and snippets.
+- `web_fetch` reads the text of one public page, capped at 8,000 characters.
+
+Neither tool needs an approval card because neither changes your workspace. The agent is told to cite the URLs it uses, and to keep workspace facts separate from web facts.
+
+When web access is off, the tools are not offered to the model at all, and the agent tells you that a provider can be enabled in settings.
+
+## Key storage and safety
+
+- API keys are encrypted at rest with your deployment's credential key. The settings page only reports whether a key is saved; it never returns the key.
+- Removing a key turns that provider off.
+- Only public `http` and `https` pages on standard ports can be read. Localhost, private networks, link-local addresses and non-standard ports are refused, including after redirects.
+- Page reads are size-capped and time-limited.
+- Search queries are sent to the provider you enabled, so choose providers whose data policy fits your business.
+
+## Troubleshooting
+
+**The agent says web access is off.** Open **Settings → Bolo Agent web access** and enable a connector. A provider that needs a key cannot be enabled until the key is saved.
+
+**Exa returns nothing or a rate-limit error.** The keyless Exa endpoint has a free rate limit. Enable another provider and turn Exa off, or retry later.
+
+**A page cannot be read.** Confirm the URL is public and uses `http` or `https` on port 80 or 443. Pages behind a login, on a private network or on a non-standard port are intentionally blocked.

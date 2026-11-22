@@ -25,6 +25,7 @@ from api.schemas.leads import (
 )
 from api.services.call_concurrency.rate_limiter import RateLimiterUnavailable
 from api.services.campaign import launch as voice_campaigns
+from api.services.copilot import web_access
 from api.services.email.audience import (
     AudienceError,
     AudienceRule,
@@ -1042,6 +1043,36 @@ async def _search_knowledge_base(
     }
 
 
+class WebSearchArgs(BaseModel):
+    query: str = Field(
+        min_length=2,
+        max_length=400,
+        description="What to search the public web for, in natural language.",
+    )
+    max_results: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="How many results to return (1-10).",
+    )
+
+
+class WebFetchArgs(BaseModel):
+    url: str = Field(
+        min_length=8,
+        max_length=2048,
+        description="The public http(s) URL whose page text should be read.",
+    )
+
+
+async def _web_search(ctx: CopilotContext, args: WebSearchArgs) -> dict:
+    return await web_access.search(ctx.organization_id, args.query, args.max_results)
+
+
+async def _web_fetch(ctx: CopilotContext, args: WebFetchArgs) -> dict:
+    return await web_access.fetch(ctx.organization_id, args.url)
+
+
 class ReadDocumentArgs(BaseModel):
     document_uuid: str = Field(
         min_length=1,
@@ -1427,6 +1458,29 @@ TOOLS: dict[str, CopilotTool] = {
             args_schema=TagLeadsArgs,
             risk=RISK_WRITE,
             handler=_tag_leads,
+        ),
+        CopilotTool(
+            name="web_search",
+            description=(
+                "Search the public web for current facts, news or a company's "
+                "website. Only available when the owner enabled a web provider "
+                "under Settings -> Web access. Cite the result URLs you use. "
+                "Never use it for workspace data."
+            ),
+            args_schema=WebSearchArgs,
+            risk=RISK_READ,
+            handler=_web_search,
+        ),
+        CopilotTool(
+            name="web_fetch",
+            description=(
+                "Read the text of one public web page by URL, for example a "
+                "result from web_search. Only available when a web provider is "
+                "enabled. Quote only what the page actually says."
+            ),
+            args_schema=WebFetchArgs,
+            risk=RISK_READ,
+            handler=_web_fetch,
         ),
     )
 }
