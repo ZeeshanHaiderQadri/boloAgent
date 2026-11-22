@@ -880,13 +880,18 @@ async def preview_lead_import(
     user: UserModel = Depends(get_user),
 ) -> LeadImportPreviewResponse:
     """Parse an upload without writing anything so the operator can check it."""
-    _organization_id(user)
+    organization_id = _organization_id(user)
     content = await _read_import_upload(file)
     try:
         parsed = parse_lead_import(file.filename or "leads.xlsx", content)
         prepared = prepare_import(parsed, country_hint=country_code or None)
     except LeadImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    existing_keys = await db_client.match_imported_leads(
+        organization_id=organization_id,
+        leads=prepared.leads,
+    )
 
     preview = []
     for row in prepared.rows[:10]:
@@ -895,6 +900,7 @@ async def preview_lead_import(
             LeadImportPreviewRow(
                 sheet=row.sheet,
                 row_number=row.row_number,
+                existing=lead.get("dedupe_key") in existing_keys,
                 title=lead.get("title"),
                 phone=lead.get("phone"),
                 phone_e164=lead.get("phone_e164"),
@@ -916,6 +922,7 @@ async def preview_lead_import(
         ready_rows=len(prepared.leads),
         skipped_rows=prepared.skipped_rows,
         duplicate_rows=prepared.duplicate_rows,
+        existing_rows=len(existing_keys),
         mapped_columns=parsed.mapped_headers,
         ignored_columns=parsed.ignored_headers,
         warnings=prepared.warnings,
