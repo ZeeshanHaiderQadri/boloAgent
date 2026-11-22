@@ -147,6 +147,7 @@
             "tag": "NEW",
             "pages": [
               "integrations/mcp",
+              "integrations/web-access",
               "integrations/tuner",
               "integrations/paygent",
               "integrations/noveum"
