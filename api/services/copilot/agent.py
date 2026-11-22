@@ -40,6 +40,7 @@ from .tools import TOOLS, CopilotContext, CopilotTool
 MAX_TOOL_RESULT_CHARACTERS = 8000
 MAX_TOOL_MESSAGE_CHARACTERS = 6000
 HISTORY_WINDOW = 60
+WEB_TOOL_NAMES = frozenset({"web_search", "web_fetch"})
 
 
 class CopilotState(TypedDict, total=False):
@@ -78,7 +79,15 @@ def _bounded_history(messages: list[AnyMessage]) -> list[AnyMessage]:
     return bounded
 
 
-def _lc_tools() -> list[StructuredTool]:
+def _active_tools(web_enabled: bool) -> list[CopilotTool]:
+    return [
+        tool
+        for name, tool in TOOLS.items()
+        if web_enabled or name not in WEB_TOOL_NAMES
+    ]
+
+
+def _lc_tools(web_enabled: bool) -> list[StructuredTool]:
     """Schemas for the model. Execution goes through ``_run_tool`` instead."""
 
     def make(tool: CopilotTool) -> StructuredTool:
@@ -92,7 +101,7 @@ def _lc_tools() -> list[StructuredTool]:
             args_schema=tool.args_schema,
         )
 
-    return [make(tool) for tool in TOOLS.values()]
+    return [make(tool) for tool in _active_tools(web_enabled)]
 
 
 def _approval_payload(calls: list[dict]) -> dict:
@@ -171,7 +180,7 @@ async def _run_tool(ctx: CopilotContext, tool: CopilotTool, call: dict) -> ToolM
     return ToolMessage(content=content, tool_call_id=call["id"], name=tool.name)
 
 
-def _tools_node():
+def _tools_node(web_enabled: bool):
     async def run(state: CopilotState) -> dict:
         last = state["messages"][-1]
         calls = list(getattr(last, "tool_calls", None) or [])
@@ -198,12 +207,12 @@ def _tools_node():
         results: list[ToolMessage] = []
         for call in calls:
             tool = TOOLS.get(call["name"])
-            if tool is None:
+            if tool is None or (tool.name in WEB_TOOL_NAMES and not web_enabled):
                 results.append(
                     ToolMessage(
                         content=(
                             f"Unknown tool {call['name']!r}. Available: "
-                            + ", ".join(TOOLS)
+                            + ", ".join(t.name for t in _active_tools(web_enabled))
                         ),
                         tool_call_id=call["id"],
                         name=call["name"],
@@ -235,7 +244,7 @@ def _tools_node():
     return run
 
 
-def _agent_node(model: CopilotChatModel, bound_model):
+def _agent_node(model: CopilotChatModel, bound_model, web_providers: list[str]):
     async def run(state: CopilotState) -> dict:
         try:
             label = await model.describe()
@@ -244,7 +253,12 @@ def _agent_node(model: CopilotChatModel, bound_model):
         try:
             reply = await bound_model.ainvoke(
                 [
-                    SystemMessage(content=system_prompt(model_label=label)),
+                    SystemMessage(
+                        content=system_prompt(
+                            model_label=label,
+                            web_access=", ".join(web_providers) or None,
+                        )
+                    ),
                     *_bounded_history(state["messages"]),
                 ]
             )
@@ -272,11 +286,17 @@ def _route(state: CopilotState) -> str:
     return "tools" if getattr(last, "tool_calls", None) else END
 
 
-def build_copilot_graph(model: CopilotChatModel, checkpointer):
+def build_copilot_graph(
+    model: CopilotChatModel,
+    checkpointer,
+    *,
+    web_providers: list[str] | None = None,
+):
+    providers = list(web_providers or [])
     graph = StateGraph(CopilotState)
-    bound_model = model.bind_tools(_lc_tools())
-    graph.add_node("agent", _agent_node(model, bound_model))
-    graph.add_node("tools", _tools_node())
+    bound_model = model.bind_tools(_lc_tools(bool(providers)))
+    graph.add_node("agent", _agent_node(model, bound_model, providers))
+    graph.add_node("tools", _tools_node(bool(providers)))
     graph.add_edge(START, "agent")
     graph.add_conditional_edges("agent", _route, {"tools": "tools", END: END})
     graph.add_edge("tools", "agent")

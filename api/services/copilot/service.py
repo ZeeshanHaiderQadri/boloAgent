@@ -24,6 +24,7 @@ from api.schemas.copilot import (
     CopilotSnapshot,
     CopilotTranscriptMessage,
 )
+from api.services.copilot import web_access
 from api.services.copilot.agent import build_copilot_graph
 from api.services.copilot.model import (
     CopilotChatModel,
@@ -105,12 +106,13 @@ def _auto_title(snapshot: CopilotSnapshot) -> str | None:
     return first[:60].strip() if first else None
 
 
-def _graph_for(conversation: CopilotConversationModel, user: UserModel, saver):
+async def _graph_for(conversation: CopilotConversationModel, user: UserModel, saver):
     model = CopilotChatModel(
         organization_id=conversation.organization_id,
         user_id=str(user.id),
     )
-    return build_copilot_graph(model, saver)
+    providers = await web_access.enabled_provider_labels(conversation.organization_id)
+    return build_copilot_graph(model, saver, web_providers=providers)
 
 
 def _config(conversation: CopilotConversationModel, user: UserModel) -> dict:
@@ -173,7 +175,7 @@ async def get_snapshot(conversation_id: int, user: UserModel) -> CopilotSnapshot
     conversation = await load_conversation(conversation_id, user)
     thread = _thread_id(conversation.organization_id, user.id, conversation.id)
     async with db_client.copilot_checkpointer(thread, readonly=True) as saver:
-        graph = _graph_for(conversation, user, saver)
+        graph = await _graph_for(conversation, user, saver)
         state = await graph.aget_state({"configurable": {"thread_id": thread}})
     return _present(state, conversation)
 
@@ -240,7 +242,7 @@ async def send_message(
     config = _config(conversation, user)
     try:
         async with db_client.copilot_checkpointer(thread) as saver:
-            graph = _graph_for(conversation, user, saver)
+            graph = await _graph_for(conversation, user, saver)
             state = await graph.aget_state(config)
             if getattr(state, "interrupts", ()):
                 raise HTTPException(
@@ -307,7 +309,7 @@ async def regenerate(
     config = _config(conversation, user)
     try:
         async with db_client.copilot_checkpointer(thread) as saver:
-            graph = _graph_for(conversation, user, saver)
+            graph = await _graph_for(conversation, user, saver)
             state = await graph.aget_state(config)
             if getattr(state, "interrupts", ()):
                 raise HTTPException(
@@ -362,7 +364,7 @@ async def decide_approval(
     config = _config(conversation, user)
     try:
         async with db_client.copilot_checkpointer(thread) as saver:
-            graph = _graph_for(conversation, user, saver)
+            graph = await _graph_for(conversation, user, saver)
             state = await graph.aget_state(config)
             pending = {
                 str(item.id) for item in (getattr(state, "interrupts", ()) or ())

@@ -176,6 +176,9 @@ class OrganizationConfigurationKey(Enum):
     MODEL_CONFIGURATION_DEFAULT_UUID = "MODEL_CONFIGURATION_DEFAULT_UUID"
     MODEL_CONFIGURATION_V2 = "MODEL_CONFIGURATION_V2"  # Retired; rows kept for audit after the catalog backfill, nothing reads them
     ORGANIZATION_PREFERENCES = "ORGANIZATION_PREFERENCES"  # Org-level defaults such as timezone/test call number
+    COPILOT_WEB_ACCESS = (
+        "COPILOT_WEB_ACCESS"  # Bolo Agent web connectors and encrypted provider keys
+    )
     MODEL_CONFIGURATION_PREFERENCES = "MODEL_CONFIGURATION_PREFERENCES"  # Deprecated; read fallback for old org preferences
     ORGANIZATION_BOOTSTRAP = (
         "ORGANIZATION_BOOTSTRAP"  # Single-winner lease for post-signup provisioning

@@ -69,6 +69,38 @@ class CopilotSnapshot(BaseModel):
     pending_approvals: list[CopilotPendingApproval]
 
 
+CopilotWebProviderName = Literal["exa", "tavily", "firecrawl", "serper", "serpapi"]
+
+
+class CopilotWebProvider(BaseModel):
+    name: CopilotWebProviderName
+    label: str
+    keyless: bool
+    enabled: bool
+    configured: bool
+    supports_search: bool
+    supports_fetch: bool
+    docs_url: str
+
+
+class CopilotWebAccessSettings(BaseModel):
+    providers: list[CopilotWebProvider]
+    any_enabled: bool
+
+
+class CopilotWebProviderUpdate(BaseModel):
+    name: CopilotWebProviderName
+    enabled: bool | None = None
+    # A new key replaces the stored one; it is encrypted before storage and
+    # never returned by the read endpoint.
+    api_key: str | None = Field(default=None, max_length=400)
+    clear_key: bool = False
+
+
+class CopilotWebAccessUpdate(BaseModel):
+    providers: list[CopilotWebProviderUpdate] = Field(min_length=1, max_length=5)
+
+
 class CopilotVoiceStatus(BaseModel):
     """Whether the organization's own services can run a voice session."""
 
