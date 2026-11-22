@@ -1,16 +1,23 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+
+import { listConnectionModels } from "@/client/sdk.gen";
+import { AuthContext } from "@/lib/auth/providers/AuthProvider";
 
 import { cleanSettings } from "./configuration";
 import { SchemaFields } from "./SchemaFields";
 import { selectOption, selectOptions } from "./test-helpers";
 import type { FieldSchema } from "./types";
 
-function Editor({ schema, initial, onSave = vi.fn() }: { schema: FieldSchema; initial: Record<string, unknown>; onSave?: (values: Record<string, unknown>) => void }) {
+vi.mock("@/client/sdk.gen", () => ({ listConnectionModels: vi.fn() }));
+
+const auth = { user: { id: "user" }, loading: false } as never;
+
+function Editor({ schema, initial, onSave = vi.fn(), connection }: { schema: FieldSchema; initial: Record<string, unknown>; onSave?: (values: Record<string, unknown>) => void; connection?: string }) {
     const [values, setValues] = useState(initial);
     return <form onSubmit={event => { event.preventDefault(); onSave(cleanSettings(values, schema)); }}>
-        <SchemaFields schema={schema} values={values} onChange={(name, value) => setValues(previous => ({ ...previous, [name]: value }))} />
+        <SchemaFields schema={schema} values={values} providerConnectionUuid={connection} onChange={(name, value) => setValues(previous => ({ ...previous, [name]: value }))} />
         <button type="submit">Save</button>
     </form>;
 }
@@ -49,13 +56,13 @@ describe("provider field controls", () => {
         const onSave = vi.fn();
         render(<Editor schema={{ properties: { model: { type: "string", title: "Model", examples: ["standard", "fast"], allow_custom_input: true } } }} initial={{ model: "my-custom-model" }} onSave={onSave} />);
         expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe("my-custom-model");
-        fireEvent.click(screen.getByLabelText("Enter Custom Value"));
+        fireEvent.click(screen.getByRole("button", { name: "Choose from the list" }));
         expect(screen.getByLabelText("Model").getAttribute("data-slot")).toBe("select-trigger");
-        expect(selectOptions("Model")).toEqual(["standard", "fast"]);
+        expect(selectOptions("Model")).toEqual(["standard", "fast", "Enter a custom model ID…"]);
         selectOption("Model", "fast");
         fireEvent.click(screen.getByRole("button", { name: "Save" }));
         expect(onSave).toHaveBeenLastCalledWith({ model: "fast" });
-        fireEvent.click(screen.getByLabelText("Enter Custom Value"));
+        selectOption("Model", "Enter a custom model ID…");
         fireEvent.change(screen.getByLabelText("Model"), { target: { value: "custom-again" } });
         fireEvent.click(screen.getByRole("button", { name: "Save" }));
         expect(onSave).toHaveBeenLastCalledWith({ model: "custom-again" });
@@ -109,6 +116,35 @@ describe("provider field controls", () => {
         expect((screen.getByLabelText("Speed") as HTMLInputElement).value).toBe("1.2");
         fireEvent.click(screen.getByRole("button", { name: "Save" }));
         expect(onSave).toHaveBeenLastCalledWith({ model: "eleven_flash_v2_5", speed: 1.2 });
+    });
+
+    it("lists the models the provider connection reports and keeps custom entry", async () => {
+        vi.mocked(listConnectionModels).mockClear();
+        vi.mocked(listConnectionModels).mockResolvedValue({ data: { provider: "openai", models: [{ id: "gpt-5-mini" }, { id: "auto" }] } } as never);
+        render(<AuthContext.Provider value={auth}>
+            <Editor connection="openai-live" schema={{ properties: { model: { type: "string", title: "Model", examples: ["gpt-4.1"], allow_custom_input: true, model_catalog: true } } }} initial={{ model: "auto" }} />
+        </AuthContext.Provider>);
+        await waitFor(() => expect(screen.getByLabelText("Model").getAttribute("data-slot")).toBe("model-combobox"));
+        // The live catalog replaces the curated example instead of adding to it.
+        expect(selectOptions("Model")).toEqual(["gpt-5-mini", "auto", "Enter a custom model ID…"]);
+        expect(listConnectionModels).toHaveBeenCalledWith({ path: { connection_uuid: "openai-live" } });
+    });
+
+    it("surfaces a provider catalog failure and retries it", async () => {
+        vi.mocked(listConnectionModels).mockClear();
+        vi.mocked(listConnectionModels).mockResolvedValue({ error: { detail: "Could not load models from the provider." } } as never);
+        render(<AuthContext.Provider value={auth}>
+            <Editor connection="openai-down" schema={{ properties: { model: { type: "string", title: "Model", examples: ["gpt-4.1"], allow_custom_input: true, model_catalog: true } } }} initial={{ model: "auto" }} />
+        </AuthContext.Provider>);
+        expect(await screen.findByText("Could not load models from the provider.")).toBeTruthy();
+        // The built-in suggestions stay usable while the provider is unreachable.
+        expect(screen.getByRole("button", { name: "Choose from the list" })).toBeTruthy();
+
+        vi.mocked(listConnectionModels).mockResolvedValue({ data: { provider: "openai", models: [{ id: "auto" }, { id: "live-model" }] } } as never);
+        fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+        await waitFor(() => expect(screen.queryByText("Could not load models from the provider.")).toBeNull());
+        expect(listConnectionModels).toHaveBeenCalledTimes(2);
+        expect(selectOptions("Model")).toEqual(["auto", "live-model", "Enter a custom model ID…"]);
     });
 
     it("uses removable input rows for free-form lists", () => {

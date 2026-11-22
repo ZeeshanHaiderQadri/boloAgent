@@ -7,6 +7,7 @@ from fastapi.routing import APIRoute
 from api.db import db_client
 from api.db.model_connection_client import ModelCatalogConflict, ModelCatalogNotFound
 from api.db.models import UserModel
+from api.schemas.model_catalog import ModelsResponse
 from api.schemas.model_connections import (
     DefaultModelConfigurationRequest,
     DefaultModelConfigurationResponse,
@@ -21,6 +22,7 @@ from api.schemas.model_connections import (
     merge_provider_credentials,
 )
 from api.services.auth.depends import get_user_with_selected_organization
+from api.services.configuration.model_catalog import get_connection_models
 from api.services.configuration.model_connections import (
     connection_provider,
     model_connection_catalog,
@@ -199,6 +201,20 @@ async def archive_connection(connection_uuid: str, user: UserModel = Auth):
     return Response(status_code=204)
 
 
+@router.delete(
+    "/provider-connections/{connection_uuid}/permanent",
+    status_code=204,
+    operation_id="delete_provider_connection",
+)
+async def delete_connection(connection_uuid: str, user: UserModel = Auth):
+    await _write(
+        db_client.delete_provider_connection(
+            user.selected_organization_id, connection_uuid
+        )
+    )
+    return Response(status_code=204)
+
+
 @router.post(
     "/provider-connections/{connection_uuid}/restore",
     response_model=ProviderConnectionResponse,
@@ -211,6 +227,15 @@ async def restore_connection(connection_uuid: str, user: UserModel = Auth):
         )
     )
     return _connection_response(row)
+
+
+@router.get(
+    "/provider-connections/{connection_uuid}/models",
+    response_model=ModelsResponse,
+    operation_id="list_connection_models",
+)
+async def list_connection_models(connection_uuid: str, user: UserModel = Auth):
+    return await get_connection_models(user.selected_organization_id, connection_uuid)
 
 
 @router.get(
@@ -311,6 +336,20 @@ async def update_configuration(
 async def archive_configuration(configuration_uuid: str, user: UserModel = Auth):
     await _write(
         db_client.archive_named_model_configuration(
+            user.selected_organization_id, configuration_uuid
+        )
+    )
+    return Response(status_code=204)
+
+
+@router.delete(
+    "/model-configurations/{configuration_uuid}/permanent",
+    status_code=204,
+    operation_id="delete_named_model_configuration",
+)
+async def delete_configuration(configuration_uuid: str, user: UserModel = Auth):
+    await _write(
+        db_client.delete_named_model_configuration(
             user.selected_organization_id, configuration_uuid
         )
     )

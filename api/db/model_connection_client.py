@@ -435,6 +435,79 @@ class ModelConnectionClient(BaseDBClient):
             row.updated_at = datetime.now(UTC)
             await session.commit()
 
+    async def delete_provider_connection(self, organization_id, connection_uuid):
+        await self._delete_catalog(
+            ProviderConnectionModel, organization_id, connection_uuid
+        )
+
+    async def delete_named_model_configuration(
+        self, organization_id, configuration_uuid
+    ):
+        await self._delete_catalog(
+            NamedModelConfigurationModel, organization_id, configuration_uuid
+        )
+
+    async def _delete_catalog(self, model, organization_id, uuid):
+        uuid = str(uuid)
+        async with self.async_session() as session:
+            await self._lock_catalog(session, organization_id)
+            row = await self._catalog_row(
+                session, model, organization_id, uuid, active_only=False
+            )
+            if row is None:
+                raise ModelCatalogNotFound("Configuration not found")
+            if row.is_active:
+                raise ModelCatalogConflict("Archive this item before deleting it")
+            default = await session.scalar(
+                select(OrganizationConfigurationModel.value).where(
+                    OrganizationConfigurationModel.organization_id == organization_id,
+                    OrganizationConfigurationModel.key == DEFAULT_KEY,
+                )
+            )
+            if model is NamedModelConfigurationModel and default == uuid:
+                raise ModelCatalogConflict(
+                    "Select another organization default before deleting this one"
+                )
+            if model is ProviderConnectionModel:
+                # Include archived configurations: deleting the connection would
+                # leave them unrestorable.
+                named = await session.scalars(
+                    select(NamedModelConfigurationModel.configuration).where(
+                        NamedModelConfigurationModel.organization_id == organization_id,
+                    )
+                )
+                if any(_contains_reference(config, uuid) for config in named):
+                    raise ModelCatalogConflict(
+                        "Provider connection is used by a model configuration"
+                    )
+            workflows = await session.scalars(
+                select(WorkflowModel.workflow_configurations).where(
+                    WorkflowModel.organization_id == organization_id,
+                    WorkflowModel.status == "active",
+                )
+            )
+            definitions = await session.scalars(
+                select(WorkflowDefinitionModel.workflow_configurations)
+                .join(
+                    WorkflowModel,
+                    WorkflowDefinitionModel.workflow_id == WorkflowModel.id,
+                )
+                .where(
+                    WorkflowModel.organization_id == organization_id,
+                    WorkflowModel.status == "active",
+                    WorkflowDefinitionModel.status.in_(("draft", "published")),
+                )
+            )
+            if any(
+                _contains_reference(config, uuid)
+                for config in [*workflows, *definitions]
+            ):
+                raise ModelCatalogConflict(
+                    "Configuration is used by an active workflow"
+                )
+            await session.delete(row)
+            await session.commit()
+
     async def restore_provider_connection(self, organization_id, connection_uuid):
         return await self._restore_catalog(
             ProviderConnectionModel, organization_id, connection_uuid

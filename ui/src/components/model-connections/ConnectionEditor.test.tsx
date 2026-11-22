@@ -82,6 +82,23 @@ describe("provider connection credentials", () => {
         expect(vi.mocked(updateProviderConnection).mock.calls[0][0]?.body?.credentials).toEqual({ api_key: ["first-secret", "second-secret"] });
     });
 
+    it("rejects a base URL without a scheme before calling the API", async () => {
+        const openai = {
+            title: "OpenAI",
+            credential_fields: { api_key: { title: "API key", anyOf: [{ type: "string" }] } },
+            credential_required: ["api_key"],
+            connection_fields: { base_url: { title: "Base Url", type: "string" } },
+            settings_schema: { properties: {} },
+        };
+        render(<ConnectionEditor catalog={{ services: { llm: { openai } } }} onSaved={vi.fn()} />);
+        fireEvent.change(screen.getByLabelText("Connection name"), { target: { value: "docker test" } });
+        fireEvent.change(screen.getByLabelText("Base Url"), { target: { value: "host.docker.internal/11434" } });
+        fireEvent.change(screen.getByLabelText("API key"), { target: { value: "test-key" } });
+        fireEvent.click(screen.getByRole("button", { name: "Save Connection" }));
+        expect((await screen.findByRole("alert")).textContent).toContain("must start with http://");
+        expect(createProviderConnection).not.toHaveBeenCalled();
+    });
+
     it("renders semantic API validation errors instead of reporting a successful save", async () => {
         vi.mocked(updateProviderConnection).mockResolvedValue({ error: { detail: [{ loc: ["body", "credentials"], msg: "Invalid credential fields" }] } } as never);
         const onSaved = vi.fn();

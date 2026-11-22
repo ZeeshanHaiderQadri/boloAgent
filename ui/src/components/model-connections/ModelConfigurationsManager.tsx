@@ -1,11 +1,11 @@
 "use client";
 
-import { Archive, ChevronRight, ExternalLink, Plus, RotateCcw } from "lucide-react";
+import { Archive, ChevronRight, ExternalLink, Plus, RotateCcw, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { archiveNamedModelConfiguration, restoreNamedModelConfiguration, setDefaultModelConfiguration } from "@/client/sdk.gen";
+import { archiveNamedModelConfiguration, deleteNamedModelConfiguration, restoreNamedModelConfiguration, setDefaultModelConfiguration } from "@/client/sdk.gen";
 import { LIST_ROW_ACTIONS_CLASS, LIST_ROW_CLASS, LIST_ROW_TARGET_CLASS } from "@/components/layout/ListRow";
 import { PageLayout, PageSection } from "@/components/layout/PageLayout";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,7 @@ export default function ModelConfigurationsManager({ docsUrl }: { docsUrl?: stri
     const { catalog, connections, configurations, defaultUuid, loading, error, reload } = useModelConnections({ includeArchived: true });
     const { refreshConfig } = useOrgConfig();
     const [archive, setArchive] = useState<{ uuid: string; name: string } | null>(null);
+    const [deleting, setDeleting] = useState<{ uuid: string; name: string } | null>(null);
     const [busy, setBusy] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [archivedOpen, setArchivedOpen] = useState(false);
@@ -120,6 +121,9 @@ export default function ModelConfigurationsManager({ docsUrl }: { docsUrl?: stri
                                     <Button type="button" variant="outline" size="sm" disabled={busy || loading || needsProviders} onClick={() => void restore(item.uuid)}>
                                         <RotateCcw className="h-3.5 w-3.5" />{restoringUuid === item.uuid ? "Restoring…" : "Restore"}
                                     </Button>
+                                    <Button type="button" variant="ghost" size="sm" disabled={busy || loading} onClick={() => { setActionError(null); setDeleting({ uuid: item.uuid, name: item.name }); }}>
+                                        <Trash2 className="h-3.5 w-3.5" />Delete
+                                    </Button>
                                 </div>
                             </div>;
                         })}
@@ -140,6 +144,24 @@ export default function ModelConfigurationsManager({ docsUrl }: { docsUrl?: stri
                                 } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Unable to archive this item"); }
                                 finally { setBusy(false); }
                             }}>{busy ? "Archiving…" : "Archive"}</Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+                <Dialog open={deleting !== null} onOpenChange={open => { if (!open && !busy) setDeleting(null); }}>
+                    <DialogContent onOpenAutoFocus={() => undefined}>
+                        <DialogHeader><DialogTitle>Delete {deleting?.name}?</DialogTitle><DialogDescription>This permanently removes the archived configuration. Workflows and provider connections are not affected. It cannot be undone.</DialogDescription></DialogHeader>
+                        {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
+                        <div className="flex justify-end gap-2"><Button variant="outline" disabled={busy} onClick={() => setDeleting(null)}>Cancel</Button>
+                            <Button variant="destructive" disabled={busy} onClick={async () => {
+                                if (!deleting) return;
+                                setBusy(true); setActionError(null);
+                                try {
+                                    const result = await deleteNamedModelConfiguration({ path: { configuration_uuid: deleting.uuid } });
+                                    if (result.error) throw new Error(detailFromError(result.error, "Unable to delete this item"));
+                                    setDeleting(null); await refresh(); toast.success("Deleted");
+                                } catch (cause) { setActionError(cause instanceof Error ? cause.message : "Unable to delete this item"); }
+                                finally { setBusy(false); }
+                            }}>{busy ? "Deleting…" : "Delete permanently"}</Button>
                         </div>
                     </DialogContent>
                 </Dialog>

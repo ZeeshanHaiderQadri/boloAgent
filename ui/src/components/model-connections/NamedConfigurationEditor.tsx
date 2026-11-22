@@ -55,6 +55,9 @@ export function NamedConfigurationEditor({ catalog, connections, saved, duplicat
             llmActions={<Button type="button" name="intent" value="fallbacks" variant="outline" size="sm" disabled={saving || !name.trim()} onClick={event => {
                 if (event.currentTarget.form?.reportValidity()) void save(true);
             }}>Configure fallbacks</Button>} />
-        <div className="flex justify-end"><Button type="submit" disabled={saving || !name.trim()}>{saving ? "Saving…" : "Save Configuration"}</Button></div>
+        <div className="flex flex-wrap items-center justify-end gap-3">
+            {!name.trim() && <p className="text-xs text-muted-foreground">Name this configuration to save it.</p>}
+            <Button type="submit" disabled={saving || !name.trim()}>{saving ? "Saving…" : "Save Configuration"}</Button>
+        </div>
     </form>;
 }

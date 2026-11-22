@@ -499,11 +499,14 @@ AWS_NOVA_SONIC_PROVIDER = Provider(
 )
 
 OPENAI_MODELS = [
-    "gpt-4.1",
-    "gpt-4.1-mini",
     "gpt-5",
     "gpt-5-mini",
     "gpt-5-nano",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "o4-mini",
 ]
 
 ATLASCLOUD_API_BASE_URL = "https://api.atlascloud.ai/v1"
@@ -519,15 +522,36 @@ HOPPER_MODELS = [
 
 GROQ_MODELS = [
     "llama-3.3-70b-versatile",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
     "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3-32b",
+    "moonshotai/kimi-k2-instruct",
 ]
 OPENROUTER_MODELS = [
+    # Chat and tool calling across every major vendor.
+    "openai/gpt-5.6-luna",
     "openai/gpt-4.1",
     "openai/gpt-4.1-mini",
-    "anthropic/claude-sonnet-4",
-    "google/gemini-2.5-flash",
-    "meta-llama/llama-3.3-70b-instruct",
-    "deepseek/deepseek-chat-v3-0324",
+    "anthropic/claude-sonnet-4.6",
+    "google/gemini-3.5-flash",
+    "google/gemini-3.5-flash-lite",
+    "meta-llama/llama-4-maverick",
+    "meta-llama/llama-4-scout",
+    "deepseek/deepseek-v4.1-flash",
+    "qwen/qwen3.8-flash",
+    "moonshotai/kimi-k3",
+    "z-ai/glm-5.3-flash",
+    "mistralai/mistral-medium-3-5",
+    "x-ai/grok-4.7",
+    # Small and free models that still handle conversation and tools.
+    "liquid/lfm-2.5-24b-a2b",
+    "liquid/lfm-3-1.7b:free",
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "inclusionai/ling-3.2-flash:free",
+    "baidu/ernie-5.5-flash-preview:free",
 ]
 BOLO_LLM_MODELS = ["default", "accurate", "fast", "lite", "zen"]
 AWS_BEDROCK_MODELS = [
@@ -551,7 +575,14 @@ class OpenAILLMService(BaseChatLLMConfiguration):
     )
     base_url: str = Field(
         default="https://api.openai.com/v1",
-        description="Override only if using an OpenAI-compatible API (e.g. local LLM, proxy).",
+        description=(
+            "Override to use any OpenAI-compatible endpoint: a router or "
+            "gateway (OmniRouter, Together, Fireworks, DeepInfra, Cerebras) "
+            "or a local server (Ollama, LM Studio, vLLM). Include the scheme "
+            "and API path, for example http://localhost:11434/v1. If Bolo "
+            "runs in Docker, reach a service on the host with "
+            "http://host.docker.internal:<port>/v1."
+        ),
     )
 
 
@@ -660,7 +691,10 @@ class OpenRouterLLMConfiguration(BaseChatLLMConfiguration):
     provider: Literal[ServiceProviders.OPENROUTER] = ServiceProviders.OPENROUTER
     model: str = Field(
         default="openai/gpt-4.1",
-        description="OpenRouter model slug in 'vendor/model' form.",
+        description=(
+            "OpenRouter model slug in 'vendor/model' form; any model on "
+            "openrouter.ai/models works, including ':free' variants."
+        ),
         json_schema_extra={"examples": OPENROUTER_MODELS, "allow_custom_input": True},
     )
 
@@ -737,7 +771,15 @@ class AWSBedrockLLMConfiguration(BaseChatLLMConfiguration):
     )
 
 
-SPEACHES_LLM_MODELS = ["llama3", "mistral", "phi3", "qwen2", "gemma2", "deepseek-r1"]
+SPEACHES_LLM_MODELS = [
+    "llama3",
+    "qwen3",
+    "gemma3",
+    "lfm2",
+    "mistral",
+    "phi4",
+    "deepseek-r1",
+]
 
 
 @register_llm(provider=SPEACHES_PROVIDER)

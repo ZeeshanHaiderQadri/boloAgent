@@ -366,3 +366,49 @@ async def test_fallback_reference_guard_checks_tenant_and_prevents_archive(db_se
     )
     with pytest.raises(ModelCatalogConflict):
         await db_session.archive_provider_connection(org, backup.uuid)
+
+
+@pytest.mark.asyncio
+async def test_permanent_delete_requires_archive_and_reference_cleanup(db_session):
+    org = await create_org(db_session)
+    other = await create_org(db_session)
+    connection = await create_connection(db_session, org)
+    with pytest.raises(ModelCatalogConflict):
+        await db_session.delete_provider_connection(org, connection.uuid)
+    named = await db_session.create_named_model_configuration(
+        org, name="Holds the connection", configuration=pipeline(connection)
+    )
+    await db_session.archive_named_model_configuration(org, named.uuid)
+    await db_session.archive_provider_connection(org, connection.uuid)
+    # An archived configuration that still points at the connection keeps it.
+    with pytest.raises(ModelCatalogConflict):
+        await db_session.delete_provider_connection(org, connection.uuid)
+    await db_session.delete_named_model_configuration(org, named.uuid)
+    with pytest.raises(ModelCatalogNotFound):
+        await db_session.delete_provider_connection(other, connection.uuid)
+    await db_session.delete_provider_connection(org, connection.uuid)
+    assert (
+        await db_session.get_provider_connection(
+            org, connection.uuid, active_only=False
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_only_archived_model_configurations_can_be_deleted(db_session):
+    org = await create_org(db_session)
+    connection = await create_connection(db_session, org)
+    named = await db_session.create_named_model_configuration(
+        org, name="Disposable", configuration=pipeline(connection)
+    )
+    with pytest.raises(ModelCatalogConflict):
+        await db_session.delete_named_model_configuration(org, named.uuid)
+    await db_session.archive_named_model_configuration(org, named.uuid)
+    await db_session.delete_named_model_configuration(org, named.uuid)
+    assert (
+        await db_session.get_named_model_configuration(
+            org, named.uuid, active_only=False
+        )
+        is None
+    )
