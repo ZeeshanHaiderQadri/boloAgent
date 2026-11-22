@@ -27,6 +27,8 @@ export interface FieldSchema {
     multiline?: boolean;
     allow_custom_input?: boolean;
     voice_catalog?: "dropdown" | "dialog";
+    /** Provider lists this field's choices at `GET {base_url}/models`. */
+    model_catalog?: boolean;
     option_labels?: Record<string, string>;
     model_options?: Record<string, string[]>;
     visible_for_models?: string[];

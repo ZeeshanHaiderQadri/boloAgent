@@ -1,23 +1,27 @@
 "use client";
 
-import { ExternalLink, Plus, X } from "lucide-react";
+import { ChevronDown, ExternalLink, Plus, Search, X } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { VoiceSelector } from "@/components/VoiceSelector";
 import { VoiceSelectorModal } from "@/components/VoiceSelectorModal";
 import { LANGUAGE_DISPLAY_NAMES } from "@/constants/languages";
+import { cn } from "@/lib/utils";
 
 import { fieldForModel, isFieldVisible, resolveFieldSchema, schemaDefaults } from "./configuration";
 import { ConfigurationSelect } from "./ConfigurationSelect";
 import { getStaticVoices } from "./staticVoices";
 import type { FieldSchema, ServiceRole } from "./types";
+import { useConnectionModels } from "./useConnectionModels";
 
 const PROVIDER_DEFAULT = "__provider_default__";
+const CUSTOM_MODEL = "__custom_model__";
 
 function optionLabel(name: string, value: string, schema: FieldSchema) {
     if (schema.option_labels?.[value]) return schema.option_labels[value];
@@ -59,6 +63,43 @@ function StringListInput({ id, name, values, onChange, secret, required }: {
     </div>;
 }
 
+// Live catalogs can hold hundreds of models, so browsing them needs a filter.
+function ModelCombobox({ id, value, options, onSelect, placeholder, required }: {
+    id: string; value: string; options: string[]; onSelect: (value: string) => void; placeholder: string; required: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState("");
+    const listId = useId();
+    const matches = useMemo(() => {
+        const needle = query.trim().toLowerCase();
+        return needle ? options.filter(option => option.toLowerCase().includes(needle)) : options;
+    }, [options, query]);
+    return <Popover open={open} onOpenChange={next => { setOpen(next); if (!next) setQuery(""); }}>
+        <PopoverTrigger asChild>
+            <Button id={id} type="button" variant="outline" role="combobox" aria-expanded={open} aria-controls={listId}
+                aria-required={required} data-slot="model-combobox" className="w-full min-w-0 justify-between font-normal"
+                onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }}>
+                <span className={cn("truncate", !value && "text-muted-foreground")}>{value || placeholder}</span>
+                <ChevronDown className="ml-2 size-4 shrink-0 opacity-50" />
+            </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" collisionPadding={16} className="w-[var(--radix-popover-trigger-width)] p-0">
+            <div className="relative border-b p-2">
+                <Search className="absolute left-4 top-4 size-4 text-muted-foreground" />
+                <Input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Search models" className="pl-8" />
+            </div>
+            <div id={listId} role="listbox" aria-label="Models" className="max-h-72 overflow-y-auto p-1">
+                {matches.map(option => <div key={option} role="option" aria-selected={option === value}
+                    className={cn("cursor-pointer rounded-sm px-2 py-1.5 text-sm", option === value ? "bg-accent" : "hover:bg-accent")}
+                    onClick={() => { onSelect(option); setOpen(false); }}>{option}</div>)}
+                {!matches.length && <p className="px-2 py-4 text-center text-sm text-muted-foreground">No models match.</p>}
+                <div role="option" aria-selected={false} className="mt-1 cursor-pointer rounded-sm border-t px-2 py-1.5 text-sm hover:bg-accent"
+                    onClick={() => { onSelect(CUSTOM_MODEL); setOpen(false); }}>Enter a custom model ID…</div>
+            </div>
+        </PopoverContent>
+    </Popover>;
+}
+
 function ValueInput({ id, name, schema, value, onChange, secret, required, provider, providerConnectionUuid, connectionRevision, model, language }: {
     id: string; name: string; schema: FieldSchema; value: unknown; onChange: (value: unknown) => void;
     secret: boolean; required: boolean; provider?: string; providerConnectionUuid?: string; connectionRevision?: number; model?: string; language?: string;
@@ -69,18 +110,33 @@ function ValueInput({ id, name, schema, value, onChange, secret, required, provi
     const numeric = alternatives.find(option => option.type === "number" || option.type === "integer");
     const canPool = secret && alternatives.some(option => option.type === "array") && alternatives.some(option => option.type === "string");
     const enumerated = Boolean(schema.enum || concrete.enum);
-    // Select values are strings; numeric enums are converted back on change.
-    const options = useMemo(
-        () => (schema.enum || concrete.enum || schema.examples)?.map(String),
-        [schema.enum, concrete.enum, schema.examples],
+    const voiceCatalog = Boolean(schema.voice_catalog && provider);
+    const catalog = useConnectionModels(
+        schema.model_catalog && !voiceCatalog ? providerConnectionUuid : undefined,
+        connectionRevision,
     );
+    const discoveredModels = catalog.models;
+    // Select values are strings; numeric enums are converted back on change.
+    const options = useMemo(() => {
+        const listed = (schema.enum || concrete.enum || schema.examples)?.map(String) ?? [];
+        // A provider that publishes its catalog owns the list; curated
+        // suggestions are only the offline fallback so stale models never show.
+        if (discoveredModels?.length) return discoveredModels;
+        return listed.length ? listed : undefined;
+    }, [schema.enum, concrete.enum, schema.examples, discoveredModels]);
     const hasModelOptions = !schema.model_options || Boolean(model && schema.model_options[model]);
     const staticVoices = useMemo(() => {
         if (!provider || !hasModelOptions) return undefined;
         return getStaticVoices(provider, options, model);
     }, [provider, options, model, hasModelOptions]);
-    const voiceCatalog = Boolean(schema.voice_catalog && provider);
     const [custom, setCustom] = useState(false);
+    // Silent fallback hid unreachable endpoints; name the failure and offer a retry.
+    const catalogHint = schema.model_catalog && !voiceCatalog && catalog.status === "error" ? (
+        <p className="text-xs text-destructive">
+            {catalog.error}{" "}
+            <button type="button" className="underline" onClick={catalog.reload}>Retry</button>
+        </p>
+    ) : null;
 
     if (canPool) {
         return <StringListInput id={id} name={name} secret required={required} values={Array.isArray(value) ? value : [String(value || "")]}
@@ -117,27 +173,47 @@ function ValueInput({ id, name, schema, value, onChange, secret, required, provi
         // A remote catalog may be loading or omit a saved/custom voice. Keep
         // browsing available until the user explicitly chooses manual entry.
         const customInput = schema.allow_custom_input && (custom || (!voiceCatalog && Boolean(current && !options?.includes(current))));
+        // Model lists are open-ended: any slug the provider accepts works, so
+        // custom entry belongs in the list itself rather than a separate toggle.
+        const modelCustomEntry = Boolean(schema.allow_custom_input && name === "model" && !voiceCatalog);
         return <div className="space-y-2">
-            {customInput ? <Input id={id} value={current} required={required} placeholder={`Enter ${name.replaceAll("_", " ")}`} onChange={event => onChange(event.target.value)} />
+            {customInput ? <>
+                <Input id={id} value={current} required={required} placeholder={`Enter ${name.replaceAll("_", " ")}`} onChange={event => onChange(event.target.value)} />
+                {modelCustomEntry && <button type="button" className="self-start text-xs underline" onClick={() => { setCustom(false); onChange(options?.[0] ?? ""); }}>Choose from the list</button>}
+            </>
                 : voiceCatalog && provider ? (schema.voice_catalog === "dialog"
                     ? <VoiceSelectorModal id={id} provider={provider} providerConnectionUuid={providerConnectionUuid} connectionRevision={connectionRevision} value={current} onChange={onChange} model={model} />
                     : <VoiceSelector id={id} provider={provider} providerConnectionUuid={providerConnectionUuid} connectionRevision={connectionRevision} value={current} onChange={onChange} model={model} language={language} staticVoices={staticVoices} />)
-                : <ConfigurationSelect id={id} value={value == null && nullable ? PROVIDER_DEFAULT : current} required={required}
-                    placeholder={`Select ${name.replaceAll("_", " ")}`} onValueChange={next => onChange(next === PROVIDER_DEFAULT ? null : numeric ? Number(next) : next)}
+                : modelCustomEntry && schema.model_catalog && !nullable
+                    ? <ModelCombobox id={id} required={required} value={current} options={options || []}
+                        placeholder={`Select ${name.replaceAll("_", " ")}`} onSelect={next => {
+                            if (next === CUSTOM_MODEL) { setCustom(true); onChange(""); return; }
+                            onChange(next);
+                        }} />
+                    : <ConfigurationSelect id={id} value={value == null && nullable ? PROVIDER_DEFAULT : current} required={required}
+                    placeholder={`Select ${name.replaceAll("_", " ")}`} onValueChange={next => {
+                        if (next === CUSTOM_MODEL) { setCustom(true); onChange(""); return; }
+                        onChange(next === PROVIDER_DEFAULT ? null : numeric ? Number(next) : next);
+                    }}
                     options={[...(nullable ? [{ value: PROVIDER_DEFAULT, label: "Provider default" }] : []),
-                        ...[...(options || []), ...(!schema.allow_custom_input && current && !options?.includes(current) ? [current] : [])].map(option => ({ value: option, label: optionLabel(name, option, schema) }))]} />}
-            {schema.allow_custom_input && <div className="flex items-center gap-2">
+                        ...[...(options || []), ...(!schema.allow_custom_input && current && !options?.includes(current) ? [current] : [])].map(option => ({ value: option, label: optionLabel(name, option, schema) })),
+                        ...(modelCustomEntry ? [{ value: CUSTOM_MODEL, label: "Enter a custom model ID…" }] : [])]} />}
+            {schema.allow_custom_input && !modelCustomEntry && <div className="flex items-center gap-2">
                 <Checkbox id={`${id}-custom`} checked={Boolean(customInput)} onCheckedChange={checked => {
                     setCustom(checked === true);
                     if (!checked && !voiceCatalog) onChange(options?.[0]);
                 }} />
                 <Label htmlFor={`${id}-custom`} className="cursor-pointer text-sm font-normal">Enter Custom Value</Label>
             </div>}
+            {catalogHint}
         </div>;
     }
-    return <Input id={id} type={secret ? "password" : "text"} value={value == null ? "" : String(value)} required={required}
-        autoComplete={secret ? "new-password" : "off"} placeholder={nullable ? "Provider default" : undefined}
-        onChange={event => onChange(event.target.value || (nullable ? null : ""))} />;
+    return <div className="space-y-1">
+        <Input id={id} type={secret ? "password" : "text"} value={value == null ? "" : String(value)} required={required}
+            autoComplete={secret ? "new-password" : "off"} placeholder={nullable ? "Provider default" : undefined}
+            onChange={event => onChange(event.target.value || (nullable ? null : ""))} />
+        {catalogHint}
+    </div>;
 }
 
 export function SchemaFields({ schema, values, onChange, secret = false, configuredFields = [], context = {}, provider, providerConnectionUuid, connectionRevision, role, className = "grid grid-cols-1 gap-4 sm:grid-cols-2" }: {

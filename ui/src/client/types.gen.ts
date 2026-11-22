@@ -379,6 +379,34 @@ export type BillingPaymentsResponse = {
 };
 
 /**
+ * Body_import_leads_api_v1_leads_import_post
+ */
+export type BodyImportLeadsApiV1LeadsImportPost = {
+    /**
+     * File
+     */
+    file: Blob | File;
+    /**
+     * Country Code
+     */
+    country_code?: string;
+};
+
+/**
+ * Body_preview_lead_import_api_v1_leads_import_preview_post
+ */
+export type BodyPreviewLeadImportApiV1LeadsImportPreviewPost = {
+    /**
+     * File
+     */
+    file: Blob | File;
+    /**
+     * Country Code
+     */
+    country_code?: string;
+};
+
+/**
  * Body_transcribe_audio_api_v1_workflow_recordings_transcribe_post
  */
 export type BodyTranscribeAudioApiV1WorkflowRecordingsTranscribePost = {
@@ -1602,6 +1630,10 @@ export type CopilotMessageRequest = {
      */
     message: string;
     /**
+     * Attachments
+     */
+    attachments?: Array<string>;
+    /**
      * Client Request Id
      */
     client_request_id?: string | null;
@@ -1643,6 +1675,16 @@ export type CopilotPendingCall = {
     arguments: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * CopilotRegenerateRequest
+ */
+export type CopilotRegenerateRequest = {
+    /**
+     * Client Request Id
+     */
+    client_request_id?: string | null;
 };
 
 /**
@@ -4097,6 +4139,142 @@ export type LeadFacetsResponse = {
 };
 
 /**
+ * LeadImportPreviewResponse
+ */
+export type LeadImportPreviewResponse = {
+    /**
+     * File Name
+     */
+    file_name: string;
+    /**
+     * Sheets
+     */
+    sheets?: Array<string>;
+    /**
+     * Total Rows
+     */
+    total_rows: number;
+    /**
+     * Ready Rows
+     */
+    ready_rows: number;
+    /**
+     * Skipped Rows
+     */
+    skipped_rows: number;
+    /**
+     * Duplicate Rows
+     */
+    duplicate_rows: number;
+    /**
+     * Mapped Columns
+     */
+    mapped_columns?: {
+        [key: string]: string;
+    };
+    /**
+     * Ignored Columns
+     */
+    ignored_columns?: Array<string>;
+    /**
+     * Warnings
+     */
+    warnings?: Array<string>;
+    /**
+     * Leads
+     */
+    leads?: Array<LeadImportPreviewRow>;
+};
+
+/**
+ * LeadImportPreviewRow
+ */
+export type LeadImportPreviewRow = {
+    /**
+     * Sheet
+     */
+    sheet: string;
+    /**
+     * Row Number
+     */
+    row_number: number;
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Phone
+     */
+    phone?: string | null;
+    /**
+     * Phone E164
+     */
+    phone_e164?: string | null;
+    /**
+     * Email
+     */
+    email?: string | null;
+    /**
+     * Website
+     */
+    website?: string | null;
+    /**
+     * City
+     */
+    city?: string | null;
+    /**
+     * State
+     */
+    state?: string | null;
+    /**
+     * Country
+     */
+    country?: string | null;
+    /**
+     * Social Platforms
+     */
+    social_platforms?: Array<string>;
+    /**
+     * Crm Status
+     */
+    crm_status?: string;
+    /**
+     * Issues
+     */
+    issues?: Array<string>;
+};
+
+/**
+ * LeadImportResponse
+ */
+export type LeadImportResponse = {
+    /**
+     * Total Rows
+     */
+    total_rows: number;
+    /**
+     * Created
+     */
+    created: number;
+    /**
+     * Updated
+     */
+    updated: number;
+    /**
+     * Duplicates
+     */
+    duplicates: number;
+    /**
+     * Skipped
+     */
+    skipped: number;
+    /**
+     * Warnings
+     */
+    warnings?: Array<string>;
+};
+
+/**
  * LeadListResponse
  */
 export type LeadListResponse = {
@@ -5192,6 +5370,34 @@ export type ModelConfigurationSpec = {
     tts?: ServiceSelection | null;
     realtime?: ServiceSelection | null;
     embeddings?: ServiceSelection | null;
+};
+
+/**
+ * ModelInfo
+ */
+export type ModelInfo = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name?: string | null;
+};
+
+/**
+ * ModelsResponse
+ */
+export type ModelsResponse = {
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Models
+     */
+    models: Array<ModelInfo>;
 };
 
 /**
@@ -14359,6 +14565,50 @@ export type CreateConversationApiV1CopilotConversationsPostResponses = {
 
 export type CreateConversationApiV1CopilotConversationsPostResponse = CreateConversationApiV1CopilotConversationsPostResponses[keyof CreateConversationApiV1CopilotConversationsPostResponses];
 
+export type DeleteConversationApiV1CopilotConversationsConversationIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: number;
+    };
+    query?: never;
+    url: '/api/v1/copilot/conversations/{conversation_id}';
+};
+
+export type DeleteConversationApiV1CopilotConversationsConversationIdDeleteErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteConversationApiV1CopilotConversationsConversationIdDeleteError = DeleteConversationApiV1CopilotConversationsConversationIdDeleteErrors[keyof DeleteConversationApiV1CopilotConversationsConversationIdDeleteErrors];
+
+export type DeleteConversationApiV1CopilotConversationsConversationIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteConversationApiV1CopilotConversationsConversationIdDeleteResponse = DeleteConversationApiV1CopilotConversationsConversationIdDeleteResponses[keyof DeleteConversationApiV1CopilotConversationsConversationIdDeleteResponses];
+
 export type GetConversationApiV1CopilotConversationsConversationIdGetData = {
     body?: never;
     headers?: {
@@ -14446,6 +14696,50 @@ export type SendMessageApiV1CopilotConversationsConversationIdMessagesPostRespon
 };
 
 export type SendMessageApiV1CopilotConversationsConversationIdMessagesPostResponse = SendMessageApiV1CopilotConversationsConversationIdMessagesPostResponses[keyof SendMessageApiV1CopilotConversationsConversationIdMessagesPostResponses];
+
+export type RegenerateReplyApiV1CopilotConversationsConversationIdRegeneratePostData = {
+    body: CopilotRegenerateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: number;
+    };
+    query?: never;
+    url: '/api/v1/copilot/conversations/{conversation_id}/regenerate';
+};
+
+export type RegenerateReplyApiV1CopilotConversationsConversationIdRegeneratePostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RegenerateReplyApiV1CopilotConversationsConversationIdRegeneratePostError = RegenerateReplyApiV1CopilotConversationsConversationIdRegeneratePostErrors[keyof RegenerateReplyApiV1CopilotConversationsConversationIdRegeneratePostErrors];
+
+export type RegenerateReplyApiV1CopilotConversationsConversationIdRegeneratePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: CopilotSnapshot;
+};
+
+export type RegenerateReplyApiV1CopilotConversationsConversationIdRegeneratePostResponse = RegenerateReplyApiV1CopilotConversationsConversationIdRegeneratePostResponses[keyof RegenerateReplyApiV1CopilotConversationsConversationIdRegeneratePostResponses];
 
 export type DecideApprovalApiV1CopilotConversationsConversationIdApprovalsPostData = {
     body: CopilotApprovalRequest;
@@ -15265,6 +15559,126 @@ export type ExportLeadsApiV1LeadsExportGetResponses = {
      */
     200: unknown;
 };
+
+export type DownloadLeadImportTemplateApiV1LeadsImportTemplateGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Format
+         */
+        format?: 'xlsx' | 'csv';
+    };
+    url: '/api/v1/leads/import/template';
+};
+
+export type DownloadLeadImportTemplateApiV1LeadsImportTemplateGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DownloadLeadImportTemplateApiV1LeadsImportTemplateGetError = DownloadLeadImportTemplateApiV1LeadsImportTemplateGetErrors[keyof DownloadLeadImportTemplateApiV1LeadsImportTemplateGetErrors];
+
+export type DownloadLeadImportTemplateApiV1LeadsImportTemplateGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type PreviewLeadImportApiV1LeadsImportPreviewPostData = {
+    body: BodyPreviewLeadImportApiV1LeadsImportPreviewPost;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/leads/import/preview';
+};
+
+export type PreviewLeadImportApiV1LeadsImportPreviewPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewLeadImportApiV1LeadsImportPreviewPostError = PreviewLeadImportApiV1LeadsImportPreviewPostErrors[keyof PreviewLeadImportApiV1LeadsImportPreviewPostErrors];
+
+export type PreviewLeadImportApiV1LeadsImportPreviewPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadImportPreviewResponse;
+};
+
+export type PreviewLeadImportApiV1LeadsImportPreviewPostResponse = PreviewLeadImportApiV1LeadsImportPreviewPostResponses[keyof PreviewLeadImportApiV1LeadsImportPreviewPostResponses];
+
+export type ImportLeadsApiV1LeadsImportPostData = {
+    body: BodyImportLeadsApiV1LeadsImportPost;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/leads/import';
+};
+
+export type ImportLeadsApiV1LeadsImportPostErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ImportLeadsApiV1LeadsImportPostError = ImportLeadsApiV1LeadsImportPostErrors[keyof ImportLeadsApiV1LeadsImportPostErrors];
+
+export type ImportLeadsApiV1LeadsImportPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: LeadImportResponse;
+};
+
+export type ImportLeadsApiV1LeadsImportPostResponse = ImportLeadsApiV1LeadsImportPostResponses[keyof ImportLeadsApiV1LeadsImportPostResponses];
 
 export type BulkUpdateLeadsApiV1LeadsBulkPostData = {
     body: BulkLeadUpdateRequest;
@@ -20222,6 +20636,50 @@ export type UpdateProviderConnectionResponses = {
 
 export type UpdateProviderConnectionResponse = UpdateProviderConnectionResponses[keyof UpdateProviderConnectionResponses];
 
+export type DeleteProviderConnectionData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Connection Uuid
+         */
+        connection_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/model-connections/provider-connections/{connection_uuid}/permanent';
+};
+
+export type DeleteProviderConnectionErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteProviderConnectionError = DeleteProviderConnectionErrors[keyof DeleteProviderConnectionErrors];
+
+export type DeleteProviderConnectionResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteProviderConnectionResponse = DeleteProviderConnectionResponses[keyof DeleteProviderConnectionResponses];
+
 export type RestoreProviderConnectionData = {
     body?: never;
     headers?: {
@@ -20265,6 +20723,50 @@ export type RestoreProviderConnectionResponses = {
 };
 
 export type RestoreProviderConnectionResponse = RestoreProviderConnectionResponses[keyof RestoreProviderConnectionResponses];
+
+export type ListConnectionModelsData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Connection Uuid
+         */
+        connection_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/model-connections/provider-connections/{connection_uuid}/models';
+};
+
+export type ListConnectionModelsErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListConnectionModelsError = ListConnectionModelsErrors[keyof ListConnectionModelsErrors];
+
+export type ListConnectionModelsResponses = {
+    /**
+     * Successful Response
+     */
+    200: ModelsResponse;
+};
+
+export type ListConnectionModelsResponse = ListConnectionModelsResponses[keyof ListConnectionModelsResponses];
 
 export type ListNamedModelConfigurationsData = {
     body?: never;
@@ -20482,6 +20984,50 @@ export type UpdateNamedModelConfigurationResponses = {
 };
 
 export type UpdateNamedModelConfigurationResponse = UpdateNamedModelConfigurationResponses[keyof UpdateNamedModelConfigurationResponses];
+
+export type DeleteNamedModelConfigurationData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Configuration Uuid
+         */
+        configuration_uuid: string;
+    };
+    query?: never;
+    url: '/api/v1/model-connections/model-configurations/{configuration_uuid}/permanent';
+};
+
+export type DeleteNamedModelConfigurationErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteNamedModelConfigurationError = DeleteNamedModelConfigurationErrors[keyof DeleteNamedModelConfigurationErrors];
+
+export type DeleteNamedModelConfigurationResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteNamedModelConfigurationResponse = DeleteNamedModelConfigurationResponses[keyof DeleteNamedModelConfigurationResponses];
 
 export type RestoreNamedModelConfigurationData = {
     body?: never;

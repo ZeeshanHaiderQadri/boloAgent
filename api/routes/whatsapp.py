@@ -30,21 +30,22 @@ from api.services.whatsapp.countries import (
     dial_code_for_e164,
     international_digits,
     normalize_country_code,
-    resolve_lead_phone,
     resolve_local,
 )
 from api.services.whatsapp.disclaimer import (
     WHATSAPP_DISCLAIMER_TEXT,
     WHATSAPP_DISCLAIMER_VERSION,
 )
+from api.services.whatsapp.lead_links import (
+    LeadLinksDisclaimerRequiredError,
+    LeadLinksLeadNotFoundError,
+    build_lead_links,
+)
 from api.services.whatsapp.templates import (
     MAX_TEMPLATE_NAME_CHARS,
     WhatsAppTemplateError,
-    build_wa_me_url,
-    lead_values,
     normalize_category,
     normalize_language,
-    render_body,
     validate_template_body,
 )
 
@@ -556,57 +557,33 @@ async def whatsapp_lead_links(
     and Bolo records no send.
     """
     organization_id = _require_organization(user)
-    lead = await db_client.get_lead(lead_id, organization_id)
-    if lead is None:
-        raise HTTPException(status_code=404, detail="Lead not found")
-
-    acceptance = await db_client.get_whatsapp_disclaimer(organization_id, user.id)
-    if acceptance is None or acceptance.text_version != WHATSAPP_DISCLAIMER_VERSION:
+    try:
+        result = await build_lead_links(
+            organization_id=organization_id,
+            user_id=user.id,
+            lead_id=lead_id,
+        )
+    except LeadLinksLeadNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Lead not found") from exc
+    except LeadLinksDisclaimerRequiredError as exc:
         raise HTTPException(
             status_code=403,
             detail="Accept the WhatsApp disclaimer before opening message links.",
-        )
+        ) from exc
 
-    resolution = resolve_lead_phone(lead.phone, lead.phone_e164, lead.country)
-    if resolution.failure == "country_unknown":
-        # The lead's country was the first hint and it was missing, so try the
-        # default sender's country. It is never used to override a lead country.
-        sender = await db_client.get_default_whatsapp_sender(organization_id)
-        if sender is not None:
-            resolution = resolve_lead_phone(
-                lead.phone, lead.phone_e164, lead.country, sender.country
-            )
-    if not resolution.phone_e164:
-        reason = {
-            "missing": "no_phone",
-            "country_unknown": "country_unknown",
-        }.get(resolution.failure or "", "unrecognized_number")
-        return WhatsAppLeadLinksResponse(available=False, reason=reason, links=[])
-    phone_e164 = resolution.phone_e164
-
-    templates = await db_client.list_whatsapp_templates(organization_id)
-    values = lead_values(
-        business_name=lead.title, category=lead.category, city=lead.city
-    )
-    links: list[WhatsAppTemplateLink] = []
-    for template in templates:
-        rendered = render_body(template.body, values)
-        try:
-            url = build_wa_me_url(phone_e164, rendered)
-        except WhatsAppTemplateError:
-            continue
-        links.append(
-            WhatsAppTemplateLink(
-                template_uuid=template.template_uuid,
-                name=template.name,
-                language=template.language,
-                body=rendered,
-                url=url,
-            )
-        )
     return WhatsAppLeadLinksResponse(
-        available=True,
-        phone_e164=phone_e164,
-        country=resolution.country,
-        links=links,
+        available=result.available,
+        reason=result.reason,
+        phone_e164=result.phone_e164,
+        country=result.country,
+        links=[
+            WhatsAppTemplateLink(
+                template_uuid=link.template_uuid,
+                name=link.name,
+                language=link.language,
+                body=link.body,
+                url=link.url,
+            )
+            for link in result.links
+        ],
     )

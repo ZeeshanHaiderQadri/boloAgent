@@ -15,9 +15,10 @@ export default function ExternalProcessingNotice() {
         <p className="font-medium">Processed by an external service</p>
         <p className="mt-1">
           Documents are sent to Bolo&apos;s managed Model Proxy Service for parsing and
-          chunking when they are uploaded or edited. Bolo Model Proxy Service does not
-          store or read your documents - the extracted text and embeddings are returned
-          and stored locally in your self-hosted database.
+          chunking when they are uploaded or edited. Spreadsheets (.xlsx, .csv) are
+          parsed locally and never leave this instance. Bolo Model Proxy Service does
+          not store or read your documents - the extracted text and embeddings are
+          returned and stored locally in your self-hosted database.
         </p>
       </div>
     </div>

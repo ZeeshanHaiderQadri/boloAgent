@@ -253,7 +253,7 @@ function CanvasPreview({
         const llmSource =
             data.qa_use_workflow_llm !== false
                 ? "Workflow LLM"
-                : `${data.qa_provider || "openai"}/${data.qa_model || "gpt-4.1"}`;
+                : `${data.qa_provider || "openai"}/${data.qa_model || "default"}`;
         const enabled = data.qa_enabled !== false;
         return (
             <div className="space-y-2">

@@ -3,22 +3,42 @@
 import {
   AlertTriangle,
   ArrowUp,
+  Brain,
+  Check,
+  Copy,
+  FileText,
+  FolderPlus,
+  Globe,
   Loader2,
   MessageSquarePlus,
+  Palette,
+  Paperclip,
   Phone,
   PhoneOff,
+  Plus,
+  Puzzle,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
+  Square,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
+  X,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   createConversationApiV1CopilotConversationsPost,
   decideApprovalApiV1CopilotConversationsConversationIdApprovalsPost,
+  deleteConversationApiV1CopilotConversationsConversationIdDelete,
   getConversationApiV1CopilotConversationsConversationIdGet,
+  getDocumentApiV1KnowledgeBaseDocumentsDocumentUuidGet,
+  getUploadUrlApiV1KnowledgeBaseUploadUrlPost,
   listConversationsApiV1CopilotConversationsGet,
+  processDocumentApiV1KnowledgeBaseProcessDocumentPost,
+  regenerateReplyApiV1CopilotConversationsConversationIdRegeneratePost,
   sendMessageApiV1CopilotConversationsConversationIdMessagesPost,
 } from "@/client/sdk.gen";
 import type {
@@ -31,6 +51,22 @@ import { PageShell } from "@/components/layout/PageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { detailFromError } from "@/lib/apiError";
@@ -40,6 +76,7 @@ import { cn } from "@/lib/utils";
 import { useAgentVoice } from "./hooks/useAgentVoice";
 
 const TOOL_LABELS: Record<string, string> = {
+  read_document: "Read document",
   tag_leads: "Tag leads",
   start_lead_search: "Start lead search",
   create_email_campaign_draft: "Create email draft",
@@ -68,6 +105,14 @@ function requestId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function SoonChip() {
+  return (
+    <span className="ml-auto rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+      Soon
+    </span>
+  );
+}
+
 function formatWhen(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -77,6 +122,78 @@ function formatWhen(value: string) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+const ATTACH_ACCEPT = [
+  ".pdf",
+  ".docx",
+  ".doc",
+  ".xlsx",
+  ".csv",
+  ".txt",
+  ".json",
+  ".md",
+];
+const ATTACH_MAX_BYTES = 5 * 1024 * 1024;
+const ATTACH_MAX_COUNT = 10;
+
+type PendingAttachment = {
+  key: string;
+  uuid: string;
+  name: string;
+  status: "uploading" | "processing" | "ready" | "failed";
+};
+
+type MessageFeedback = "up" | "down";
+
+const FEEDBACK_STORAGE_KEY = "bolo-agent-feedback";
+
+function feedbackKey(
+  conversationId: number | null,
+  index: number,
+  content: string,
+) {
+  return `${conversationId ?? 0}:${index}:${content.length}:${content.slice(-24)}`;
+}
+
+function loadFeedback(): Record<string, MessageFeedback> {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(window.localStorage.getItem(FEEDBACK_STORAGE_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function MessageAction({
+  label,
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      aria-pressed={active}
+      className={cn(
+        "rounded-md p-1 text-muted-foreground/60 transition-colors duration-300 hover:text-foreground disabled:opacity-40",
+        active && "text-cta",
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 function ApprovalCard({
@@ -162,14 +279,173 @@ export default function AgentPage() {
   const [busy, setBusy] = useState(false);
   const [deciding, setDeciding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<CopilotConversationSummary | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [feedback, setFeedback] = useState<Record<string, MessageFeedback>>(
+    loadFeedback,
+  );
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const hasLoaded = useRef(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
 
   const authHeaders = useCallback(
     async () => ({ Authorization: `Bearer ${await getAccessToken()}` }),
     [getAccessToken],
   );
+
+  const updateAttachment = useCallback(
+    (key: string, patch: Partial<PendingAttachment>) =>
+      setAttachments((current) =>
+        current.map((item) =>
+          item.key === key ? { ...item, ...patch } : item,
+        ),
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        FEEDBACK_STORAGE_KEY,
+        JSON.stringify(feedback),
+      );
+    } catch {
+      // Storage can be unavailable in private mode; ratings still work in-session.
+    }
+  }, [feedback]);
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+    },
+    [],
+  );
+
+  const waitForDocument = useCallback(
+    async (documentUuid: string) => {
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const response =
+          await getDocumentApiV1KnowledgeBaseDocumentsDocumentUuidGet({
+            path: { document_uuid: documentUuid },
+            headers: await authHeaders(),
+          });
+        const status = response.data?.processing_status;
+        if (status === "completed") return true;
+        if (status === "failed") return false;
+      }
+      return true;
+    },
+    [authHeaders],
+  );
+
+  const uploadAttachment = useCallback(
+    async (file: File) => {
+      const extension = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}`;
+      if (!ATTACH_ACCEPT.includes(extension)) {
+        setError(`Unsupported file type. Use ${ATTACH_ACCEPT.join(", ")}.`);
+        return;
+      }
+      if (file.size > ATTACH_MAX_BYTES) {
+        setError("Files must be 5MB or smaller.");
+        return;
+      }
+
+      const key = requestId();
+      setAttachments((current) => [
+        ...current,
+        { key, uuid: "", name: file.name, status: "uploading" },
+      ]);
+
+      try {
+        const urlResponse = await getUploadUrlApiV1KnowledgeBaseUploadUrlPost({
+          body: {
+            filename: file.name,
+            mime_type: file.type || "application/octet-stream",
+            custom_metadata: {
+              original_filename: file.name,
+              uploaded_at: new Date().toISOString(),
+            },
+          },
+          headers: await authHeaders(),
+        });
+        if (urlResponse.error || !urlResponse.data) {
+          throw new Error(
+            detailFromError(urlResponse.error, "Could not prepare the upload."),
+          );
+        }
+        const { upload_url, document_uuid, s3_key } = urlResponse.data;
+
+        const upload = await fetch(upload_url, {
+          method: "PUT",
+          body: file,
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+          },
+        });
+        if (!upload.ok) throw new Error("Upload failed. Please try again.");
+
+        updateAttachment(key, { uuid: document_uuid, status: "processing" });
+        const processed =
+          await processDocumentApiV1KnowledgeBaseProcessDocumentPost({
+            body: {
+              document_uuid,
+              s3_key,
+              retrieval_mode: "full_document",
+            },
+            headers: await authHeaders(),
+          });
+        if (processed.error) {
+          throw new Error(
+            detailFromError(processed.error, "Could not process this file."),
+          );
+        }
+
+        const ready = await waitForDocument(document_uuid);
+        updateAttachment(key, { status: ready ? "ready" : "failed" });
+        if (!ready) setError(`${file.name} could not be processed.`);
+      } catch (cause) {
+        updateAttachment(key, { status: "failed" });
+        setError(
+          cause instanceof Error ? cause.message : "Could not attach this file.",
+        );
+      }
+    },
+    [authHeaders, updateAttachment, waitForDocument],
+  );
+
+  const handleAttachFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const room = ATTACH_MAX_COUNT - attachments.length;
+    if (room <= 0) {
+      setError(`Attach up to ${ATTACH_MAX_COUNT} files per message.`);
+      return;
+    }
+    setError(null);
+    await Promise.all(Array.from(files).slice(0, room).map(uploadAttachment));
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "u") {
+        return;
+      }
+      event.preventDefault();
+      if (busy || attachments.length >= ATTACH_MAX_COUNT) return;
+      fileInputRef.current?.click();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [attachments.length, busy]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -182,6 +458,7 @@ export default function AgentPage() {
       setActiveId(conversationId);
       setSnapshotLoading(true);
       setError(null);
+      setAttachments([]);
       try {
         const response =
           await getConversationApiV1CopilotConversationsConversationIdGet({
@@ -254,9 +531,18 @@ export default function AgentPage() {
 
   const handleSend = async () => {
     const text = draft.trim();
-    if (!text || busy) return;
+    const readyAttachments = attachments.filter(
+      (item) => item.status === "ready",
+    );
+    const attaching = attachments.some(
+      (item) => item.status === "uploading" || item.status === "processing",
+    );
+    if (!text || busy || attaching) return;
 
+    const controller = new AbortController();
+    abortRef.current = controller;
     setError(null);
+    setNotice(null);
     setBusy(true);
     setDraft("");
     setOptimistic([{ role: "user", content: text }]);
@@ -269,8 +555,15 @@ export default function AgentPage() {
       const response =
         await sendMessageApiV1CopilotConversationsConversationIdMessagesPost({
           path: { conversation_id: conversationId },
-          body: { message: text, client_request_id: requestId() },
+          body: {
+            message: text,
+            client_request_id: requestId(),
+            ...(readyAttachments.length > 0 && {
+              attachments: readyAttachments.map((item) => item.uuid),
+            }),
+          },
           headers: await authHeaders(),
+          signal: controller.signal,
         });
       if (response.error || !response.data) {
         setError(detailFromError(response.error, "The agent could not reply."));
@@ -280,11 +573,17 @@ export default function AgentPage() {
       }
       setSnapshot(response.data);
       setOptimistic([]);
+      setAttachments([]);
       const refreshed = await listConversationsApiV1CopilotConversationsGet({
         headers: await authHeaders(),
       });
       if (refreshed.data) setConversations(refreshed.data);
     } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") {
+        setNotice("Response stopped.");
+        setOptimistic([]);
+        return;
+      }
       setError(
         cause instanceof Error
           ? cause.message
@@ -293,7 +592,112 @@ export default function AgentPage() {
       setDraft(text);
       setOptimistic([]);
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setBusy(false);
+    }
+  };
+
+  const handleStop = () => {
+    abortRef.current?.abort();
+  };
+
+  const rateMessage = (key: string, value: MessageFeedback) => {
+    setFeedback((current) => {
+      const next = { ...current };
+      if (next[key] === value) delete next[key];
+      else next[key] = value;
+      return next;
+    });
+  };
+
+  const copyMessage = async (content: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedKey(key);
+      if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => setCopiedKey(null), 1500);
+    } catch {
+      setError("Copy failed. Select the text and copy it manually.");
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (activeId === null || busy) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      const response =
+        await regenerateReplyApiV1CopilotConversationsConversationIdRegeneratePost(
+          {
+            path: { conversation_id: activeId },
+            body: { client_request_id: requestId() },
+            headers: await authHeaders(),
+            signal: controller.signal,
+          },
+        );
+      if (response.error || !response.data) {
+        setError(
+          detailFromError(response.error, "The agent could not regenerate."),
+        );
+        return;
+      }
+      setSnapshot(response.data);
+      setOptimistic([]);
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") {
+        setNotice("Response stopped.");
+        return;
+      }
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "The agent could not regenerate. Try again.",
+      );
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!toDelete || deleting) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const response =
+        await deleteConversationApiV1CopilotConversationsConversationIdDelete({
+          path: { conversation_id: toDelete.id },
+          headers: await authHeaders(),
+        });
+      if (response.error) {
+        throw new Error(
+          detailFromError(response.error, "Could not delete this conversation."),
+        );
+      }
+      const remaining = (conversations ?? []).filter(
+        (item) => item.id !== toDelete.id,
+      );
+      setConversations(remaining);
+      if (activeId === toDelete.id) {
+        setActiveId(null);
+        setSnapshot(null);
+        setOptimistic([]);
+        if (remaining.length > 0) await openConversation(remaining[0].id);
+      }
+      setToDelete(null);
+      setNotice("Conversation deleted.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not delete this conversation.",
+      );
+      setToDelete(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -346,6 +750,10 @@ export default function AgentPage() {
   };
 
   const messages = [...(snapshot?.messages ?? []), ...optimistic];
+  const lastAssistantIndex = messages.reduce(
+    (last, message, index) => (message.role === "assistant" ? index : last),
+    -1,
+  );
   const pending = snapshot?.pending_approvals ?? [];
   const hasConversation = activeId !== null;
   const visibleConversations = conversations ?? [];
@@ -355,6 +763,9 @@ export default function AgentPage() {
     voice.callState === "idle" &&
     (voice.voiceStatus?.ready ?? false);
   const callDisabled = voice.callState === "idle" && !canStartCall;
+  const attaching = attachments.some(
+    (item) => item.status === "uploading" || item.status === "processing",
+  );
 
   return (
     <PageShell className="flex flex-col">
@@ -416,12 +827,15 @@ export default function AgentPage() {
               ) : (
                 <ul className="space-y-1">
                   {visibleConversations.map((conversation) => (
-                    <li key={conversation.id}>
+                    <li
+                      key={conversation.id}
+                      className="group flex items-center gap-0.5"
+                    >
                       <button
                         type="button"
                         onClick={() => void openConversation(conversation.id)}
                         className={cn(
-                          "w-full rounded-lg px-2 py-2 text-left transition-colors duration-300 hover:bg-accent",
+                          "min-w-0 flex-1 rounded-lg px-2 py-2 text-left transition-colors duration-300 hover:bg-accent",
                           conversation.id === activeId &&
                             "bg-cta/15 font-medium text-foreground",
                         )}
@@ -432,6 +846,15 @@ export default function AgentPage() {
                         <span className="block truncate text-xs text-muted-foreground">
                           {formatWhen(conversation.updated_at)}
                         </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setToDelete(conversation)}
+                        aria-label={`Delete conversation ${conversation.title}`}
+                        title="Delete conversation"
+                        className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors duration-300 hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </li>
                   ))}
@@ -582,33 +1005,93 @@ export default function AgentPage() {
                 Say hello, or ask what the agent can do.
               </p>
             ) : (
-              messages.map((message, index) => (
-                <div
-                  key={`${message.role}-${index}`}
-                  className={cn(
-                    "flex",
-                    message.role === "user" ? "justify-end" : "justify-start",
-                  )}
-                >
+              messages.map((message, index) => {
+                const isUser = message.role === "user";
+                const key = feedbackKey(activeId, index, message.content);
+                return (
                   <div
+                    key={`${message.role}-${index}`}
                     className={cn(
-                      "max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed transition-colors duration-300",
-                      message.role === "user"
-                        ? "bg-cta text-cta-foreground"
-                        : "border border-border/60 bg-muted/40",
+                      "group flex flex-col",
+                      isUser ? "items-end" : "items-start",
                     )}
                   >
-                    {message.content}
+                    <div
+                      className={cn(
+                        "max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed transition-colors duration-300",
+                        isUser
+                          ? "bg-cta text-cta-foreground"
+                          : "border border-border/60 bg-muted/40",
+                      )}
+                    >
+                      {message.content}
+                    </div>
+                    <div
+                      className={cn(
+                        "mt-1 flex items-center gap-0.5",
+                        isUser ? "justify-end" : "justify-start",
+                      )}
+                    >
+                      <MessageAction
+                        label={copiedKey === key ? "Copied" : "Copy message"}
+                        onClick={() => void copyMessage(message.content, key)}
+                      >
+                        {copiedKey === key ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </MessageAction>
+                      {!isUser && (
+                        <>
+                          <MessageAction
+                            label="Good reply"
+                            active={feedback[key] === "up"}
+                            onClick={() => rateMessage(key, "up")}
+                          >
+                            <ThumbsUp className="h-3.5 w-3.5" />
+                          </MessageAction>
+                          <MessageAction
+                            label="Bad reply"
+                            active={feedback[key] === "down"}
+                            onClick={() => rateMessage(key, "down")}
+                          >
+                            <ThumbsDown className="h-3.5 w-3.5" />
+                          </MessageAction>
+                          {index === lastAssistantIndex && (
+                            <MessageAction
+                              label="Regenerate reply"
+                              disabled={busy || pending.length > 0}
+                              onClick={() => void handleRegenerate()}
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            </MessageAction>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
 
             {busy && !pending.length && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Thinking…
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  className="ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs underline underline-offset-2 transition-colors duration-300 hover:text-foreground"
+                >
+                  <Square className="h-3 w-3 fill-current" />
+                  Stop
+                </button>
               </div>
+            )}
+
+            {notice && !busy && (
+              <p className="text-xs text-muted-foreground">{notice}</p>
             )}
 
             {pending.length > 0 && (
@@ -628,44 +1111,193 @@ export default function AgentPage() {
           </div>
 
           <div className="border-t px-5 py-4">
-            <div className="flex items-end gap-2">
-              <Textarea
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void handleSend();
-                  }
-                }}
-                placeholder="Ask the agent to find leads, check a campaign, draft an email…"
-                rows={2}
-                maxLength={8000}
-                disabled={busy}
-                className="min-h-[52px] resize-none"
-                aria-label="Message Bolo Agent"
-              />
-              <Button
-                size="icon"
-                onClick={() => void handleSend()}
-                disabled={busy || draft.trim().length === 0}
-                aria-label="Send message"
-                className="h-[52px] w-[52px] shrink-0 rounded-xl"
-              >
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowUp className="h-4 w-4" />
-                )}
-              </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ATTACH_ACCEPT.join(",")}
+              onChange={(event) => void handleAttachFiles(event.target.files)}
+              className="hidden"
+            />
+            <div className="rounded-[26px] border border-border/70 bg-muted/30 p-2 transition-colors duration-300 focus-within:border-cta/60 focus-within:bg-muted/40">
+              {attachments.length > 0 && (
+                <div className="mb-1 flex flex-wrap gap-1.5 px-1 pt-1">
+                  {attachments.map((item) => (
+                    <span
+                      key={item.key}
+                      className={cn(
+                        "inline-flex max-w-[220px] items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors duration-300",
+                        item.status === "failed"
+                          ? "border-destructive/50 text-destructive"
+                          : "border-border/70 bg-background/40 text-muted-foreground",
+                      )}
+                    >
+                      {item.status === "uploading" ||
+                      item.status === "processing" ? (
+                        <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+                      ) : (
+                        <FileText className="h-3 w-3 shrink-0" />
+                      )}
+                      <span className="truncate">{item.name}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAttachments((current) =>
+                            current.filter((entry) => entry.key !== item.key),
+                          )
+                        }
+                        aria-label={`Remove ${item.name}`}
+                        className="shrink-0 transition-colors duration-300 hover:text-foreground"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-end gap-1.5">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      disabled={busy || attachments.length >= ATTACH_MAX_COUNT}
+                      aria-label="Add files or tools"
+                      title="Add files or tools (⌘U)"
+                      className="h-9 w-9 shrink-0 rounded-full text-muted-foreground transition-colors duration-300 hover:bg-background/60 hover:text-foreground data-[state=open]:bg-background/60 data-[state=open]:text-foreground"
+                    >
+                      <Plus className="h-5 w-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    side="top"
+                    align="start"
+                    sideOffset={10}
+                    className="w-72 rounded-2xl p-1.5"
+                  >
+                    <DropdownMenuItem
+                      onSelect={() => fileInputRef.current?.click()}
+                      className="gap-2.5 rounded-xl py-2"
+                    >
+                      <Paperclip className="h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span>Upload or add files</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          PDF, Word, Excel, CSV, text
+                        </span>
+                      </div>
+                      <DropdownMenuShortcut>⌘U</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled className="gap-2.5 rounded-xl py-2">
+                      <Globe className="h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span>Web search</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          Turn on in connectors
+                        </span>
+                      </div>
+                      <SoonChip />
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="px-2 pb-0.5 pt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                      Workspace
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem disabled className="gap-2.5 rounded-xl py-2">
+                      <FolderPlus className="h-4 w-4" />
+                      <span>Add to project</span>
+                      <SoonChip />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled className="gap-2.5 rounded-xl py-2">
+                      <Palette className="h-4 w-4" />
+                      <span>Design system</span>
+                      <SoonChip />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled className="gap-2.5 rounded-xl py-2">
+                      <Puzzle className="h-4 w-4" />
+                      <span>Plugins</span>
+                      <SoonChip />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled className="gap-2.5 rounded-xl py-2">
+                      <Brain className="h-4 w-4" />
+                      <span>Memory</span>
+                      <SoonChip />
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Textarea
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void handleSend();
+                    }
+                  }}
+                  placeholder="Ask Bolo anything — leads, campaigns, files…"
+                  rows={1}
+                  maxLength={8000}
+                  disabled={busy}
+                  className="max-h-40 min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  aria-label="Message Bolo Agent"
+                />
+                <Button
+                  size="icon"
+                  onClick={busy ? handleStop : () => void handleSend()}
+                  disabled={!busy && (draft.trim().length === 0 || attaching)}
+                  aria-label={busy ? "Stop response" : "Send message"}
+                  title={busy ? "Stop the response" : "Send"}
+                  variant={busy ? "outline" : "default"}
+                  className="h-9 w-9 shrink-0 rounded-full"
+                >
+                  {busy ? (
+                    <Square className="h-4 w-4 fill-current" />
+                  ) : (
+                    <ArrowUp className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Enter to send. Shift+Enter for a new line. Writes wait for your
-              approval.
+            <p className="mt-2 px-2 text-[11px] text-muted-foreground/70">
+              Enter to send · Shift+Enter for a new line · Writes wait for your
+              approval
             </p>
           </div>
         </Card>
       </div>
+
+      <Dialog
+        open={toDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setToDelete(null);
+        }}
+      >
+        <DialogContent onOpenAutoFocus={() => undefined}>
+          <DialogHeader>
+            <DialogTitle>Delete {toDelete?.title}?</DialogTitle>
+            <DialogDescription>
+              This permanently removes the conversation and its transcript. It
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              disabled={deleting}
+              onClick={() => setToDelete(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void handleDeleteConversation()}
+            >
+              {deleting ? "Deleting…" : "Delete conversation"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }

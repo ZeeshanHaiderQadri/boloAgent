@@ -7,7 +7,16 @@ import math
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+)
 from loguru import logger
 
 from api.constants import (
@@ -15,6 +24,7 @@ from api.constants import (
     LEADS_DISPATCH_MAX_LEADS,
     LEADS_ENABLE_DEMO_PROVIDER,
     LEADS_EXPORT_MAX_ROWS,
+    LEADS_IMPORT_MAX_BYTES,
     LEADS_MAX_TARGET_RESULTS,
     LEADS_SOCIAL_ENRICHMENT_ENABLED,
 )
@@ -35,6 +45,9 @@ from api.schemas.leads import (
     LeadEmailConsentUpdateRequest,
     LeadEmailConsentValue,
     LeadFacetsResponse,
+    LeadImportPreviewResponse,
+    LeadImportPreviewRow,
+    LeadImportResponse,
     LeadListResponse,
     LeadMetaResponse,
     LeadResponse,
@@ -63,6 +76,13 @@ from api.services.leads.dispatch import (
     dispatch_leads_to_campaign,
 )
 from api.services.leads.exports import EXPORT_FORMATS, build_export
+from api.services.leads.imports import (
+    LeadImportError,
+    build_import_template_csv,
+    build_import_template_xlsx,
+    parse_lead_import,
+    prepare_import,
+)
 from api.services.leads.normalization import normalize_lead_phone
 from api.services.leads.providers import (
     available_providers,
@@ -799,6 +819,147 @@ async def export_leads(
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
         },
+    )
+
+
+async def _read_import_upload(file: UploadFile) -> bytes:
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty")
+    if len(content) > LEADS_IMPORT_MAX_BYTES:
+        limit_mb = LEADS_IMPORT_MAX_BYTES // (1024 * 1024)
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"That file is larger than {limit_mb} MB. Split it and import "
+                "the parts one after another."
+            ),
+        )
+    return content
+
+
+@router.get("/import/template")
+async def download_lead_import_template(
+    export_format: Literal["xlsx", "csv"] = Query("xlsx", alias="format"),
+    user: UserModel = Depends(get_user),
+) -> Response:
+    """Download the spreadsheet operators fill in with their own leads."""
+    _organization_id(user)
+    try:
+        if export_format == "csv":
+            content = build_import_template_csv()
+            media_type = "text/csv; charset=utf-8"
+            filename = "bolo_leads_template.csv"
+        else:
+            content = build_import_template_xlsx()
+            media_type = (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            filename = "bolo_leads_template.xlsx"
+    except ImportError as exc:
+        logger.exception("Import template dependency missing")
+        raise HTTPException(
+            status_code=501,
+            detail="Spreadsheet templates are not available on this deployment",
+        ) from exc
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.post("/import/preview", response_model=LeadImportPreviewResponse)
+async def preview_lead_import(
+    file: UploadFile = File(...),
+    country_code: str = Form(""),
+    user: UserModel = Depends(get_user),
+) -> LeadImportPreviewResponse:
+    """Parse an upload without writing anything so the operator can check it."""
+    _organization_id(user)
+    content = await _read_import_upload(file)
+    try:
+        parsed = parse_lead_import(file.filename or "leads.xlsx", content)
+        prepared = prepare_import(parsed, country_hint=country_code or None)
+    except LeadImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    preview = []
+    for row in prepared.rows[:10]:
+        lead = row.lead or {}
+        preview.append(
+            LeadImportPreviewRow(
+                sheet=row.sheet,
+                row_number=row.row_number,
+                title=lead.get("title"),
+                phone=lead.get("phone"),
+                phone_e164=lead.get("phone_e164"),
+                email=lead.get("email"),
+                website=lead.get("website"),
+                city=lead.get("city"),
+                state=lead.get("state"),
+                country=lead.get("country"),
+                social_platforms=sorted(lead.get("social_links") or {}),
+                crm_status=lead.get("crm_status") or "new",
+                issues=row.issues,
+            )
+        )
+
+    return LeadImportPreviewResponse(
+        file_name=parsed.file_name,
+        sheets=parsed.sheets,
+        total_rows=prepared.total_rows,
+        ready_rows=len(prepared.leads),
+        skipped_rows=prepared.skipped_rows,
+        duplicate_rows=prepared.duplicate_rows,
+        mapped_columns=parsed.mapped_headers,
+        ignored_columns=parsed.ignored_headers,
+        warnings=prepared.warnings,
+        leads=preview,
+    )
+
+
+@router.post("/import", response_model=LeadImportResponse)
+async def import_leads(
+    file: UploadFile = File(...),
+    country_code: str = Form(""),
+    user: UserModel = Depends(get_user),
+) -> LeadImportResponse:
+    """Add the rows of an upload to this organization's shared CRM."""
+    organization_id = _organization_id(user)
+    content = await _read_import_upload(file)
+    try:
+        parsed = parse_lead_import(file.filename or "leads.xlsx", content)
+        prepared = prepare_import(parsed, country_hint=country_code or None)
+    except LeadImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not prepared.leads:
+        raise HTTPException(
+            status_code=400,
+            detail="No rows in this file could be imported. Check the preview.",
+        )
+
+    summary = await db_client.upsert_imported_leads(
+        organization_id=organization_id,
+        leads=prepared.leads,
+        owner_user_id=user.id,
+    )
+    logger.info(
+        f"Imported leads from {parsed.file_name}: {summary['created']} new, "
+        f"{summary['updated']} updated, org {organization_id}"
+    )
+    return LeadImportResponse(
+        total_rows=prepared.total_rows,
+        created=summary["created"],
+        updated=summary["updated"],
+        duplicates=prepared.duplicate_rows + summary["duplicates"],
+        skipped=prepared.skipped_rows,
+        warnings=prepared.warnings,
     )
 
 

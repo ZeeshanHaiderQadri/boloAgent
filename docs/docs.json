@@ -138,7 +138,8 @@
             "group": "Leads",
             "pages": [
               "leads/search-results-limit",
-              "leads/social-profiles"
+              "leads/social-profiles",
+              "leads/import-leads"
             ]
           },
           {

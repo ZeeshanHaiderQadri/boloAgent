@@ -24,6 +24,7 @@ from api.schemas.model_connections import (
     ModelConfigurationSpec,
 )
 from api.services.configuration.check_validity import UserConfigurationValidator
+from api.services.configuration.model_catalog import OPENAI_COMPATIBLE_BASE_URLS
 from api.services.configuration.registry import (
     REGISTRY,
     ServiceType,
@@ -108,6 +109,10 @@ def model_connection_catalog():
                 for key, value in properties.items()
                 if key not in CREDENTIAL_FIELDS | CONNECTION_FIELDS | {"provider"}
             }
+            # The UI asks the connection for its model list where the provider
+            # publishes one; other providers keep the curated suggestions.
+            if provider.id in OPENAI_COMPATIBLE_BASE_URLS and "model" in settings:
+                settings["model"] = {**settings["model"], "model_catalog": True}
             providers[provider.id] = {
                 "title": provider.title,
                 "credential_fields": {

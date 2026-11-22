@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { getDefaultConfigurationsApiV1UserConfigurationsDefaultsGet } from "@/client/sdk.gen";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -13,6 +12,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+
+const CUSTOM_MODEL = "__custom_model__";
 
 interface SchemaProperty {
     type?: string;
@@ -62,17 +63,20 @@ export function LLMConfigSelector({
     const availableProviders = Object.keys(schemas);
     const providerSchema = schemas[provider];
 
-    const getModelOptions = (): string[] => {
-        if (!providerSchema) return [];
-        const modelSchema = providerSchema.properties.model;
-        const actualSchema =
-            modelSchema?.$ref && providerSchema.$defs
-                ? providerSchema.$defs[modelSchema.$ref.split("/").pop() || ""]
-                : modelSchema;
-        return actualSchema?.examples || [];
+    // The curated suggestions in the backend schema seed the picker; any slug
+    // the provider accepts can still be typed through custom entry.
+    const resolveModelSchema = (schema?: ProviderSchema) => {
+        if (!schema) return undefined;
+        const modelSchema = schema.properties.model;
+        return modelSchema?.$ref && schema.$defs
+            ? schema.$defs[modelSchema.$ref.split("/").pop() || ""]
+            : modelSchema;
     };
 
-    const modelOptions = getModelOptions();
+    const modelOptions = useMemo(() => {
+        const modelSchema = resolveModelSchema(providerSchema);
+        return modelSchema?.enum || modelSchema?.examples || [];
+    }, [providerSchema]);
 
     // Check if current model is not in options (custom model)
     useEffect(() => {
@@ -84,19 +88,13 @@ export function LLMConfigSelector({
     const handleProviderChange = (newProvider: string) => {
         if (!newProvider) return;
         onProviderChange(newProvider);
-        const newSchema = schemas[newProvider];
-        if (newSchema?.properties?.model) {
-            const modelSchema = newSchema.properties.model;
-            const actualSchema =
-                modelSchema.$ref && newSchema.$defs
-                    ? newSchema.$defs[modelSchema.$ref.split("/").pop() || ""]
-                    : modelSchema;
-            const defaultModel =
-                (actualSchema?.default as string) ||
+        const actualSchema = resolveModelSchema(schemas[newProvider]);
+        onModelChange(
+            (actualSchema?.default as string) ||
+                actualSchema?.enum?.[0] ||
                 actualSchema?.examples?.[0] ||
-                "";
-            onModelChange(defaultModel);
-        }
+                "",
+        );
         setIsManualModelInput(false);
     };
 
@@ -121,75 +119,53 @@ export function LLMConfigSelector({
 
                 <div className="space-y-2">
                     <Label>Model</Label>
-                    {isManualModelInput ? (
-                        <div className="space-y-2">
+                    {isManualModelInput || modelOptions.length === 0 ? (
+                        <div className="space-y-1">
                             <Input
                                 type="text"
                                 placeholder="Enter model name"
                                 value={model}
                                 onChange={(e) => onModelChange(e.target.value)}
                             />
-                            <div className="flex items-center space-x-2">
-                                <Checkbox
-                                    id="qa-manual-model"
-                                    checked={isManualModelInput}
-                                    onCheckedChange={(checked) => {
-                                        setIsManualModelInput(checked as boolean);
-                                        if (!checked && modelOptions.length > 0) {
-                                            onModelChange(modelOptions[0]);
-                                        }
+                            {modelOptions.length > 0 && (
+                                <button
+                                    type="button"
+                                    className="text-xs underline"
+                                    onClick={() => {
+                                        setIsManualModelInput(false);
+                                        onModelChange(modelOptions[0]);
                                     }}
-                                />
-                                <Label
-                                    htmlFor="qa-manual-model"
-                                    className="text-sm font-normal cursor-pointer"
                                 >
-                                    Add Model Manually
-                                </Label>
-                            </div>
-                        </div>
-                    ) : modelOptions.length > 0 ? (
-                        <div className="space-y-2">
-                            <Select
-                                value={model}
-                                onValueChange={(v) => {
-                                    if (v) onModelChange(v);
-                                }}
-                            >
-                                <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Select model" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {modelOptions.map((m) => (
-                                        <SelectItem key={m} value={m}>
-                                            {m}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <div className="flex items-center space-x-2">
-                                <Checkbox
-                                    id="qa-manual-model-dropdown"
-                                    checked={isManualModelInput}
-                                    onCheckedChange={(checked) =>
-                                        setIsManualModelInput(checked as boolean)
-                                    }
-                                />
-                                <Label
-                                    htmlFor="qa-manual-model-dropdown"
-                                    className="text-sm font-normal cursor-pointer"
-                                >
-                                    Add Model Manually
-                                </Label>
-                            </div>
+                                    Choose from the list
+                                </button>
+                            )}
                         </div>
                     ) : (
-                        <Input
-                            type="text"
-                            placeholder="Enter model name"
+                        <Select
                             value={model}
-                            onChange={(e) => onModelChange(e.target.value)}
-                        />
+                            onValueChange={(v) => {
+                                if (v === CUSTOM_MODEL) {
+                                    setIsManualModelInput(true);
+                                    onModelChange("");
+                                    return;
+                                }
+                                if (v) onModelChange(v);
+                            }}
+                        >
+                            <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select model" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {[...modelOptions, ...(!model || modelOptions.includes(model) ? [] : [model])].map((m) => (
+                                    <SelectItem key={m} value={m}>
+                                        {m}
+                                    </SelectItem>
+                                ))}
+                                <SelectItem value={CUSTOM_MODEL}>
+                                    Enter a custom model ID…
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
                     )}
                 </div>
             </div>
@@ -197,7 +173,8 @@ export function LLMConfigSelector({
             <div className="space-y-2">
                 <Label>API Key</Label>
                 <Input
-                    type="text"
+                    type="password"
+                    autoComplete="new-password"
                     placeholder="Enter API key"
                     value={apiKey}
                     onChange={(e) => onApiKeyChange(e.target.value)}

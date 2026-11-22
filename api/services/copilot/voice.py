@@ -12,9 +12,12 @@ Bolo-hosted services are refused rather than silently substituted.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlsplit
 
+import httpx
 from loguru import logger
 from pipecat.adapters.llm.schemas.function_schema import FunctionSchema
 from pipecat.adapters.llm.schemas.tools_schema import ToolsSchema
@@ -65,6 +68,37 @@ def _label(connection: Any) -> str:
     return f"{_provider(connection)} / {connection.model}"
 
 
+async def _speech_problem(role: str, connection: Any) -> str | None:
+    """Why a self-hosted speech endpoint would leave the call silent, if it would.
+
+    The readiness check used to verify presence only, so an unreachable
+    Speaches endpoint produced a connected call with no audio and no clue.
+    """
+    if _provider(connection) != ServiceProviders.SPEACHES.value:
+        return None
+    base_url = (getattr(connection, "base_url", None) or "").rstrip("/")
+    if not base_url:
+        return None
+    key = getattr(connection, "api_key", None)
+    if isinstance(key, list):
+        key = key[0] if key else None
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            response = await client.get(f"{base_url}/models", headers=headers)
+        response.raise_for_status()
+    except (httpx.HTTPError, ValueError):
+        host = urlsplit(base_url).hostname
+        hint = (
+            " If Bolo runs in Docker and the service on your machine, use "
+            "host.docker.internal instead of localhost."
+            if host in {"localhost", "127.0.0.1", "0.0.0.0"}
+            else ""
+        )
+        return f"The {role} service does not answer at {base_url}.{hint}"
+    return None
+
+
 async def voice_configuration(
     organization_id: int,
 ) -> EffectiveAIModelConfiguration:
@@ -106,6 +140,16 @@ async def voice_configuration(
                 "Bolo-hosted services. Add your provider keys in Model "
                 "connections."
             )
+    problems = [
+        problem
+        for problem in await asyncio.gather(
+            _speech_problem("speech-to-text", config.stt),
+            _speech_problem("voice", config.tts),
+        )
+        if problem
+    ]
+    if problems:
+        raise VoiceConfigurationError(problems[0])
     return config
 
 

@@ -24,6 +24,9 @@ class CopilotConversationSummary(BaseModel):
 
 class CopilotMessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
+    # Knowledge-base document uuids the user attached to this turn. The agent
+    # reads them on demand through the read_document tool.
+    attachments: list[str] = Field(default_factory=list, max_length=10)
     # Retries with the same id return the stored snapshot instead of running
     # the graph (and any tool side effects) twice.
     client_request_id: str | None = Field(default=None, max_length=64)
@@ -32,6 +35,12 @@ class CopilotMessageRequest(BaseModel):
 class CopilotApprovalRequest(BaseModel):
     approval_id: str = Field(min_length=1, max_length=64)
     decision: CopilotDecision
+    client_request_id: str | None = Field(default=None, max_length=64)
+
+
+class CopilotRegenerateRequest(BaseModel):
+    # Retries with the same id return the stored snapshot instead of running
+    # the graph (and any tool side effects) twice.
     client_request_id: str | None = Field(default=None, max_length=64)
 
 

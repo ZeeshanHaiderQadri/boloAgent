@@ -63,6 +63,13 @@ export function ConnectionEditor({ catalog, connection, onSaved, providerKeys, r
         // In a dialog this form portals out of the model configuration form,
         // but React still bubbles the submit to it.
         event.stopPropagation();
+        // Catch the common typo before the round trip: a bare host or host/port
+        // string is not a URL the provider client can parse.
+        const baseUrl = typeof settings.base_url === "string" ? settings.base_url.trim() : "";
+        if (baseUrl && !/^https?:\/\//i.test(baseUrl)) {
+            setError("Base URL must start with http:// or https://, for example http://host.docker.internal:11434/v1.");
+            return;
+        }
         setSaving(true);
         setError(null);
         try {
@@ -109,6 +116,9 @@ export function ConnectionEditor({ catalog, connection, onSaved, providerKeys, r
                     configuredFields={connection?.configured_credentials} onChange={(field, value) => setCredentials(previous => changeField(previous, field, value))} />
             </fieldset>}
         </>}
-        <div className="flex justify-end"><Button type="submit" disabled={saving || !entry || !name.trim()}>{saving ? "Validating and saving…" : "Save Connection"}</Button></div>
+        <div className="flex flex-wrap items-center justify-end gap-3">
+            {!name.trim() && <p className="text-xs text-muted-foreground">Name this connection to save it.</p>}
+            <Button type="submit" disabled={saving || !entry || !name.trim()}>{saving ? "Validating and saving…" : "Save Connection"}</Button>
+        </div>
     </form>;
 }

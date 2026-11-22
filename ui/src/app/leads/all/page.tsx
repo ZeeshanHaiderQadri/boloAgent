@@ -39,6 +39,7 @@ import { PageLayout, PageSection } from "@/components/layout/PageLayout";
 import { DispatchLeadsDialog } from "@/components/leads/DispatchLeadsDialog";
 import { EmailConsentDialog } from "@/components/leads/EmailConsentDialog";
 import { ExportLeadsButton } from "@/components/leads/ExportLeadsButton";
+import { ImportLeadsButton } from "@/components/leads/ImportLeadsButton";
 import { LeadTable } from "@/components/leads/LeadTable";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -652,6 +653,7 @@ export default function AllLeadsPage() {
             description="Every business Bolo has collected, with its contact details and call history."
             actions={
                 <>
+                    <ImportLeadsButton onImported={() => void fetchLeads()} />
                     <ExportLeadsButton filters={exportFilters} disabled={!data || data.total_count === 0} />
                     <Button variant="outline" onClick={() => void fetchLeads()} disabled={isLoading}>
                         <RefreshCw className={isLoading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />

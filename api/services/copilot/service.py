@@ -11,7 +11,7 @@ import asyncio
 from typing import Any
 
 from fastapi import HTTPException
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
 from langgraph.types import Command
 
 from api.db import db_client
@@ -40,6 +40,9 @@ def _thread_id(organization_id: int, user_id: int, conversation_id: int) -> str:
     return f"copilot:{organization_id}:{user_id}:{conversation_id}"
 
 
+ATTACHMENTS_MARKER = "\n\n[Attached documents]\n"
+
+
 def _content_text(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -55,7 +58,7 @@ def _present(snapshot, conversation: CopilotConversationModel) -> CopilotSnapsho
     messages: list[CopilotTranscriptMessage] = []
     for message in snapshot.values.get("messages", []):
         if isinstance(message, HumanMessage):
-            text = _content_text(message.content).strip()
+            text = _content_text(message.content).split(ATTACHMENTS_MARKER)[0].strip()
             if text:
                 messages.append(CopilotTranscriptMessage(role="user", content=text))
         elif isinstance(message, AIMessage):
@@ -175,6 +178,20 @@ async def get_snapshot(conversation_id: int, user: UserModel) -> CopilotSnapshot
     return _present(state, conversation)
 
 
+async def delete_conversation(conversation_id: int, user: UserModel) -> None:
+    conversation = await load_conversation(conversation_id, user)
+    thread = _thread_id(
+        conversation.organization_id,
+        conversation.user_id or user.id,
+        conversation.id,
+    )
+    deleted = await db_client.delete_copilot_conversation(
+        conversation.id, conversation.organization_id, thread
+    )
+    if not deleted:
+        raise HTTPException(404, "Conversation not found")
+
+
 async def _save(conversation, user, request_id, snapshot: CopilotSnapshot):
     title = None
     if conversation.title == DEFAULT_TITLE:
@@ -190,10 +207,92 @@ async def _save(conversation, user, request_id, snapshot: CopilotSnapshot):
     )
 
 
+async def _attachment_note(organization_id: int, attachments: list[str]) -> str | None:
+    lines: list[str] = []
+    for document_uuid in dict.fromkeys(attachments):
+        document = await db_client.get_document_by_uuid(document_uuid, organization_id)
+        if document is None:
+            continue
+        lines.append(f"- {document.filename} (document_uuid={document.document_uuid})")
+    if not lines:
+        return None
+    return ATTACHMENTS_MARKER + "\n".join(lines) + "\n"
+
+
 async def send_message(
     conversation_id: int,
     user: UserModel,
     message: str,
+    client_request_id: str | None,
+    attachments: list[str] | None = None,
+) -> CopilotSnapshot:
+    conversation = await load_conversation(conversation_id, user)
+    if (
+        client_request_id
+        and conversation.last_request_id == client_request_id
+        and conversation.last_response
+    ):
+        return CopilotSnapshot.model_validate(conversation.last_response)
+
+    thread = _thread_id(conversation.organization_id, user.id, conversation.id)
+    note = await _attachment_note(conversation.organization_id, attachments or [])
+    content = message + note if note else message
+    config = _config(conversation, user)
+    try:
+        async with db_client.copilot_checkpointer(thread) as saver:
+            graph = _graph_for(conversation, user, saver)
+            state = await graph.aget_state(config)
+            if getattr(state, "interrupts", ()):
+                raise HTTPException(
+                    409,
+                    "Answer the pending approval before sending another message.",
+                )
+            async with asyncio.timeout(TURN_TIMEOUT_SECONDS):
+                await graph.ainvoke(
+                    {
+                        "messages": [HumanMessage(content=content)],
+                        "organization_id": conversation.organization_id,
+                        "user_id": user.id,
+                        "conversation_id": conversation.id,
+                    },
+                    config,
+                )
+            state = await graph.aget_state(config)
+    except BuilderBusy as exc:
+        raise HTTPException(
+            409, "This conversation is already running. Try again in a moment."
+        ) from exc
+    except TimeoutError as exc:
+        raise HTTPException(
+            504, "The copilot took too long; try a narrower ask."
+        ) from exc
+    except CopilotConfigurationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except CopilotUpstreamError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+    kind = state.values.get("model_error_kind")
+    if kind:
+        detail = state.values.get("model_error") or (
+            "The copilot could not reach your LLM."
+        )
+        raise HTTPException(400 if kind == "configuration" else 502, detail)
+
+    snapshot = _present(state, conversation)
+    await _save(conversation, user, client_request_id, snapshot)
+    return snapshot
+
+
+def _reply_to_regenerate(messages: list[Any]) -> AIMessage:
+    last = messages[-1] if messages else None
+    if not isinstance(last, AIMessage) or getattr(last, "tool_calls", None):
+        raise HTTPException(409, "There is no reply to regenerate.")
+    return last
+
+
+async def regenerate(
+    conversation_id: int,
+    user: UserModel,
     client_request_id: str | None,
 ) -> CopilotSnapshot:
     conversation = await load_conversation(conversation_id, user)
@@ -212,17 +311,12 @@ async def send_message(
             state = await graph.aget_state(config)
             if getattr(state, "interrupts", ()):
                 raise HTTPException(
-                    409,
-                    "Answer the pending approval before sending another message.",
+                    409, "Answer the pending approval before regenerating."
                 )
+            reply = _reply_to_regenerate(state.values.get("messages", []))
             async with asyncio.timeout(TURN_TIMEOUT_SECONDS):
                 await graph.ainvoke(
-                    {
-                        "messages": [HumanMessage(content=message)],
-                        "organization_id": conversation.organization_id,
-                        "user_id": user.id,
-                        "conversation_id": conversation.id,
-                    },
+                    {"messages": [RemoveMessage(id=reply.id)]},
                     config,
                 )
             state = await graph.aget_state(config)
@@ -231,9 +325,7 @@ async def send_message(
             409, "This conversation is already running. Try again in a moment."
         ) from exc
     except TimeoutError as exc:
-        raise HTTPException(
-            504, "The copilot took too long; try a narrower ask."
-        ) from exc
+        raise HTTPException(504, "The copilot took too long; try again.") from exc
     except CopilotConfigurationError as exc:
         raise HTTPException(400, str(exc)) from exc
     except CopilotUpstreamError as exc:

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { archiveNamedModelConfiguration, archiveProviderConnection, restoreNamedModelConfiguration, restoreProviderConnection, setDefaultModelConfiguration } from "@/client/sdk.gen";
+import { archiveNamedModelConfiguration, archiveProviderConnection, deleteNamedModelConfiguration, deleteProviderConnection, restoreNamedModelConfiguration, restoreProviderConnection, setDefaultModelConfiguration } from "@/client/sdk.gen";
 import { useOrgConfig } from "@/context/OrgConfigContext";
 
 import ModelConfigurationsManager from "./ModelConfigurationsManager";
@@ -11,7 +11,7 @@ import { useModelConnections } from "./useModelConnections";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
-vi.mock("@/client/sdk.gen", () => ({ archiveNamedModelConfiguration: vi.fn(), archiveProviderConnection: vi.fn(), restoreNamedModelConfiguration: vi.fn(), restoreProviderConnection: vi.fn(), setDefaultModelConfiguration: vi.fn() }));
+vi.mock("@/client/sdk.gen", () => ({ archiveNamedModelConfiguration: vi.fn(), archiveProviderConnection: vi.fn(), deleteNamedModelConfiguration: vi.fn(), deleteProviderConnection: vi.fn(), restoreNamedModelConfiguration: vi.fn(), restoreProviderConnection: vi.fn(), setDefaultModelConfiguration: vi.fn() }));
 vi.mock("./useModelConnections", () => ({ useModelConnections: vi.fn() }));
 vi.mock("@/context/OrgConfigContext", () => ({ useOrgConfig: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -31,6 +31,8 @@ beforeEach(() => {
     vi.mocked(setDefaultModelConfiguration).mockResolvedValue({ data: {} } as never);
     vi.mocked(restoreNamedModelConfiguration).mockResolvedValue({ data: {} } as never);
     vi.mocked(restoreProviderConnection).mockResolvedValue({ data: {} } as never);
+    vi.mocked(deleteNamedModelConfiguration).mockResolvedValue({ data: {} } as never);
+    vi.mocked(deleteProviderConnection).mockResolvedValue({ data: {} } as never);
     reload.mockReset();
 });
 
@@ -117,6 +119,23 @@ describe("provider connection and model configuration lists", () => {
         expect(screen.getByText("Archived item")).toBeDefined();
         expect(screen.getAllByRole("link", { name: "Edit" })).toHaveLength(3);
         expect(setDefaultModelConfiguration).not.toHaveBeenCalled();
+    });
+
+    it.each(["models", "providers"] as const)("permanently deletes an archived %s after confirmation", async view => {
+        const activeState = vi.mocked(useModelConnections).getMockImplementation()!();
+        const archived = view === "models"
+            ? { ...configurations[1], uuid: "archived", name: "Archived item", is_active: false }
+            : { ...connections[1], uuid: "archived", name: "Archived item", is_active: false };
+        const key = view === "models" ? "configurations" : "connections";
+        vi.mocked(useModelConnections).mockReturnValue({ ...activeState, [key]: [...activeState[key], archived] });
+        const removeItem = view === "models" ? vi.mocked(deleteNamedModelConfiguration) : vi.mocked(deleteProviderConnection);
+        render(view === "models" ? <ModelConfigurationsManager /> : <ProviderConnectionsManager />);
+        fireEvent.click(screen.getByRole("button", { name: "Toggle Archived" }));
+        fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+        expect(await screen.findByText("Delete Archived item?")).toBeDefined();
+        fireEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
+        await waitFor(() => expect(removeItem).toHaveBeenCalledWith({ path: { [view === "models" ? "configuration_uuid" : "connection_uuid"]: "archived" } }));
+        await waitFor(() => expect(reload).toHaveBeenCalled());
     });
 
     it("keeps a failed restore in the archive and shows the server error", async () => {
