@@ -339,6 +339,11 @@ export function ImportLeadsButton({ onImported }: { onImported?: () => void }) {
                                         {preview.duplicate_rows} duplicate
                                     </Badge>
                                 )}
+                                {(preview.existing_rows ?? 0) > 0 && (
+                                    <Badge variant="outline">
+                                        {preview.existing_rows} already in CRM
+                                    </Badge>
+                                )}
                                 <span className="text-xs text-muted-foreground">
                                     {preview.total_rows} row(s) in {(preview.sheets ?? []).join(", ")}
                                 </span>
@@ -406,8 +411,15 @@ export function ImportLeadsButton({ onImported }: { onImported?: () => void }) {
                                                             ? (lead.social_platforms ?? []).join(", ")
                                                             : "—"}
                                                     </TableCell>
-                                                    <TableCell className="text-sm capitalize">
-                                                        {(lead.crm_status ?? "new").replace(/_/g, " ")}
+                                                    <TableCell>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm capitalize">
+                                                                {(lead.crm_status ?? "new").replace(/_/g, " ")}
+                                                            </span>
+                                                            {lead.existing && (
+                                                                <Badge variant="outline">In CRM</Badge>
+                                                            )}
+                                                        </div>
                                                     </TableCell>
                                                     <TableCell>
                                                         {(lead.issues ?? []).length > 0 && (
@@ -424,7 +436,9 @@ export function ImportLeadsButton({ onImported }: { onImported?: () => void }) {
                                 </div>
                             )}
                             <p className="text-xs text-muted-foreground">
-                                Existing leads are updated by phone, website or email.
+                                {(preview.existing_rows ?? 0) > 0
+                                    ? `${preview.existing_rows} of these already exist in your CRM and will be updated by phone, website or email.`
+                                    : "Existing leads are updated by phone, website or email."}{" "}
                                 Your CRM status, tags and notes are never overwritten.
                             </p>
                         </section>
