@@ -75,7 +75,7 @@ from api.services.pipecat.worker_runner import (
 )
 
 from .audit import audit_tool_call
-from .prompts import VOICE_GREETING, greeting_for, voice_system_prompt
+from .prompts import greeting_for, voice_system_prompt
 from .service import record_voice_turn
 from .tools import TOOLS, CopilotContext, CopilotTool
 from .voice_language import apply_voice_language
