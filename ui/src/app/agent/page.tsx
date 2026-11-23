@@ -11,12 +11,16 @@ import {
   Globe,
   Loader2,
   MessageSquarePlus,
+  MessagesSquare,
   Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
   Paperclip,
   Phone,
   PhoneOff,
   Plus,
   Puzzle,
+  Radio,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -26,7 +30,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -69,37 +73,24 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useSidebarOptional } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
+import { isTurnRunning,LiveWorkspace } from "./components/LiveWorkspace";
 import { TalkControls, VoiceLanguageSelect } from "./components/TalkControls";
+import { useAgentActivity } from "./hooks/useAgentActivity";
 import { useAgentVoice } from "./hooks/useAgentVoice";
-
-const TOOL_LABELS: Record<string, string> = {
-  read_document: "Read document",
-  tag_leads: "Tag leads",
-  start_lead_search: "Start lead search",
-  create_email_campaign_draft: "Create email draft",
-  launch_email_campaign: "Launch email campaign",
-  send_whatsapp_message: "Send WhatsApp message",
-  start_voice_campaign: "Start voice campaign",
-  pause_voice_campaign: "Pause voice campaign",
-  resume_voice_campaign: "Resume voice campaign",
-};
-
+import { toolLabel } from "./lib/labels";
 const SUGGESTIONS = [
   "How did my campaigns do this week?",
   "Find 25 dentists in Austin",
   "Draft a promo email for my VIP leads",
   "Which leads have phone numbers but no email?",
 ];
-
-function toolLabel(tool: string) {
-  return TOOL_LABELS[tool] ?? tool.replaceAll("_", " ");
-}
 
 function requestId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -139,6 +130,45 @@ const ATTACH_ACCEPT = [
 ];
 const ATTACH_MAX_BYTES = 5 * 1024 * 1024;
 const ATTACH_MAX_COUNT = 10;
+
+const HISTORY_STORAGE_KEY = "bolo-agent-history-open";
+const SPLIT_STORAGE_KEY = "bolo-agent-workspace-share";
+const DEFAULT_WORKSPACE_SHARE = 42;
+const MIN_WORKSPACE_SHARE = 28;
+const MAX_WORKSPACE_SHARE = 62;
+
+function clampShare(value: number) {
+  return Math.min(MAX_WORKSPACE_SHARE, Math.max(MIN_WORKSPACE_SHARE, value));
+}
+
+function loadWorkspaceShare() {
+  if (typeof window === "undefined") return DEFAULT_WORKSPACE_SHARE;
+  const stored = Number(window.localStorage.getItem(SPLIT_STORAGE_KEY));
+  return Number.isFinite(stored) && stored > 0
+    ? clampShare(stored)
+    : DEFAULT_WORKSPACE_SHARE;
+}
+
+function persistWorkspaceShare(value: number) {
+  try {
+    window.localStorage.setItem(SPLIT_STORAGE_KEY, String(Math.round(value)));
+  } catch {
+    // Storage can be unavailable; the width still applies for this session.
+  }
+}
+
+function loadHistoryOpen() {
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(HISTORY_STORAGE_KEY) !== "closed";
+}
+
+function persistHistoryOpen(open: boolean) {
+  try {
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, open ? "open" : "closed");
+  } catch {
+    // Storage can be unavailable; the toggle still works for this session.
+  }
+}
 
 type PendingAttachment = {
   key: string;
@@ -303,6 +333,98 @@ export default function AgentPage() {
     async () => ({ Authorization: `Bearer ${await getAccessToken()}` }),
     [getAccessToken],
   );
+
+  const [pane, setPane] = useState<"chat" | "workspace">("chat");
+  const [historyOpen, setHistoryOpen] = useState(loadHistoryOpen);
+  const [workspaceShare, setWorkspaceShare] = useState(loadWorkspaceShare);
+  const [resizing, setResizing] = useState(false);
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ startX: number; startShare: number } | null>(null);
+  const shareRef = useRef(workspaceShare);
+  const sidebar = useSidebarOptional();
+  const sidebarRef = useRef(sidebar);
+  const wasRunningRef = useRef(false);
+  const restoreHistoryRef = useRef(true);
+  const restoreSidebarRef = useRef(true);
+  const activity = useAgentActivity({
+    conversationId: activeId,
+    enabled: !authLoading && Boolean(user),
+    fast: busy || deciding !== null || voice.callState !== "idle",
+    authHeaders,
+  });
+  const taskRunning =
+    busy || deciding !== null || isTurnRunning(activity.events);
+
+  useEffect(() => {
+    sidebarRef.current = sidebar;
+  }, [sidebar]);
+
+  useEffect(() => {
+    shareRef.current = workspaceShare;
+  }, [workspaceShare]);
+
+  // A running task gets every pixel that matters: the nav rails and the
+  // conversation list fold away, then come back exactly as the user left them.
+  useEffect(() => {
+    if (taskRunning && !wasRunningRef.current) {
+      wasRunningRef.current = true;
+      restoreHistoryRef.current = historyOpen;
+      restoreSidebarRef.current = sidebarRef.current?.open ?? false;
+      setHistoryOpen(false);
+      sidebarRef.current?.setOpen(false);
+    } else if (!taskRunning && wasRunningRef.current) {
+      wasRunningRef.current = false;
+      if (restoreHistoryRef.current) setHistoryOpen(true);
+      if (restoreSidebarRef.current) sidebarRef.current?.setOpen(true);
+    }
+  }, [taskRunning, historyOpen]);
+
+  useEffect(() => {
+    if (!resizing) return;
+    const onMove = (event: PointerEvent) => {
+      const rect = splitRef.current?.getBoundingClientRect();
+      const drag = dragRef.current;
+      if (!rect || !drag || rect.width === 0) return;
+      const delta = ((drag.startX - event.clientX) / rect.width) * 100;
+      setWorkspaceShare(clampShare(drag.startShare + delta));
+    };
+    const stop = () => {
+      setResizing(false);
+      dragRef.current = null;
+      persistWorkspaceShare(shareRef.current);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = "col-resize";
+    document.body.classList.add("select-none");
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      document.body.style.cursor = previousCursor;
+      document.body.classList.remove("select-none");
+    };
+  }, [resizing]);
+
+  const toggleHistory = (open: boolean) => {
+    setHistoryOpen(open);
+    persistHistoryOpen(open);
+  };
+
+  const beginResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    dragRef.current = { startX: event.clientX, startShare: workspaceShare };
+    setResizing(true);
+  };
+
+  const nudgeWorkspace = (delta: number) => {
+    const next = clampShare(workspaceShare + delta);
+    setWorkspaceShare(next);
+    persistWorkspaceShare(next);
+  };
 
   const updateAttachment = useCallback(
     (key: string, patch: Partial<PendingAttachment>) =>
@@ -607,11 +729,13 @@ export default function AgentPage() {
       setSnapshot(response.data);
       setOptimistic([]);
       setAttachments([]);
+      activity.refresh();
       const refreshed = await listConversationsApiV1CopilotConversationsGet({
         headers: await authHeaders(),
       });
       if (refreshed.data) setConversations(refreshed.data);
     } catch (cause) {
+      activity.refresh();
       if (cause instanceof DOMException && cause.name === "AbortError") {
         setNotice("Response stopped.");
         setOptimistic([]);
@@ -679,6 +803,7 @@ export default function AgentPage() {
       }
       setSnapshot(response.data);
       setOptimistic([]);
+      activity.refresh();
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") {
         setNotice("Response stopped.");
@@ -758,8 +883,10 @@ export default function AgentPage() {
       }
       setSnapshot(response.data);
       setOptimistic([]);
+      activity.refresh();
     } catch {
       setError("Could not send your decision. Try again.");
+      activity.refresh();
     } finally {
       setDeciding(null);
     }
@@ -850,13 +977,63 @@ export default function AgentPage() {
         </div>
       )}
 
-      <div className="grid min-h-[560px] gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <div className="h-fit space-y-4 lg:sticky lg:top-4">
-        <Card className="max-h-[calc(100dvh-14rem)] overflow-hidden">
+      <div
+        role="tablist"
+        aria-label="Agent view"
+        className="mb-4 flex items-center gap-1 rounded-xl border border-border/70 bg-muted/30 p-1 transition-colors duration-500 xl:hidden"
+      >
+        {(
+          [
+            { key: "chat", label: "Chat", icon: MessagesSquare },
+            { key: "workspace", label: "Workspace", icon: Radio },
+          ] as const
+        ).map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={pane === key}
+            onClick={() => setPane(key)}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors duration-300",
+              pane === key
+                ? "bg-cta/15 font-medium text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {label}
+            {key === "workspace" && pending.length > 0 && (
+              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 px-1 text-[10px] font-semibold text-amber-500">
+                {pending.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div
+        ref={splitRef}
+        className="flex min-h-[560px] flex-col gap-6 lg:flex-row lg:items-stretch"
+      >
+        {historyOpen && (
+          <div className="h-fit space-y-4 lg:sticky lg:top-4 lg:w-60 lg:shrink-0">
+          <Card className="max-h-[calc(100dvh-14rem)] overflow-hidden">
           <CardContent className="p-2">
-            <p className="px-2 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Conversations
-            </p>
+            <div className="flex items-center justify-between gap-2 px-2 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Conversations
+              </p>
+              <button
+                type="button"
+                onClick={() => toggleHistory(false)}
+                aria-label="Hide conversations"
+                title="Hide conversations"
+                className="rounded-md p-1 text-muted-foreground transition-colors duration-300 hover:text-foreground"
+              >
+                <PanelLeftClose className="h-3.5 w-3.5" />
+              </button>
+            </div>
             <div className="max-h-60 overflow-y-auto lg:max-h-[calc(100dvh-20rem)]">
               {conversations === null ? (
                 <div className="space-y-2 p-2">
@@ -917,18 +1094,39 @@ export default function AgentPage() {
             />
           </div>
         )}
-        </div>
+          </div>
+        )}
 
-        <Card className="flex h-[calc(100dvh-14rem)] min-h-[560px] flex-col overflow-hidden">
+        <Card
+          className={cn(
+            "flex h-[calc(100dvh-14rem)] min-h-[560px] min-w-0 flex-1 flex-col overflow-hidden",
+            pane === "workspace" && "hidden xl:flex",
+          )}
+        >
           <audio ref={voice.audioRef} autoPlay aria-hidden="true" className="hidden" />
           <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">
-                {snapshot?.title ?? "New conversation"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Runs on your workspace model connection.
-              </p>
+            <div className="flex min-w-0 items-center gap-2">
+              {!historyOpen && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => toggleHistory(true)}
+                  aria-label="Show conversations"
+                  title="Show conversations"
+                  className="h-7 w-7 shrink-0 text-muted-foreground"
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                </Button>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">
+                  {snapshot?.title ?? "New conversation"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Runs on your workspace model connection.
+                </p>
+              </div>
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <VoiceLanguageSelect
@@ -1349,6 +1547,58 @@ export default function AgentPage() {
               approval
             </p>
           </div>
+        </Card>
+
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize workspace"
+          aria-valuemin={MIN_WORKSPACE_SHARE}
+          aria-valuemax={MAX_WORKSPACE_SHARE}
+          aria-valuenow={Math.round(workspaceShare)}
+          tabIndex={0}
+          title="Drag to resize · use arrow keys"
+          onPointerDown={beginResize}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              nudgeWorkspace(4);
+            } else if (event.key === "ArrowRight") {
+              event.preventDefault();
+              nudgeWorkspace(-4);
+            }
+          }}
+          className={cn(
+            "group hidden w-2 shrink-0 cursor-col-resize touch-none items-center justify-center rounded-full transition-colors duration-300 focus-visible:outline-none xl:flex",
+            resizing && "bg-cta/5",
+          )}
+        >
+          <span
+            className={cn(
+              "h-16 w-1 rounded-full bg-border transition-all duration-300 group-hover:bg-cta/70 group-focus-visible:bg-cta/70",
+              resizing && "bg-cta/70 shadow-[0_0_12px_var(--cta)]",
+            )}
+          />
+        </div>
+
+        <Card
+          style={{ "--ws-width": `${workspaceShare}%` } as CSSProperties}
+          className={cn(
+            "flex h-[calc(100dvh-14rem)] min-h-[560px] flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500 motion-reduce:animate-none lg:flex-1 lg:basis-0 xl:w-(--ws-width) xl:min-w-[300px] xl:flex-none",
+            pane === "chat" && "hidden xl:flex",
+          )}
+        >
+          <LiveWorkspace
+            conversationId={activeId}
+            events={activity.events}
+            loading={activity.loading}
+            error={activity.error}
+            busy={busy || voice.callState === "live"}
+            deciding={deciding !== null}
+            pendingCount={pending.length}
+            onReviewApproval={() => setPane("chat")}
+            authHeaders={authHeaders}
+          />
         </Card>
       </div>
 

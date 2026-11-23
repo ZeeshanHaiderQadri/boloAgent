@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from api.db.models import UserModel
 from api.schemas.copilot import (
+    CopilotActivityResponse,
     CopilotApprovalRequest,
     CopilotConversationCreate,
     CopilotConversationSummary,
@@ -48,6 +49,21 @@ async def get_conversation(
     user: UserModel = Depends(get_user),
 ):
     return await service.get_snapshot(conversation_id, user)
+
+
+@router.get(
+    "/conversations/{conversation_id}/activity",
+    response_model=CopilotActivityResponse,
+)
+async def get_activity(
+    conversation_id: int,
+    after_id: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
+    user: UserModel = Depends(get_user),
+):
+    return await service.get_activity(
+        conversation_id, user, after_id=after_id, limit=limit
+    )
 
 
 @router.delete("/conversations/{conversation_id}", status_code=204)

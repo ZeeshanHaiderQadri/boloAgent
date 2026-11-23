@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   uploadUrl: vi.fn(),
   processDocument: vi.fn(),
   getDocument: vi.fn(),
+  activity: vi.fn(),
   voiceStatus: vi.fn(),
   turnCredentials: vi.fn(),
   auth: { user: { id: 1 } as { id: number } | null, loading: false },
@@ -31,6 +32,7 @@ vi.mock("@/client/sdk.gen", () => ({
   getUploadUrlApiV1KnowledgeBaseUploadUrlPost: mocks.uploadUrl,
   processDocumentApiV1KnowledgeBaseProcessDocumentPost: mocks.processDocument,
   getDocumentApiV1KnowledgeBaseDocumentsDocumentUuidGet: mocks.getDocument,
+  getActivityApiV1CopilotConversationsConversationIdActivityGet: mocks.activity,
   voiceStatusApiV1CopilotVoiceGet: mocks.voiceStatus,
   getTurnCredentialsApiV1TurnCredentialsGet: mocks.turnCredentials,
 }));
@@ -68,6 +70,7 @@ beforeEach(() => {
   mocks.auth.loading = false;
   mocks.list.mockResolvedValue({ data: [conversation] });
   mocks.getConversation.mockResolvedValue({ data: snapshot });
+  mocks.activity.mockResolvedValue({ data: { events: [] } });
   mocks.voiceStatus.mockResolvedValue({ data: { ready: true } });
 });
 
@@ -368,6 +371,131 @@ describe("Bolo Agent page", () => {
       expect(writeText).toHaveBeenCalledWith("Here is your pipeline summary."),
     );
     expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+  });
+
+  it("mirrors live task activity in the workspace pane", async () => {
+    mocks.activity.mockResolvedValue({
+      data: {
+        events: [
+          {
+            id: 1,
+            conversation_id: 7,
+            turn_id: "turn-1",
+            kind: "turn_started",
+            created_at: "2026-11-20T10:05:00Z",
+          },
+          {
+            id: 2,
+            conversation_id: 7,
+            turn_id: "turn-1",
+            kind: "tool_finished",
+            tool: "business_overview",
+            status: "executed",
+            duration_ms: 240,
+            result: {
+              leads: { total: 42, with_email: 30, new: 5 },
+              email_campaigns: { sent: 120 },
+            },
+            created_at: "2026-11-20T10:05:01Z",
+          },
+          {
+            id: 3,
+            conversation_id: 7,
+            turn_id: "turn-1",
+            kind: "turn_finished",
+            status: "idle",
+            created_at: "2026-11-20T10:05:02Z",
+          },
+        ],
+      },
+    });
+
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    expect(await screen.findByText("Live workspace")).toBeTruthy();
+    expect(screen.getByText("All caught up")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Overview" })).toBeTruthy();
+
+    const frame = screen.getByTitle("Workspace page: Overview");
+    expect(frame.getAttribute("src")).toBe("/overview?embed=1");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
+    expect(await screen.findByText("Emails sent")).toBeTruthy();
+    expect(
+      screen.getByRole("tab", { name: "Overview" }).getAttribute("aria-selected"),
+    ).toBe("false");
+    expect(mocks.activity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { conversation_id: 7 },
+        query: { after_id: 0, limit: 500 },
+      }),
+    );
+  });
+
+  it("embeds the page a tool touched and links out to the full route", async () => {
+    mocks.activity.mockResolvedValue({
+      data: {
+        events: [
+          {
+            id: 1,
+            conversation_id: 7,
+            turn_id: "turn-1",
+            kind: "tool_finished",
+            tool: "list_email_campaigns",
+            status: "executed",
+            result: { total: 3, campaigns: [] },
+            created_at: "2026-11-20T10:05:01Z",
+          },
+        ],
+      },
+    });
+
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    const frame = await screen.findByTitle("Workspace page: Email campaigns");
+    expect(frame.getAttribute("src")).toBe("/email/campaigns?embed=1");
+    expect(
+      screen
+        .getByRole("link", { name: "Open Email campaigns in a new tab" })
+        .getAttribute("href"),
+    ).toBe("/email/campaigns");
+  });
+
+  it("collapses the conversation list and brings it back", async () => {
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide conversations" }));
+    expect(screen.queryByText("Conversations")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show conversations" }));
+    expect(await screen.findByText("Conversations")).toBeTruthy();
+  });
+
+  it("folds the conversation list away while a turn is running", async () => {
+    mocks.activity.mockResolvedValue({
+      data: {
+        events: [
+          {
+            id: 1,
+            conversation_id: 7,
+            turn_id: "turn-1",
+            kind: "turn_started",
+            created_at: "2026-11-20T10:05:00Z",
+          },
+        ],
+      },
+    });
+
+    render(<AgentPage />);
+    await screen.findByText("Here is your pipeline summary.");
+
+    await waitFor(() => expect(screen.queryByText("Conversations")).toBeNull());
+    expect(
+      screen.getByRole("button", { name: "Show conversations" }),
+    ).toBeTruthy();
   });
 
   it("stops an in-flight turn when the user interrupts it", async () => {

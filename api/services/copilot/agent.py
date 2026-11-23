@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Annotated
+from typing import Annotated, Any
 
 from langchain_core.messages import (
     AIMessage,
@@ -28,6 +28,7 @@ from loguru import logger
 from pydantic import ValidationError
 from typing_extensions import TypedDict
 
+from . import activity
 from .audit import audit_tool_call
 from .model import (
     CopilotChatModel,
@@ -48,6 +49,8 @@ class CopilotState(TypedDict, total=False):
     organization_id: int
     user_id: int
     conversation_id: int
+    # Groups the workspace activity events of one turn across tool hops.
+    turn_id: str | None
     # A model failure is converted into a normal assistant turn so the graph
     # never stops with a pending node. The service turns it into an HTTP error.
     model_error: str | None
@@ -145,10 +148,73 @@ def _approval_payload(calls: list[dict]) -> dict:
     }
 
 
-async def _run_tool(ctx: CopilotContext, tool: CopilotTool, call: dict) -> ToolMessage:
+async def _record_tool_activity(
+    ctx: CopilotContext,
+    turn_id: str | None,
+    kind: str,
+    tool: CopilotTool,
+    *,
+    status: str | None = None,
+    arguments: Any = None,
+    result: Any = None,
+    error: str | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    if not turn_id:
+        return
+    await activity.record(
+        organization_id=ctx.organization_id,
+        conversation_id=ctx.conversation_id,
+        turn_id=turn_id,
+        kind=kind,
+        tool_name=tool.name,
+        risk=tool.risk,
+        status=status,
+        arguments=arguments,
+        result=result,
+        error=error,
+        duration_ms=duration_ms,
+    )
+
+
+async def _run_tool(
+    ctx: CopilotContext, tool: CopilotTool, call: dict, turn_id: str | None = None
+) -> ToolMessage:
     started = time.monotonic()
+    raw_arguments = call.get("args") or {}
+    await _record_tool_activity(
+        ctx, turn_id, activity.TOOL_STARTED, tool, arguments=raw_arguments
+    )
+    # Pydantic would silently drop these, so a model inventing an argument
+    # (e.g. `filters`) would get an unfiltered result and misread it as a match.
+    known = set(tool.args_schema.model_fields)
+    unknown = sorted(key for key in raw_arguments if key not in known)
+    if unknown:
+        message = (
+            f"Unknown argument(s): {', '.join(unknown)}. "
+            f"{tool.name} accepts: {', '.join(sorted(known))}."
+        )
+        await audit_tool_call(
+            ctx,
+            tool.name,
+            tool.risk,
+            "error",
+            raw_arguments,
+            error="unknown arguments",
+        )
+        await _record_tool_activity(
+            ctx,
+            turn_id,
+            activity.TOOL_FINISHED,
+            tool,
+            status="error",
+            arguments=raw_arguments,
+            error=message,
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
+        return ToolMessage(content=message, tool_call_id=call["id"], name=tool.name)
     try:
-        arguments = tool.args_schema.model_validate(call.get("args") or {})
+        arguments = tool.args_schema.model_validate(raw_arguments)
     except ValidationError as exc:
         message = (
             f"Invalid arguments: {exc.error_count()} problem(s). Check the schema."
@@ -158,8 +224,18 @@ async def _run_tool(ctx: CopilotContext, tool: CopilotTool, call: dict) -> ToolM
             tool.name,
             tool.risk,
             "error",
-            call.get("args") or {},
+            raw_arguments,
             error="validation",
+        )
+        await _record_tool_activity(
+            ctx,
+            turn_id,
+            activity.TOOL_FINISHED,
+            tool,
+            status="error",
+            arguments=raw_arguments,
+            error="Invalid arguments",
+            duration_ms=int((time.monotonic() - started) * 1000),
         )
         return ToolMessage(content=message, tool_call_id=call["id"], name=tool.name)
 
@@ -187,7 +263,18 @@ async def _run_tool(ctx: CopilotContext, tool: CopilotTool, call: dict) -> ToolM
         tool.name,
         tool.risk,
         status,
-        call.get("args") or {},
+        raw_arguments,
+        result=result,
+        error=error,
+        duration_ms=duration_ms,
+    )
+    await _record_tool_activity(
+        ctx,
+        turn_id,
+        activity.TOOL_FINISHED,
+        tool,
+        status=status,
+        arguments=raw_arguments,
         result=result,
         error=error,
         duration_ms=duration_ms,
@@ -216,6 +303,7 @@ def _tools_node(web_enabled: bool):
             user_id=state["user_id"],
             conversation_id=state["conversation_id"],
         )
+        turn_id = state.get("turn_id")
 
         gated = [
             call
@@ -254,6 +342,14 @@ def _tools_node(web_enabled: bool):
                     "declined",
                     call.get("args") or {},
                 )
+                await _record_tool_activity(
+                    ctx,
+                    turn_id,
+                    activity.TOOL_FINISHED,
+                    tool,
+                    status="declined",
+                    arguments=call.get("args") or {},
+                )
                 results.append(
                     ToolMessage(
                         content=(
@@ -265,7 +361,7 @@ def _tools_node(web_enabled: bool):
                     )
                 )
                 continue
-            results.append(await _run_tool(ctx, tool, call))
+            results.append(await _run_tool(ctx, tool, call, turn_id))
         return {"messages": results}
 
     return run

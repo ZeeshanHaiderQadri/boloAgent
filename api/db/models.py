@@ -2698,6 +2698,52 @@ class CopilotConversationModel(Base):
     )
 
 
+class CopilotActivityModel(Base):
+    """Append-only, UI-facing log of one copilot turn or tool event.
+
+    ``copilot_tool_calls`` is the security ledger; this table carries the
+    summarized payload the agent workspace canvas renders in real time and
+    after a reload. Events are ordered by their primary key.
+    """
+
+    __tablename__ = "copilot_activity"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    conversation_id = Column(
+        Integer,
+        ForeignKey("copilot_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    turn_id = Column(String(64), nullable=False)
+    kind = Column(String(32), nullable=False)
+    tool_name = Column(String(64), nullable=True)
+    risk = Column(String(16), nullable=True)
+    status = Column(String(16), nullable=True)
+    arguments = Column(JSONB, nullable=True)
+    result = Column(JSONB, nullable=True)
+    error = Column(Text, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_copilot_activity_conversation_id",
+            "conversation_id",
+            "id",
+        ),
+        Index("ix_copilot_activity_organization_id", "organization_id"),
+    )
+
+
 class CopilotToolCallModel(Base):
     """Append-only audit row for one copilot tool execution."""
 

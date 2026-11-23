@@ -53,6 +53,12 @@ function useSidebar() {
   return context
 }
 
+/** For page-level chrome that should collapse the nav while a task runs but
+ * still renders in isolation (tests, embeds) without a SidebarProvider. */
+function useSidebarOptional() {
+  return React.useContext(SidebarContext)
+}
+
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -723,4 +729,5 @@ export {
   SidebarSeparator,
   SidebarTrigger,
   useSidebar,
+  useSidebarOptional,
 }

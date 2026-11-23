@@ -149,6 +149,43 @@ function loadSavedFilters(): SavedLeadFilters {
     }
 }
 
+/** The agent workspace embeds this page with the filters it searched, e.g.
+ * `/leads/all?country=GB`. Read them after mount — the server cannot see
+ * query params here — so the frame opens on the same slice the assistant
+ * described. */
+function loadUrlFilters(): SavedLeadFilters | null {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const text = (key: string) => {
+        const value = params.get(key);
+        return value && value.length <= 200 ? value : undefined;
+    };
+    const out: SavedLeadFilters = {
+        query: text("query"),
+        status: text("status"),
+        tag: text("tag"),
+        category: text("category"),
+        country: text("country")?.toUpperCase(),
+        state: text("state"),
+        city: text("city"),
+        sort: text("sort") as LeadSort | undefined,
+    };
+    const hasPhone = params.get("has_phone");
+    if (hasPhone === "1" || hasPhone === "0") out.hasPhone = hasPhone === "1";
+    const hasEmail = params.get("has_email");
+    if (hasEmail === "1" || hasEmail === "0") {
+        out.email = hasEmail === "1" ? "has" : "no";
+    }
+    return Object.values(out).some((value) => value !== undefined) ? out : null;
+}
+
+function isEmbedded() {
+    return (
+        typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("embed") === "1"
+    );
+}
+
 function initialStatus(value: string | undefined): string {
     if (value === ANY) return ANY;
     return value && LEAD_STATUSES.includes(value as LeadStatus) ? value : ANY;
@@ -233,13 +270,39 @@ export default function AllLeadsPage() {
     const [viewName, setViewName] = useState("");
     const [editingViewId, setEditingViewId] = useState<string | null>(null);
 
+    const [urlPinnedFilters, setUrlPinnedFilters] = useState(false);
+
     useEffect(() => {
         if (!loading && !user) redirectToLogin();
     }, [loading, user, redirectToLogin]);
 
-    // Remember filter choices in this browser so returning operators land on
-    // the same slice of the CRM.
     useEffect(() => {
+        const fromUrl = loadUrlFilters();
+        if (!fromUrl) return;
+        setUrlPinnedFilters(true);
+        // Start from neutral defaults so filters saved in this browser cannot
+        // leak into the agent's slice; the URL alone defines the view.
+        setQuery(fromUrl.query ?? "");
+        setAppliedQuery(fromUrl.query ?? "");
+        setStatus(initialStatus(fromUrl.status));
+        setTag(fromUrl.tag ?? "");
+        setCategory(fromUrl.category ?? "");
+        setCountry(fromUrl.country ?? "");
+        setStateFilter(fromUrl.state ?? "");
+        setCity(fromUrl.city ?? "");
+        setHasPhone(fromUrl.hasPhone ?? false);
+        setWebsite("any");
+        setEmail(fromUrl.email ?? "any");
+        setSort(initialSort(fromUrl.sort));
+        setPageSize(25);
+        setPage(1);
+    }, []);
+
+    // Remember filter choices in this browser so returning operators land on
+    // the same slice of the CRM. URL-pinned or embedded views stay ephemeral:
+    // clicking around inside the agent workspace must not replace that view.
+    useEffect(() => {
+        if (urlPinnedFilters || isEmbedded()) return;
         const payload: SavedLeadFilters = {
             query: appliedQuery,
             status,
@@ -268,6 +331,7 @@ export default function AllLeadsPage() {
         email,
         sort,
         pageSize,
+        urlPinnedFilters,
     ]);
 
     useEffect(() => {
@@ -641,10 +705,15 @@ export default function AllLeadsPage() {
         }
     };
 
-    const countryOptions = facets?.countries ?? [];
-    const stateOptions = facets?.states ?? [];
-    const cityOptions = facets?.cities ?? [];
-    const categoryOptions = facets?.categories ?? [];
+    // A controlled Radix Select whose value has no matching item emits an
+    // empty onValueChange (hidden native select fallback). URL-pinned values
+    // must stay selectable before facets arrive, or the pin clears itself.
+    const withSelected = (options: string[], selected: string) =>
+        selected && !options.includes(selected) ? [selected, ...options] : options;
+    const countryOptions = withSelected(facets?.countries ?? [], country);
+    const stateOptions = withSelected(facets?.states ?? [], stateFilter);
+    const cityOptions = withSelected(facets?.cities ?? [], city);
+    const categoryOptions = withSelected(facets?.categories ?? [], category);
     const totalPages = Math.max(1, data?.total_pages ?? 0);
 
     return (
@@ -793,6 +862,7 @@ export default function AllLeadsPage() {
                             <Select
                                 value={category || ANY}
                                 onValueChange={(value) => {
+                                    if (!value) return;
                                     setCategory(value === ANY ? "" : value);
                                     setPage(1);
                                 }}
@@ -828,6 +898,10 @@ export default function AllLeadsPage() {
                             <Select
                                 value={country || ANY}
                                 onValueChange={(value) => {
+                                    // Radix's hidden native select emits "" when the
+                                    // value has no option yet (facets still loading);
+                                    // a real clear always arrives as ANY.
+                                    if (!value) return;
                                     setCountry(value === ANY ? "" : value);
                                     setStateFilter("");
                                     setCity("");
@@ -852,6 +926,7 @@ export default function AllLeadsPage() {
                             <Select
                                 value={stateFilter || ANY}
                                 onValueChange={(value) => {
+                                    if (!value) return;
                                     setStateFilter(value === ANY ? "" : value);
                                     setCity("");
                                     setPage(1);
@@ -880,6 +955,7 @@ export default function AllLeadsPage() {
                             <Select
                                 value={city || ANY}
                                 onValueChange={(value) => {
+                                    if (!value) return;
                                     setCity(value === ANY ? "" : value);
                                     setPage(1);
                                 }}
@@ -907,6 +983,7 @@ export default function AllLeadsPage() {
                             <Select
                                 value={status}
                                 onValueChange={(value) => {
+                                    if (!value) return;
                                     setStatus(value);
                                     setPage(1);
                                 }}
@@ -929,6 +1006,7 @@ export default function AllLeadsPage() {
                             <Select
                                 value={sort}
                                 onValueChange={(value) => {
+                                    if (!value) return;
                                     setSort(value as LeadSort);
                                     setPage(1);
                                 }}
@@ -950,6 +1028,7 @@ export default function AllLeadsPage() {
                             <Select
                                 value={website}
                                 onValueChange={(value) => {
+                                    if (!value) return;
                                     setWebsite(value as WebsiteFilter);
                                     setPage(1);
                                 }}
@@ -969,6 +1048,7 @@ export default function AllLeadsPage() {
                             <Select
                                 value={email}
                                 onValueChange={(value) => {
+                                    if (!value) return;
                                     setEmail(value as EmailFilter);
                                     setPage(1);
                                 }}
@@ -1127,6 +1207,7 @@ export default function AllLeadsPage() {
                             <Select
                                 value={String(pageSize)}
                                 onValueChange={(value) => {
+                                    if (!value) return;
                                     setPageSize(Number(value));
                                     setPage(1);
                                 }}
