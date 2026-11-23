@@ -127,7 +127,10 @@ class SearchLeadsArgs(BaseModel):
     query: str | None = Field(
         default=None,
         max_length=200,
-        description="Free-text match against business name, city or category.",
+        description=(
+            "Free-text match against business name, city or category. It does "
+            "NOT match country — use the country field for that."
+        ),
     )
     crm_status: str | None = Field(
         default=None,
@@ -137,6 +140,16 @@ class SearchLeadsArgs(BaseModel):
     project_id: int | None = Field(
         default=None, description="Only leads in this saved lead project."
     )
+    country: str | None = Field(
+        default=None,
+        max_length=2,
+        description=(
+            "ISO 3166-1 alpha-2 country code, e.g. GB for the United Kingdom, "
+            "US for the United States. Required for 'UK leads' style requests."
+        ),
+    )
+    state: str | None = Field(default=None, max_length=80)
+    city: str | None = Field(default=None, max_length=120)
     has_email: bool | None = None
     has_phone: bool | None = None
     sort: str = Field(
@@ -159,12 +172,15 @@ async def _search_leads(ctx: CopilotContext, args: SearchLeadsArgs) -> dict:
         crm_status=args.crm_status,
         tag=args.tag,
         project_id=args.project_id,
+        country=args.country.upper() if args.country else None,
+        state=args.state,
+        city=args.city,
         has_email=args.has_email,
         has_phone=args.has_phone,
         sort=args.sort,
         limit=args.limit,
     )
-    return {
+    result: dict = {
         "total": total,
         "returned": len(leads),
         "leads": [
@@ -185,6 +201,12 @@ async def _search_leads(ctx: CopilotContext, args: SearchLeadsArgs) -> dict:
             for lead in leads
         ],
     }
+    if total == 0:
+        result["note"] = (
+            "No leads match these filters. Tell the user plainly that none "
+            "match and stop; do not retry with other cities, tags or spellings."
+        )
+    return result
 
 
 class ListCampaignsArgs(BaseModel):
@@ -1161,9 +1183,12 @@ TOOLS: dict[str, CopilotTool] = {
         CopilotTool(
             name="search_leads",
             description=(
-                "Search this workspace's leads by text, CRM status, tag, or "
-                "saved project. Returns ids you can use with tag_leads. "
-                "Use it before claiming any lead count beyond business_overview."
+                "Search this workspace's leads by text, CRM status, tag, "
+                "country (ISO alpha-2, e.g. GB for the UK), state, city, or "
+                "saved project. Use the country field for geography — the "
+                "text query does not match country. Returns ids you can use "
+                "with tag_leads. Use it before claiming any lead count beyond "
+                "business_overview."
             ),
             args_schema=SearchLeadsArgs,
             risk=RISK_READ,

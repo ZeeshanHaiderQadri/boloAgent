@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -67,6 +67,36 @@ class CopilotSnapshot(BaseModel):
     status: CopilotStatus
     messages: list[CopilotTranscriptMessage]
     pending_approvals: list[CopilotPendingApproval]
+
+
+CopilotActivityKind = Literal[
+    "turn_started",
+    "turn_finished",
+    "turn_failed",
+    "approval_required",
+    "approval_decided",
+    "tool_started",
+    "tool_finished",
+]
+
+
+class CopilotActivityEvent(BaseModel):
+    id: int
+    conversation_id: int
+    turn_id: str
+    kind: CopilotActivityKind
+    tool: str | None = None
+    risk: str | None = None
+    status: str | None = None
+    arguments: dict | None = None
+    result: Any | None = None
+    error: str | None = None
+    duration_ms: int | None = None
+    created_at: datetime
+
+
+class CopilotActivityResponse(BaseModel):
+    events: list[CopilotActivityEvent]
 
 
 CopilotWebProviderName = Literal["exa", "tavily", "firecrawl", "serper", "serpapi"]

@@ -1572,6 +1572,72 @@ export type ContextDestinationRule = {
 };
 
 /**
+ * CopilotActivityEvent
+ */
+export type CopilotActivityEvent = {
+    /**
+     * Id
+     */
+    id: number;
+    /**
+     * Conversation Id
+     */
+    conversation_id: number;
+    /**
+     * Turn Id
+     */
+    turn_id: string;
+    /**
+     * Kind
+     */
+    kind: 'turn_started' | 'turn_finished' | 'turn_failed' | 'approval_required' | 'approval_decided' | 'tool_started' | 'tool_finished';
+    /**
+     * Tool
+     */
+    tool?: string | null;
+    /**
+     * Risk
+     */
+    risk?: string | null;
+    /**
+     * Status
+     */
+    status?: string | null;
+    /**
+     * Arguments
+     */
+    arguments?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Result
+     */
+    result?: unknown | null;
+    /**
+     * Error
+     */
+    error?: string | null;
+    /**
+     * Duration Ms
+     */
+    duration_ms?: number | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+};
+
+/**
+ * CopilotActivityResponse
+ */
+export type CopilotActivityResponse = {
+    /**
+     * Events
+     */
+    events: Array<CopilotActivityEvent>;
+};
+
+/**
  * CopilotApprovalRequest
  */
 export type CopilotApprovalRequest = {
@@ -14862,6 +14928,59 @@ export type GetConversationApiV1CopilotConversationsConversationIdGetResponses =
 };
 
 export type GetConversationApiV1CopilotConversationsConversationIdGetResponse = GetConversationApiV1CopilotConversationsConversationIdGetResponses[keyof GetConversationApiV1CopilotConversationsConversationIdGetResponses];
+
+export type GetActivityApiV1CopilotConversationsConversationIdActivityGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Conversation Id
+         */
+        conversation_id: number;
+    };
+    query?: {
+        /**
+         * After Id
+         */
+        after_id?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/copilot/conversations/{conversation_id}/activity';
+};
+
+export type GetActivityApiV1CopilotConversationsConversationIdActivityGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetActivityApiV1CopilotConversationsConversationIdActivityGetError = GetActivityApiV1CopilotConversationsConversationIdActivityGetErrors[keyof GetActivityApiV1CopilotConversationsConversationIdActivityGetErrors];
+
+export type GetActivityApiV1CopilotConversationsConversationIdActivityGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CopilotActivityResponse;
+};
+
+export type GetActivityApiV1CopilotConversationsConversationIdActivityGetResponse = GetActivityApiV1CopilotConversationsConversationIdActivityGetResponses[keyof GetActivityApiV1CopilotConversationsConversationIdActivityGetResponses];
 
 export type SendMessageApiV1CopilotConversationsConversationIdMessagesPostData = {
     body: CopilotMessageRequest;

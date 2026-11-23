@@ -17,6 +17,7 @@ from api.db.models import (
     CheckpointBlobModel,
     CheckpointModel,
     CheckpointWriteModel,
+    CopilotActivityModel,
     CopilotConversationModel,
     CopilotToolCallModel,
 )
@@ -89,6 +90,62 @@ class CopilotClient(WorkflowBuilderClient):
                     CopilotConversationModel.user_id == user_id,
                 )
                 .order_by(CopilotConversationModel.updated_at.desc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def record_copilot_activity(
+        self,
+        *,
+        organization_id: int,
+        conversation_id: int,
+        turn_id: str,
+        kind: str,
+        tool_name: str | None = None,
+        risk: str | None = None,
+        status: str | None = None,
+        arguments: dict[str, Any] | None = None,
+        result: Any = None,
+        error: str | None = None,
+        duration_ms: int | None = None,
+    ) -> CopilotActivityModel:
+        async with self.async_session() as session:
+            activity = CopilotActivityModel(
+                organization_id=organization_id,
+                conversation_id=conversation_id,
+                turn_id=turn_id,
+                kind=kind,
+                tool_name=tool_name,
+                risk=risk,
+                status=status,
+                arguments=arguments,
+                result=result,
+                error=error,
+                duration_ms=duration_ms,
+            )
+            session.add(activity)
+            await session.commit()
+            await session.refresh(activity)
+            return activity
+
+    async def list_copilot_activity(
+        self,
+        conversation_id: int,
+        organization_id: int,
+        *,
+        after_id: int = 0,
+        limit: int = 200,
+    ) -> list[CopilotActivityModel]:
+        """Events for a conversation, oldest first, after a cursor id."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(CopilotActivityModel)
+                .where(
+                    CopilotActivityModel.conversation_id == conversation_id,
+                    CopilotActivityModel.organization_id == organization_id,
+                    CopilotActivityModel.id > after_id,
+                )
+                .order_by(CopilotActivityModel.id.asc())
                 .limit(limit)
             )
             return list(result.scalars().all())

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import ValidationError
 
+from api.services.copilot import agent as copilot_agent
 from api.services.copilot.tools import (
     RISK_READ,
     RISK_WRITE,
@@ -106,6 +107,58 @@ async def test_search_leads_rejects_unknown_crm_status():
             CopilotContext(organization_id=1, user_id=1, conversation_id=1),
             SearchLeadsArgs(crm_status="hot"),
         )
+
+
+@pytest.mark.asyncio
+async def test_search_leads_passes_geography_filters():
+    with patch("api.services.copilot.tools.db_client") as db:
+        db.list_leads = AsyncMock(return_value=([], 0))
+        await _search_leads(
+            CopilotContext(organization_id=42, user_id=1, conversation_id=1),
+            SearchLeadsArgs(country="gb", city="London", limit=5),
+        )
+
+    kwargs = db.list_leads.await_args.kwargs
+    assert kwargs["country"] == "GB"
+    assert kwargs["city"] == "London"
+
+
+@pytest.mark.asyncio
+async def test_search_leads_notes_when_nothing_matches():
+    with patch("api.services.copilot.tools.db_client") as db:
+        db.list_leads = AsyncMock(return_value=([], 0))
+        result = await _search_leads(
+            CopilotContext(organization_id=42, user_id=1, conversation_id=1),
+            SearchLeadsArgs(query="Cyprus", limit=5),
+        )
+
+    assert result["total"] == 0
+    assert "note" in result
+
+
+@pytest.mark.asyncio
+async def test_run_tool_reports_unknown_arguments_instead_of_ignoring_them():
+    tool = TOOLS["search_leads"]
+    call = {
+        "id": "call-1",
+        "name": "search_leads",
+        "args": {"filters": '{"country": "Cyprus"}', "limit": 5},
+    }
+    with (
+        patch.object(copilot_agent, "_record_tool_activity", new=AsyncMock()),
+        patch.object(copilot_agent, "audit_tool_call", new=AsyncMock()),
+        patch("api.services.copilot.tools.db_client") as db,
+    ):
+        db.list_leads = AsyncMock()
+        message = await copilot_agent._run_tool(
+            CopilotContext(organization_id=42, user_id=1, conversation_id=1),
+            tool,
+            call,
+        )
+
+    db.list_leads.assert_not_awaited()
+    assert "filters" in message.content
+    assert "country" in message.content
 
 
 @pytest.mark.asyncio

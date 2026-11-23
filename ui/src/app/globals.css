@@ -257,6 +257,15 @@
     background-color: oklch(0.165 0.008 176);
   }
 
+  /* The agent's live workspace embeds dashboard routes in a same-origin
+     iframe with ?embed=1. Drop the repeated nav + header there so the pane
+     shows only the page itself. The flag lives on <html> (set pre-paint in
+     the root layout) and survives client-side navigation inside the frame. */
+  html[data-embed="1"] [data-slot="sidebar"],
+  html[data-embed="1"] [data-app-chrome] {
+    display: none !important;
+  }
+
   /* Giant faded "bolo" imprint for the auth pages (applied to the AuthShell
      form column, shared by Stack + OSS login/signup). Same --brand-imprint as
      .app-surface; element-relative here (no fixed attachment), so it centers

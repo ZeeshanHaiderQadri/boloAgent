@@ -8,23 +8,27 @@ approval live in durable LangGraph checkpoints.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from typing import Any
 
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
+from langgraph.errors import GraphRecursionError
 from langgraph.types import Command
 
 from api.db import db_client
 from api.db.models import CopilotConversationModel, UserModel
 from api.db.workflow_builder import BuilderBusy
 from api.schemas.copilot import (
+    CopilotActivityEvent,
+    CopilotActivityResponse,
     CopilotConversationSummary,
     CopilotPendingApproval,
     CopilotPendingCall,
     CopilotSnapshot,
     CopilotTranscriptMessage,
 )
-from api.services.copilot import web_access
+from api.services.copilot import activity, web_access
 from api.services.copilot.agent import build_copilot_graph
 from api.services.copilot.model import (
     CopilotChatModel,
@@ -39,6 +43,11 @@ RECURSION_LIMIT = 25
 
 def _thread_id(organization_id: int, user_id: int, conversation_id: int) -> str:
     return f"copilot:{organization_id}:{user_id}:{conversation_id}"
+
+
+def _turn_id() -> str:
+    # Server-side label: a client-chosen id must not merge two turns' events.
+    return uuid.uuid4().hex
 
 
 ATTACHMENTS_MARKER = "\n\n[Attached documents]\n"
@@ -209,6 +218,56 @@ async def _save(conversation, user, request_id, snapshot: CopilotSnapshot):
     )
 
 
+async def _record_snapshot_activity(
+    conversation: CopilotConversationModel,
+    turn_id: str,
+    snapshot: CopilotSnapshot,
+) -> None:
+    if snapshot.pending_approvals:
+        calls = [
+            call.model_dump()
+            for approval in snapshot.pending_approvals
+            for call in approval.calls
+        ]
+        await activity.approval_required(conversation, turn_id, calls)
+    await activity.turn_finished(conversation, turn_id, snapshot.status)
+
+
+async def get_activity(
+    conversation_id: int,
+    user: UserModel,
+    *,
+    after_id: int = 0,
+    limit: int = 200,
+) -> CopilotActivityResponse:
+    conversation = await load_conversation(conversation_id, user)
+    rows = await db_client.list_copilot_activity(
+        conversation.id,
+        conversation.organization_id,
+        after_id=after_id,
+        limit=limit,
+    )
+    return CopilotActivityResponse(
+        events=[
+            CopilotActivityEvent(
+                id=row.id,
+                conversation_id=row.conversation_id,
+                turn_id=row.turn_id,
+                kind=row.kind,
+                tool=row.tool_name,
+                risk=row.risk,
+                status=row.status,
+                arguments=row.arguments,
+                result=row.result,
+                error=row.error,
+                duration_ms=row.duration_ms,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
+    )
+
+
 async def record_voice_turn(
     *,
     organization_id: int,
@@ -288,6 +347,8 @@ async def send_message(
     note = await _attachment_note(conversation.organization_id, attachments or [])
     content = message + note if note else message
     config = _config(conversation, user)
+    turn_id = _turn_id()
+    await activity.turn_started(conversation, turn_id)
     try:
         async with db_client.copilot_checkpointer(thread) as saver:
             graph = await _graph_for(conversation, user, saver)
@@ -304,31 +365,51 @@ async def send_message(
                         "organization_id": conversation.organization_id,
                         "user_id": user.id,
                         "conversation_id": conversation.id,
+                        "turn_id": turn_id,
                     },
                     config,
                 )
             state = await graph.aget_state(config)
     except BuilderBusy as exc:
+        await activity.turn_failed(conversation, turn_id, "busy")
         raise HTTPException(
             409, "This conversation is already running. Try again in a moment."
         ) from exc
     except TimeoutError as exc:
+        await activity.turn_failed(conversation, turn_id, "timeout")
         raise HTTPException(
             504, "The copilot took too long; try a narrower ask."
         ) from exc
+    except GraphRecursionError as exc:
+        await activity.turn_failed(conversation, turn_id, "too many steps")
+        raise HTTPException(
+            422,
+            "The copilot stopped after too many retries. That request did not "
+            "match anything in this workspace; try a narrower ask.",
+        ) from exc
     except CopilotConfigurationError as exc:
+        await activity.turn_failed(conversation, turn_id, str(exc))
         raise HTTPException(400, str(exc)) from exc
     except CopilotUpstreamError as exc:
+        await activity.turn_failed(conversation, turn_id, str(exc))
         raise HTTPException(502, str(exc)) from exc
+    except HTTPException as exc:
+        await activity.turn_failed(conversation, turn_id, str(exc.detail))
+        raise
+    except Exception as exc:
+        await activity.turn_failed(conversation, turn_id, type(exc).__name__)
+        raise
 
     kind = state.values.get("model_error_kind")
     if kind:
         detail = state.values.get("model_error") or (
             "The copilot could not reach your LLM."
         )
+        await activity.turn_failed(conversation, turn_id, detail)
         raise HTTPException(400 if kind == "configuration" else 502, detail)
 
     snapshot = _present(state, conversation)
+    await _record_snapshot_activity(conversation, turn_id, snapshot)
     await _save(conversation, user, client_request_id, snapshot)
     return snapshot
 
@@ -355,6 +436,8 @@ async def regenerate(
 
     thread = _thread_id(conversation.organization_id, user.id, conversation.id)
     config = _config(conversation, user)
+    turn_id = _turn_id()
+    await activity.turn_started(conversation, turn_id)
     try:
         async with db_client.copilot_checkpointer(thread) as saver:
             graph = await _graph_for(conversation, user, saver)
@@ -366,29 +449,41 @@ async def regenerate(
             reply = _reply_to_regenerate(state.values.get("messages", []))
             async with asyncio.timeout(TURN_TIMEOUT_SECONDS):
                 await graph.ainvoke(
-                    {"messages": [RemoveMessage(id=reply.id)]},
+                    {"messages": [RemoveMessage(id=reply.id)], "turn_id": turn_id},
                     config,
                 )
             state = await graph.aget_state(config)
     except BuilderBusy as exc:
+        await activity.turn_failed(conversation, turn_id, "busy")
         raise HTTPException(
             409, "This conversation is already running. Try again in a moment."
         ) from exc
     except TimeoutError as exc:
+        await activity.turn_failed(conversation, turn_id, "timeout")
         raise HTTPException(504, "The copilot took too long; try again.") from exc
     except CopilotConfigurationError as exc:
+        await activity.turn_failed(conversation, turn_id, str(exc))
         raise HTTPException(400, str(exc)) from exc
     except CopilotUpstreamError as exc:
+        await activity.turn_failed(conversation, turn_id, str(exc))
         raise HTTPException(502, str(exc)) from exc
+    except HTTPException as exc:
+        await activity.turn_failed(conversation, turn_id, str(exc.detail))
+        raise
+    except Exception as exc:
+        await activity.turn_failed(conversation, turn_id, type(exc).__name__)
+        raise
 
     kind = state.values.get("model_error_kind")
     if kind:
         detail = state.values.get("model_error") or (
             "The copilot could not reach your LLM."
         )
+        await activity.turn_failed(conversation, turn_id, detail)
         raise HTTPException(400 if kind == "configuration" else 502, detail)
 
     snapshot = _present(state, conversation)
+    await _record_snapshot_activity(conversation, turn_id, snapshot)
     await _save(conversation, user, client_request_id, snapshot)
     return snapshot
 
@@ -410,6 +505,7 @@ async def decide_approval(
 
     thread = _thread_id(conversation.organization_id, user.id, conversation.id)
     config = _config(conversation, user)
+    turn_id: str | None = None
     try:
         async with db_client.copilot_checkpointer(thread) as saver:
             graph = await _graph_for(conversation, user, saver)
@@ -425,6 +521,8 @@ async def decide_approval(
                 snapshot = _present(state, conversation)
                 await _save(conversation, user, client_request_id, snapshot)
                 return snapshot
+            turn_id = state.values.get("turn_id") or _turn_id()
+            await activity.approval_decided(conversation, turn_id, decision)
             async with asyncio.timeout(TURN_TIMEOUT_SECONDS):
                 await graph.ainvoke(
                     Command(resume={approval_id: {"decision": decision}}),
@@ -432,16 +530,33 @@ async def decide_approval(
                 )
             state = await graph.aget_state(config)
     except BuilderBusy as exc:
+        if turn_id:
+            await activity.turn_failed(conversation, turn_id, "busy")
         raise HTTPException(
             409, "This conversation is already running. Try again in a moment."
         ) from exc
     except TimeoutError as exc:
+        if turn_id:
+            await activity.turn_failed(conversation, turn_id, "timeout")
         raise HTTPException(504, "The approval took too long; try again.") from exc
     except CopilotConfigurationError as exc:
+        if turn_id:
+            await activity.turn_failed(conversation, turn_id, str(exc))
         raise HTTPException(400, str(exc)) from exc
     except CopilotUpstreamError as exc:
+        if turn_id:
+            await activity.turn_failed(conversation, turn_id, str(exc))
         raise HTTPException(502, str(exc)) from exc
+    except HTTPException as exc:
+        if turn_id:
+            await activity.turn_failed(conversation, turn_id, str(exc.detail))
+        raise
+    except Exception as exc:
+        if turn_id:
+            await activity.turn_failed(conversation, turn_id, type(exc).__name__)
+        raise
 
     snapshot = _present(state, conversation)
+    await _record_snapshot_activity(conversation, turn_id, snapshot)
     await _save(conversation, user, client_request_id, snapshot)
     return snapshot

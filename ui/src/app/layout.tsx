@@ -72,6 +72,24 @@ export default function RootLayout({
             `,
           }}
         />
+        {/* Dashboard routes embedded in the agent's live workspace carry
+            ?embed=1; flagging <html> lets CSS drop the app chrome before paint. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  if (new URLSearchParams(window.location.search).get('embed') === '1') {
+                    document.documentElement.setAttribute('data-embed', '1');
+                    var style = document.createElement('style');
+                    style.textContent = '[data-embed="1"] [data-slot="sidebar"],[data-embed="1"] [data-app-chrome]{display:none !important}';
+                    document.head.appendChild(style);
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
       </head>
       <body
         suppressHydrationWarning
