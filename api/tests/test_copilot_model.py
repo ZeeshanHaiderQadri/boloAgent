@@ -206,6 +206,59 @@ async def test_upstream_status_is_sanitized():
 
 
 @pytest.mark.asyncio
+async def test_upstream_refusal_detail_is_included():
+    llm = SimpleNamespace(
+        provider=ServiceProviders.OPENAI,
+        model="gpt-4.1",
+        api_key="sk-user-key",
+        temperature=None,
+        base_url=None,
+    )
+    refusal = httpx.Response(
+        400,
+        json={"detail": "the prompt is longer than the context length"},
+        request=httpx.Request("POST", "https://provider.test"),
+    )
+    model = CopilotChatModel(organization_id=3, user_id="u1")
+    with (
+        patch(
+            "api.services.copilot.model.get_resolved_ai_model_configuration",
+            new=AsyncMock(return_value=_resolve(llm)),
+        ),
+        patch.object(httpx.AsyncClient, "post", new=AsyncMock(return_value=refusal)),
+    ):
+        with pytest.raises(CopilotUpstreamError) as excinfo:
+            await model.ainvoke([HumanMessage(content="hi")])
+    assert "longer than the context length" in str(excinfo.value)
+    assert "sk-user-key" not in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_upstream_timeout_is_reported_as_such():
+    llm = SimpleNamespace(
+        provider=ServiceProviders.OPENAI,
+        model="gpt-4.1",
+        api_key="sk-user-key",
+        temperature=None,
+        base_url=None,
+    )
+    model = CopilotChatModel(organization_id=3, user_id="u1")
+    with (
+        patch(
+            "api.services.copilot.model.get_resolved_ai_model_configuration",
+            new=AsyncMock(return_value=_resolve(llm)),
+        ),
+        patch.object(
+            httpx.AsyncClient,
+            "post",
+            new=AsyncMock(side_effect=httpx.ReadTimeout("slow")),
+        ),
+    ):
+        with pytest.raises(CopilotUpstreamError, match="did not answer in time"):
+            await model.ainvoke([HumanMessage(content="hi")])
+
+
+@pytest.mark.asyncio
 async def test_malformed_tool_arguments_stop_the_turn():
     llm = SimpleNamespace(
         provider=ServiceProviders.OPENAI,

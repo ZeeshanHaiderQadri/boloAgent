@@ -11,6 +11,101 @@ Voice providers receive the data needed to synthesize speech, such as generated 
 
 For locally deployed or self-hosted TTS models, Bolo also supports Speaches, an OpenAI API-compatible server for speech generation.
 
+## Speech presets
+
+In a BYOK model configuration, the **Speech preset** row above the service tabs fills both the transcriber and voice settings in one click. Each preset needs the matching provider connection first:
+
+- **English**, **اردو Urdu** and **हिन्दी Hindi** use Azure Speech for listening and speaking, with a matching voice (`ur-PK-UzmaNeural` for Urdu, `hi-IN-SwaraNeural` for Hindi).
+- **English · local**, **اردو · local** and **हिन्दी · local** select your Speaches connection for both speech roles and set the matching local models and voices. They need the Speaches connection and a one-time model download; see [Free local speech](#free-local-speech).
+- **All local** also fills the LLM tab with LFM 3, so one click points the reply, transcriber and voice at local models. It needs an OpenAI-compatible connection and a Speaches connection, which can be the same local server.
+
+When the LLM you pick runs on this machine, the editor sets listening and voice for you: it fills STT and TTS from the local Speaches connection and folds those two tabs into a single **Listening and voice** row. Choose **Change** there to open the tabs and pick a different language, voice or provider. A cloud LLM keeps the STT and TTS tabs open, because those services still need their own provider and key.
+
+## Free local speech
+
+Speaches runs Whisper transcription, Kokoro voices for English and Hindi, and a
+Piper Urdu voice behind one OpenAI-compatible API, so a voice agent can work
+without any paid speech key:
+
+```bash
+# Port 8010 keeps Speaches clear of the Bolo API on 8000.
+# HF_HUB_DISABLE_XET writes downloads straight into the volume. Without it
+# Speaches keeps a second copy of every download in the container, so a
+# removed model comes back instantly and removing it never frees the disk.
+docker run --rm -d --publish 8010:8000 --name speaches \
+  --volume hf-hub-cache:/home/ubuntu/.cache/huggingface/hub \
+  --env HF_HUB_DISABLE_XET=1 \
+  ghcr.io/speaches-ai/speaches:latest-cpu
+
+export SPEACHES_BASE_URL=http://localhost:8010
+uvx speaches-cli model download Systran/faster-whisper-base
+uvx speaches-cli model download speaches-ai/Kokoro-82M-v1.0-ONNX
+uvx speaches-cli model download Keshavji/piper-ur_PK-fasih-medium
+```
+
+Add a **Speaches** connection with `http://localhost:8010/v1` for both the
+transcriber and the voice, then apply one of the local presets. When Bolo runs
+in Docker, point the connection at `host.docker.internal:8010/v1` instead of
+`localhost`.
+
+<Info>
+`Systran/faster-whisper-base` is the multilingual model the local presets use and
+runs realtime on CPU. `Systran/faster-whisper-large-v3` is more accurate but
+heavy on CPU. Whisper is free but less accurate than the paid providers for
+Urdu.
+</Info>
+
+The agent's voice pipeline runs on the server, so browser-only models (WebGPU
+or WASM) cannot serve a Bolo Agent call. The free path runs the same small
+models on a local Speaches server next to the API instead. Any other
+OpenAI-compatible speech server works the same way through the Speaches
+connection. For a fully offline stack, point the Speaches **LLM** connection at
+a local Ollama server (`http://localhost:11434/v1`).
+
+<Info>
+Ollama limits requests to a small context window by default, while the
+copilot's system prompt plus tool definitions need more. Start Ollama with
+`OLLAMA_CONTEXT_LENGTH=16384` (or set `num_ctx` for the model) so chat turns
+and the copilot do not fail with a context-length error.
+</Info>
+
+## Managing local models from Bolo
+
+When the API knows where the local servers are, **Models → Models on this
+machine** lists every model that is installed and every model Bolo can add,
+with its size, an **Install** button and a **Remove** button. A download shows
+its progress in place, and calls keep working while it runs. Removing a model
+deletes its files from this machine, so running it again downloads it again.
+
+The model editor checks too. Pick a chat model that is not on this machine and
+the LLM tab offers to download it in place, from Ollama. The same applies to a
+missing speech model on a local Speaches connection, in the STT or TTS tab.
+When listening and voice are filled in automatically, the banner offers a
+**Download models** button for whatever is still missing. Downloads run on the
+server, so they continue after the editor closes.
+
+The local gateway lists its chat, listening and voice models together, so the
+editor keeps roles apart: voice and listening models do not appear in the LLM
+model list, and chat models do not appear in the voice list.
+
+<Warning>
+Run Speaches with `HF_HUB_DISABLE_XET=1`. Without it Speaches keeps a chunk
+cache inside the container next to the model volume: removing a model leaves
+that cache behind, so the model reappears within seconds when installed again
+and the disk is never freed.
+</Warning>
+
+```bash
+export LOCAL_OLLAMA_URL=http://localhost:11434
+export LOCAL_SPEACHES_URL=http://localhost:8010
+```
+
+In Docker, point both at `host.docker.internal` instead of `localhost`. The
+panel appears only when at least one of the two server URLs is set and
+reachable; cloud-only deployments never see it.
+
+When you pick a language on a Bolo Agent call, the call switches the configured services to that language for the session. With Speaches, it also picks the matching local model and voice (Kokoro `hf_alpha` for Hindi, the Piper Urdu voice for Urdu, Kokoro `af_heart` for English), so every language must be downloaded once. A voice provider that cannot speak the chosen language shows a warning in the voice bar instead of going silent. A reply the provider rejects mid-call, for example on a rate limit or exhausted quota, is reported the same way so a missing reply is not mistaken for silence.
+
 If you don't find your favourite voice, you can always add the voice ID manually.
 
 ![Add Voice Manually](../images/add_tts_manually.png)

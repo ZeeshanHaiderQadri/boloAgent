@@ -77,6 +77,8 @@ AZURE_SPEECH_TTS_LANGUAGES = [
     "pl-PL",
     "sv-SE",
     "hi-IN",
+    "ur-IN",
+    "ur-PK",
 ]
 
 AZURE_SPEECH_TTS_VOICES = [
@@ -99,6 +101,12 @@ AZURE_SPEECH_TTS_VOICES = [
     "en-US-SaraNeural",
     "en-US-SteffanNeural",
     "en-US-TonyNeural",
+    "hi-IN-MadhurNeural",
+    "hi-IN-SwaraNeural",
+    "ur-IN-GulNeural",
+    "ur-PK-AsadNeural",
+    "ur-PK-SalmanNeural",
+    "ur-PK-UzmaNeural",
 ]
 
 AZURE_SPEECH_STT_LANGUAGES = [
@@ -123,6 +131,8 @@ AZURE_SPEECH_STT_LANGUAGES = [
     "nl-NL",
     "pl-PL",
     "hi-IN",
+    "ur-IN",
+    "ur-PK",
 ]
 
 AZURE_EMBEDDING_MODELS = [

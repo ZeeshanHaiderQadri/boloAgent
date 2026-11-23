@@ -100,9 +100,9 @@ function ModelCombobox({ id, value, options, onSelect, placeholder, required }: 
     </Popover>;
 }
 
-function ValueInput({ id, name, schema, value, onChange, secret, required, provider, providerConnectionUuid, connectionRevision, model, language }: {
+function ValueInput({ id, name, schema, value, onChange, secret, required, provider, providerConnectionUuid, connectionRevision, model, language, role }: {
     id: string; name: string; schema: FieldSchema; value: unknown; onChange: (value: unknown) => void;
-    secret: boolean; required: boolean; provider?: string; providerConnectionUuid?: string; connectionRevision?: number; model?: string; language?: string;
+    secret: boolean; required: boolean; provider?: string; providerConnectionUuid?: string; connectionRevision?: number; model?: string; language?: string; role?: ServiceRole;
 }) {
     const alternatives = schema.anyOf || [schema];
     const nullable = alternatives.some(option => option.type === "null");
@@ -114,6 +114,7 @@ function ValueInput({ id, name, schema, value, onChange, secret, required, provi
     const catalog = useConnectionModels(
         schema.model_catalog && !voiceCatalog ? providerConnectionUuid : undefined,
         connectionRevision,
+        role,
     );
     const discoveredModels = catalog.models;
     // Select values are strings; numeric enums are converted back on change.
@@ -245,7 +246,7 @@ export function SchemaFields({ schema, values, onChange, secret = false, configu
                     <Label id={`${id}-label`} htmlFor={id} className="capitalize">{label}</Label>
                 </div>
                 {editing ? <ValueInput key={resetKey} id={id} name={name} provider={provider} providerConnectionUuid={providerConnectionUuid} connectionRevision={connectionRevision} model={String(resolvedValues.model || "") || undefined}
-                    language={String(resolvedValues.language || "") || undefined}
+                    language={String(resolvedValues.language || "") || undefined} role={role}
                     schema={suggestions ? { ...field, examples: suggestions, enum: field.enum ? suggestions : undefined } : field}
                     value={Object.hasOwn(values, name) ? values[name] : field.default} secret={secret}
                     required={Boolean(schema.required?.includes(name))} onChange={value => onChange(name, value)} />

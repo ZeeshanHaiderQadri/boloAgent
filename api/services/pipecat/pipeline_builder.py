@@ -245,6 +245,9 @@ def build_realtime_pipeline(
     return Pipeline(processors)
 
 
+_UNSET = object()
+
+
 def create_pipeline_task(
     pipeline,
     workflow_run_id,
@@ -254,6 +257,7 @@ def create_pipeline_task(
     conversation_parent_context=None,
     conversation_type: str = "voice",
     additional_span_attributes: dict | None = None,
+    idle_timeout_secs: float | None | object = _UNSET,
 ):
     """Create a pipeline task with appropriate parameters.
 
@@ -271,6 +275,9 @@ def create_pipeline_task(
         additional_span_attributes: Extra attributes set on the conversation
             span (e.g. ``langfuse.trace.name`` to name a stitched trace that
             has no real root span).
+        idle_timeout_secs: Idle watchdog for the worker. Omit to keep
+            Pipecat's default; pass ``None`` for conversations that stay open
+            while the caller is silent but still connected (copilot voice).
     """
     # Set up pipeline params with audio configuration if provided
     pipeline_params = PipelineParams(
@@ -290,6 +297,10 @@ def create_pipeline_task(
             f"out: {audio_config.transport_out_sample_rate}Hz"
         )
 
+    task_kwargs = {}
+    if idle_timeout_secs is not _UNSET:
+        task_kwargs["idle_timeout_secs"] = idle_timeout_secs
+
     task = BoloPipelineWorker(
         pipeline,
         name=name,
@@ -305,6 +316,7 @@ def create_pipeline_task(
         conversation_parent_context=conversation_parent_context,
         conversation_type=conversation_type,
         additional_span_attributes=additional_span_attributes,
+        **task_kwargs,
     )
 
     from api.services.observability.pipeline_metrics import attach_pipeline_metrics

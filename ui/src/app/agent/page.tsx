@@ -47,6 +47,8 @@ import type {
   CopilotSnapshot,
   CopilotTranscriptMessage,
 } from "@/client/types.gen";
+import type { BoloFaceStatus } from "@/components/agent/BoloFace";
+import { BoloFace } from "@/components/agent/BoloFace";
 import { PageShell } from "@/components/layout/PageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,6 +75,7 @@ import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
+import { TalkControls, VoiceLanguageSelect } from "./components/TalkControls";
 import { useAgentVoice } from "./hooks/useAgentVoice";
 
 const TOOL_LABELS: Record<string, string> = {
@@ -506,6 +509,36 @@ export default function AgentPage() {
     endRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" });
   }, [snapshot, optimistic, busy]);
 
+  const refreshSnapshot = useCallback(
+    async (conversationId: number) => {
+      const response =
+        await getConversationApiV1CopilotConversationsConversationIdGet({
+          path: { conversation_id: conversationId },
+          headers: await authHeaders(),
+        }).catch(() => null);
+      if (response?.data) setSnapshot(response.data);
+    },
+    [authHeaders],
+  );
+
+  // Voice turns are written to the same chat thread; poll while a call is
+  // open so the caller sees the transcript as the conversation happens.
+  useEffect(() => {
+    if (activeId === null || voice.callState === "idle") return;
+    let stopped = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      await refreshSnapshot(activeId);
+      if (!stopped) timer = window.setTimeout(poll, 2000);
+    };
+    timer = window.setTimeout(poll, 2000);
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      void refreshSnapshot(activeId);
+    };
+  }, [activeId, refreshSnapshot, voice.callState]);
+
   const createConversation = useCallback(async () => {
     const response = await createConversationApiV1CopilotConversationsPost({
       body: {},
@@ -763,6 +796,16 @@ export default function AgentPage() {
     voice.callState === "idle" &&
     (voice.voiceStatus?.ready ?? false);
   const callDisabled = voice.callState === "idle" && !canStartCall;
+  const faceStatus: BoloFaceStatus =
+    voice.callState === "connecting"
+      ? "connecting"
+      : voice.micMode === "push-to-talk"
+        ? voice.holding
+          ? "listening"
+          : "hold-to-talk"
+        : voice.micMuted
+          ? "muted"
+          : "listening";
   const attaching = attachments.some(
     (item) => item.status === "uploading" || item.status === "processing",
   );
@@ -808,7 +851,8 @@ export default function AgentPage() {
       )}
 
       <div className="grid min-h-[560px] gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <Card className="h-fit max-h-[calc(100dvh-14rem)] overflow-hidden lg:sticky lg:top-4">
+        <div className="h-fit space-y-4 lg:sticky lg:top-4">
+        <Card className="max-h-[calc(100dvh-14rem)] overflow-hidden">
           <CardContent className="p-2">
             <p className="px-2 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Conversations
@@ -864,6 +908,17 @@ export default function AgentPage() {
           </CardContent>
         </Card>
 
+        {voice.callState !== "idle" && (
+          <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
+            <BoloFace
+              levels={voice.levelsRef}
+              status={faceStatus}
+              className="mx-auto w-full max-w-[240px]"
+            />
+          </div>
+        )}
+        </div>
+
         <Card className="flex h-[calc(100dvh-14rem)] min-h-[560px] flex-col overflow-hidden">
           <audio ref={voice.audioRef} autoPlay aria-hidden="true" className="hidden" />
           <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
@@ -876,6 +931,11 @@ export default function AgentPage() {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <VoiceLanguageSelect
+                language={voice.language}
+                onLanguageChange={voice.setLanguage}
+                disabled={voice.callState !== "idle"}
+              />
               <Badge
                 variant="outline"
                 className={cn(
@@ -952,16 +1012,42 @@ export default function AgentPage() {
               </button>
             </div>
           ) : voice.callState === "live" ? (
-            <div className="flex items-center gap-2 border-b px-5 py-2 text-xs text-muted-foreground transition-colors duration-500">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-              <span className="min-w-0 truncate">
-                On call — speak normally.
-                {voice.voiceStatus
-                  ? ` ${[voice.voiceStatus.llm, voice.voiceStatus.stt, voice.voiceStatus.tts]
-                      .filter(Boolean)
-                      .join(" · ")}`
-                  : ""}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-2 text-xs text-muted-foreground transition-colors duration-500">
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                On call
               </span>
+              <TalkControls
+                micMode={voice.micMode}
+                onMicModeChange={voice.setMicMode}
+                micMuted={voice.micMuted}
+                onToggleMute={voice.toggleMicMuted}
+                holding={voice.holding}
+                onStartTalking={voice.startTalking}
+                onStopTalking={voice.stopTalking}
+                levels={voice.levelsRef}
+                latency={voice.latency}
+              />
+              {voice.voiceStatus && (
+                <span className="hidden min-w-0 truncate lg:inline">
+                  {[voice.voiceStatus.llm, voice.voiceStatus.stt, voice.voiceStatus.tts]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              )}
+              {voice.warning && (
+                <span className="flex min-w-0 basis-full items-start gap-2 text-amber-500">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1">{voice.warning}</span>
+                  <button
+                    type="button"
+                    onClick={voice.clearWarning}
+                    className="shrink-0 text-muted-foreground transition-colors duration-300 hover:text-foreground"
+                  >
+                    Dismiss
+                  </button>
+                </span>
+              )}
             </div>
           ) : !voice.statusLoading &&
             voice.voiceStatus &&

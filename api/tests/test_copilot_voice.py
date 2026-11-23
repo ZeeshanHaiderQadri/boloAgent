@@ -7,13 +7,26 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 from fastapi import HTTPException
-from pipecat.frames.frames import ErrorFrame
+from langchain_core.messages import AIMessage, HumanMessage
+from pipecat.frames.frames import (
+    ErrorFrame,
+    LLMContextFrame,
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
+    LLMTextFrame,
+    MetricsFrame,
+    TranscriptionFrame,
+)
+from pipecat.metrics.metrics import TTFAMetricsData, TTFBMetricsData
+from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.frame_processor import FrameDirection
+from pipecat.utils.errors import ErrorCategory
 from pydantic import BaseModel
 from starlette.websockets import WebSocketState
 
 from api.routes import copilot_voice
 from api.services.call_concurrency import CallConcurrencyLimitError
+from api.services.copilot import service as copilot_service
 from api.services.copilot import voice
 from api.services.copilot.tools import (
     RISK_READ,
@@ -421,6 +434,55 @@ async def test_offer_starts_pipeline_with_org_slot_and_read_only_scope():
 
 
 @pytest.mark.asyncio
+async def test_offer_pins_the_requested_language_for_the_pipeline():
+    session = _session()
+    connection = _FakeConnection()
+
+    with (
+        patch.object(
+            copilot_voice, "SmallWebRTCConnection", lambda **kwargs: connection
+        ),
+        patch.object(copilot_voice, "get_ice_servers", lambda **_kw: []),
+        patch.object(copilot_voice, "filter_outbound_sdp", lambda sdp: sdp),
+        patch.object(
+            copilot_voice.call_concurrency,
+            "acquire_org_slot",
+            AsyncMock(return_value=object()),
+        ),
+        patch.object(copilot_voice.call_concurrency, "release_slot", AsyncMock()),
+        patch.object(copilot_voice.voice, "run_voice_pipeline", AsyncMock()) as run,
+    ):
+        await session._handle_offer(
+            {
+                "pc_id": "pc-1",
+                "sdp": "offer-sdp",
+                "type": "offer",
+                "language": "ur-PK",
+            }
+        )
+        await asyncio.sleep(0)
+        await session._cleanup()
+
+    run_args, run_kwargs = run.await_args
+    assert run_args[1].language == "ur"
+    assert callable(run_kwargs["on_warning"])
+    assert callable(run_kwargs["on_metrics"])
+
+
+@pytest.mark.asyncio
+async def test_warning_is_sent_without_ending_the_call():
+    session = _session()
+
+    await session._on_voice_warning("Sarvam voices have no Urdu.")
+
+    message = session.websocket.sent[-1]
+    assert message["type"] == "warning"
+    assert message["payload"]["warning_type"] == "voice"
+    assert message["payload"]["message"] == "Sarvam voices have no Urdu."
+    assert session.closed is False
+
+
+@pytest.mark.asyncio
 async def test_offer_refuses_when_org_concurrency_is_full():
     session = _session()
     limit = CallConcurrencyLimitError(
@@ -560,16 +622,56 @@ async def test_wait_for_peer_times_out_with_a_clear_error():
 
 
 @pytest.mark.asyncio
-async def test_voice_error_relay_reports_the_first_error_once():
+async def test_voice_error_relay_reports_the_first_permanent_error_once():
     reported = AsyncMock()
     relay = voice._VoiceErrorRelay(reported)
     raw = "Unknown error occurred: Error code: 400 - speech error: Unknown audio model 'gpt-4o-mini-tts'."
 
-    await relay.process_frame(ErrorFrame(error=raw), FrameDirection.DOWNSTREAM)
-    await relay.process_frame(ErrorFrame(error=f"  {raw}  "), FrameDirection.DOWNSTREAM)
+    await relay.process_frame(
+        ErrorFrame(error=raw, category=ErrorCategory.INVALID_REQUEST),
+        FrameDirection.DOWNSTREAM,
+    )
+    await relay.process_frame(
+        ErrorFrame(error=f"  {raw}  ", category=ErrorCategory.INVALID_REQUEST),
+        FrameDirection.DOWNSTREAM,
+    )
 
     reported.assert_awaited_once()
     assert "gpt-4o-mini-tts" in reported.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_voice_error_relay_warns_once_on_recoverable_errors():
+    reported = AsyncMock()
+    warned = AsyncMock()
+    relay = voice._VoiceErrorRelay(reported, warned)
+
+    for _ in range(2):
+        await relay.process_frame(
+            ErrorFrame(
+                error="Error code: 429 - speech error: rate limited",
+                category=ErrorCategory.RATE_LIMIT,
+            ),
+            FrameDirection.DOWNSTREAM,
+        )
+
+    reported.assert_not_awaited()
+    warned.assert_awaited_once()
+    assert "rate-limited or out of quota" in warned.await_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_voice_error_relay_warns_with_a_generic_note_for_other_failures():
+    reported = AsyncMock()
+    warned = AsyncMock()
+    relay = voice._VoiceErrorRelay(reported, warned)
+
+    await relay.process_frame(
+        ErrorFrame(error="TTS request timed out", category=ErrorCategory.CONNECTIVITY),
+        FrameDirection.DOWNSTREAM,
+    )
+
+    assert "may have missed or skipped a reply" in warned.await_args.args[0]
 
 
 @pytest.mark.asyncio
@@ -586,3 +688,213 @@ async def test_audio_errors_end_the_call_with_an_actionable_message():
     assert error["error_type"] == "voice_pipeline_failed"
     assert "rejected speech synthesis" in error["message"]
     assert "gpt-4o-mini-tts" in error["message"]
+
+
+def test_user_turns_run_vad_for_segmented_speech_to_text():
+    params = voice.voice_user_turn_params()
+
+    assert params.vad_analyzer is not None
+    assert [type(item).__name__ for item in params.user_turn_strategies.start] == [
+        "TranscriptionUserTurnStartStrategy",
+        "VADUserTurnStartStrategy",
+    ]
+    assert [type(item).__name__ for item in params.user_turn_strategies.stop] == [
+        "SpeechTimeoutUserTurnStopStrategy"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_user_speech_recorder_saves_final_transcripts_only():
+    transcript = SimpleNamespace(record=AsyncMock())
+    recorder = voice._UserSpeechRecorder(transcript)
+
+    await recorder.process_frame(
+        TranscriptionFrame(text=" find dentists ", user_id="u", timestamp="t"),
+        FrameDirection.DOWNSTREAM,
+    )
+    await recorder.process_frame(
+        LLMTextFrame(text="not speech"), FrameDirection.DOWNSTREAM
+    )
+
+    transcript.record.assert_awaited_once_with("user", " find dentists ")
+
+
+@pytest.mark.asyncio
+async def test_reply_recorder_joins_one_reply_and_drops_interrupted_text():
+    transcript = SimpleNamespace(record=AsyncMock())
+    recorder = voice._ReplyRecorder(transcript, voice._TurnLatency(None))
+
+    await recorder.process_frame(LLMFullResponseStartFrame(), FrameDirection.DOWNSTREAM)
+    await recorder.process_frame(LLMTextFrame(text="Hi "), FrameDirection.DOWNSTREAM)
+    await recorder.process_frame(LLMTextFrame(text="there."), FrameDirection.DOWNSTREAM)
+    await recorder.process_frame(LLMFullResponseEndFrame(), FrameDirection.DOWNSTREAM)
+    transcript.record.assert_awaited_once_with("assistant", "Hi there.")
+
+    transcript.record.reset_mock()
+    await recorder.process_frame(
+        LLMTextFrame(text="Cut off"), FrameDirection.DOWNSTREAM
+    )
+    await recorder.process_frame(LLMFullResponseStartFrame(), FrameDirection.DOWNSTREAM)
+    await recorder.process_frame(LLMTextFrame(text="Fresh."), FrameDirection.DOWNSTREAM)
+    await recorder.process_frame(LLMFullResponseEndFrame(), FrameDirection.DOWNSTREAM)
+    transcript.record.assert_awaited_once_with("assistant", "Fresh.")
+
+
+@pytest.mark.asyncio
+async def test_transcript_writer_saves_turns_in_order():
+    writer = voice._VoiceTranscript(CTX)
+    with patch.object(voice, "record_voice_turn", AsyncMock()) as save:
+        writer.start()
+        await writer.record("user", "  find dentists\nin Austin ")
+        await writer.record("assistant", "Found 12 dentists.")
+        await writer.close()
+
+    assert [call.kwargs["role"] for call in save.await_args_list] == [
+        "user",
+        "assistant",
+    ]
+    assert save.await_args_list[0].kwargs["content"] == "find dentists in Austin"
+    assert save.await_args_list[0].kwargs["conversation_id"] == 5
+    assert save.await_args_list[0].kwargs["organization_id"] == 42
+
+
+@pytest.mark.asyncio
+async def test_voice_turns_are_appended_to_the_chat_thread(monkeypatch):
+    conversation = SimpleNamespace(
+        id=5, organization_id=42, title=copilot_service.DEFAULT_TITLE
+    )
+    graph = SimpleNamespace(aupdate_state=AsyncMock())
+
+    class _Saver:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+    monkeypatch.setattr(
+        copilot_service.db_client,
+        "get_copilot_conversation",
+        AsyncMock(return_value=conversation),
+    )
+    monkeypatch.setattr(
+        copilot_service.db_client,
+        "copilot_checkpointer",
+        lambda thread, readonly=False: _Saver(),
+    )
+    monkeypatch.setattr(
+        copilot_service.db_client, "touch_copilot_conversation", AsyncMock()
+    )
+    monkeypatch.setattr(
+        copilot_service, "build_copilot_graph", lambda *_args, **_kw: graph
+    )
+
+    await copilot_service.record_voice_turn(
+        organization_id=42,
+        user_id=9,
+        conversation_id=5,
+        role="user",
+        content="  find dentists ",
+    )
+    config, update = graph.aupdate_state.await_args.args
+    assert config["configurable"]["thread_id"] == "copilot:42:9:5"
+    assert isinstance(update["messages"][0], HumanMessage)
+    assert update["messages"][0].content == "find dentists"
+    copilot_service.db_client.touch_copilot_conversation.assert_awaited_once_with(
+        conversation_id=5, organization_id=42, title="find dentists"
+    )
+
+    await copilot_service.record_voice_turn(
+        organization_id=42,
+        user_id=9,
+        conversation_id=5,
+        role="assistant",
+        content="Found 12 dentists.",
+    )
+    _, update = graph.aupdate_state.await_args.args
+    assert isinstance(update["messages"][0], AIMessage)
+    assert (
+        copilot_service.db_client.touch_copilot_conversation.await_args.kwargs["title"]
+        is None
+    )
+
+
+def _latency_reports():
+    reports: list[dict[str, int]] = []
+
+    async def collect(values):
+        reports.append(values)
+
+    return reports, collect
+
+
+@pytest.mark.asyncio
+async def test_turn_latency_starts_a_fresh_turn_on_speech_to_text():
+    reports, collect = _latency_reports()
+    latency = voice._TurnLatency(collect)
+
+    await latency.mark("stt", 120)
+    await latency.mark("tts", 300)
+    await latency.mark("stt", 90)
+
+    assert reports == [{"stt": 120}, {"stt": 120, "tts": 300}, {"stt": 90}]
+
+
+@pytest.mark.asyncio
+async def test_turn_marker_times_the_llm_first_token_once(monkeypatch):
+    reports, collect = _latency_reports()
+    latency = voice._TurnLatency(collect)
+    marker = voice._TurnMarker(latency)
+    recorder = voice._ReplyRecorder(SimpleNamespace(record=AsyncMock()), latency)
+    clock = SimpleNamespace(now=100.0)
+    monkeypatch.setattr(
+        voice, "time", SimpleNamespace(monotonic=lambda: clock.now)
+    )
+
+    await marker.process_frame(
+        LLMContextFrame(LLMContext()), FrameDirection.DOWNSTREAM
+    )
+    clock.now = 100.7
+    await recorder.process_frame(
+        LLMTextFrame(text="Hello"), FrameDirection.DOWNSTREAM
+    )
+    clock.now = 100.9
+    await recorder.process_frame(
+        LLMTextFrame(text=" there"), FrameDirection.DOWNSTREAM
+    )
+
+    assert reports == [{"llm": 700}]
+
+
+@pytest.mark.asyncio
+async def test_latency_reporter_forwards_only_ttfb_from_the_speech_services():
+    reports, collect = _latency_reports()
+    latency = voice._TurnLatency(collect)
+    reporter = voice._LatencyReporter(latency, stt_name="stt", tts_name="tts")
+
+    frame = MetricsFrame(
+        data=[
+            TTFBMetricsData(processor="stt", value=0.22),
+            TTFBMetricsData(processor="tts", value=0.31),
+            TTFBMetricsData(processor="other", value=9.0),
+            TTFBMetricsData(processor="tts", value=0.0),
+            TTFAMetricsData(
+                processor="tts", ttfa=0.4, ttfb=0.3, leading_silence=0.1
+            ),
+        ]
+    )
+    await reporter.process_frame(frame, FrameDirection.DOWNSTREAM)
+
+    assert reports == [{"stt": 220}, {"stt": 220, "tts": 310}]
+
+
+@pytest.mark.asyncio
+async def test_turn_metrics_are_forwarded_to_the_browser():
+    session = _session()
+
+    await session._on_turn_metrics({"stt": 220, "llm": 700, "tts": 300})
+
+    assert session.websocket.sent == [
+        {"type": "metrics", "payload": {"stt": 220, "llm": 700, "tts": 300}}
+    ]
+    assert session.closed is False

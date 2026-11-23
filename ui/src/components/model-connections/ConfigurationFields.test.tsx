@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createProviderConnection } from "@/client/sdk.gen";
+import { createProviderConnection, downloadLocalModel, listLocalModels } from "@/client/sdk.gen";
 
 import { cleanConfiguration, emptyConfiguration } from "./configuration";
 import { ConfigurationFields } from "./ConfigurationFields";
@@ -10,8 +11,8 @@ import { chooseMode, providerSelect, selectedMode, selectOption, selectOptions, 
 import type { ConfigurationSpec, ModelConnectionCatalog, ProviderConnection } from "./types";
 
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "user" }, loading: false }) }));
-vi.mock("@/client/sdk.gen", () => ({ getVoicesApiV1UserConfigurationsVoicesProviderGet: vi.fn(async () => ({ data: { voices: [] } })), createProviderConnection: vi.fn(), updateProviderConnection: vi.fn() }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn() } }));
+vi.mock("@/client/sdk.gen", () => ({ getVoicesApiV1UserConfigurationsVoicesProviderGet: vi.fn(async () => ({ data: { voices: [] } })), createProviderConnection: vi.fn(), updateProviderConnection: vi.fn(), listLocalModels: vi.fn(async () => ({ data: { servers: [], models: [] } })), downloadLocalModel: vi.fn(), getLocalModelDownload: vi.fn(async () => ({ data: { status: "running" } })) }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const provider = { credential_fields: {}, connection_fields: {}, settings_schema: { properties: {
     model: { type: "string", title: "Model", default: "default-model" },
@@ -249,5 +250,195 @@ describe("compact density", () => {
         expect(screen.queryByLabelText("Enable embeddings")).toBeNull();
         expect(selectOptions(providerSelect("LLM"))).toEqual(["openai", "google", "Add a provider"]);
         expect(within(servicePanel("LLM")).getByLabelText("Model")).toBeDefined();
+    });
+});
+
+describe("speech presets", () => {
+    const azureStt = { credential_fields: { api_key: { type: "string" } }, connection_fields: {}, title: "Azure Speech", settings_schema: { properties: {
+        language: { type: "string", title: "Language", default: "en-US", examples: ["en-US", "hi-IN", "ur-PK"], allow_custom_input: true },
+    } } };
+    const azureTts = { ...azureStt, settings_schema: { properties: {
+        ...azureStt.settings_schema.properties,
+        voice: { type: "string", title: "Voice", default: "en-US-AriaNeural", examples: ["en-US-AriaNeural", "hi-IN-SwaraNeural", "ur-PK-UzmaNeural"], allow_custom_input: true },
+    } } };
+    const speaches = { credential_fields: {}, connection_fields: {}, title: "Local Models (Speaches)", settings_schema: { properties: {
+        model: { type: "string", title: "Model", default: "kokoro" },
+    } } };
+    const speechCatalog: ModelConnectionCatalog = { services: {
+        llm: { openai: provider },
+        stt: { azure_speech: azureStt, speaches },
+        tts: { azure_speech: azureTts, speaches },
+        embeddings: { openai: provider },
+        realtime: { openai: provider },
+    } };
+    const spec = (): ConfigurationSpec => ({ version: 3, mode: "pipeline", llm: { provider_connection_uuid: "OpenAI", settings: {} } });
+
+    it("applies the all-local stack, LLM included, in one click", () => {
+        const onChange = vi.fn();
+        const available = [connection("Local brain", "openai"), connection("Local voice", "speaches")];
+        render(<ConfigurationFields catalog={speechCatalog} connections={available} configuration={spec()} onChange={onChange} />);
+        fireEvent.click(screen.getByRole("button", { name: "All local" }));
+        const applied = onChange.mock.calls[0][0] as ConfigurationSpec;
+        expect(applied.llm).toEqual({ provider_connection_uuid: "Local brain", settings: { model: "lfm3:1.7b-q4_K_M", temperature: 0.1 } });
+        expect(applied.stt).toEqual({ provider_connection_uuid: "Local voice", settings: { model: "Systran/faster-whisper-base", language: "en" } });
+        expect(applied.tts).toEqual({ provider_connection_uuid: "Local voice", settings: { model: "speaches-ai/piper-en_US-lessac-medium", voice: "en_US-lessac-medium" } });
+    });
+
+    it("applies the Urdu stack to STT and TTS in one click", () => {
+        const onChange = vi.fn();
+        const available = [connection("OpenAI", "openai"), connection("Azure", "azure_speech")];
+        render(<ConfigurationFields catalog={speechCatalog} connections={available} configuration={spec()} onChange={onChange} />);
+        fireEvent.click(screen.getByRole("button", { name: "اردو Urdu" }));
+        expect(onChange).toHaveBeenCalledWith({
+            version: 3,
+            mode: "pipeline",
+            llm: { provider_connection_uuid: "OpenAI", settings: {} },
+            stt: { provider_connection_uuid: "Azure", settings: { language: "ur-PK" } },
+            tts: { provider_connection_uuid: "Azure", settings: { language: "ur-PK", voice: "ur-PK-UzmaNeural" } },
+        });
+    });
+
+    it("applies the free local Urdu stack with the Piper voice", () => {
+        const onChange = vi.fn();
+        const available = [connection("OpenAI", "openai"), connection("Speaches", "speaches")];
+        render(<ConfigurationFields catalog={speechCatalog} connections={available} configuration={spec()} onChange={onChange} />);
+        fireEvent.click(screen.getByRole("button", { name: "اردو · local" }));
+        const applied = onChange.mock.calls[0][0] as ConfigurationSpec;
+        expect(applied.stt).toEqual({ provider_connection_uuid: "Speaches", settings: { model: "Systran/faster-whisper-base", language: "ur" } });
+        expect(applied.tts).toEqual({ provider_connection_uuid: "Speaches", settings: { model: "Keshavji/piper-ur_PK-fasih-medium", voice: "fasih" } });
+    });
+
+    it("keeps a configured local endpoint when switching presets", () => {
+        const onChange = vi.fn();
+        const available = [connection("OpenAI", "openai"), connection("Speaches", "speaches")];
+        const configured: ConfigurationSpec = {
+            ...spec(),
+            stt: { provider_connection_uuid: "Speaches", settings: { model: "Systran/faster-whisper-large-v3", language: "ur", base_url: "http://localhost:8010/v1" } },
+            tts: { provider_connection_uuid: "Speaches", settings: { model: "Keshavji/piper-ur_PK-fasih-medium", voice: "fasih", base_url: "http://localhost:8010/v1" } },
+        };
+        render(<ConfigurationFields catalog={speechCatalog} connections={available} configuration={configured} onChange={onChange} />);
+        fireEvent.click(screen.getByRole("button", { name: "हिन्दी · local" }));
+        const applied = onChange.mock.calls[0][0] as ConfigurationSpec;
+        expect(applied.stt?.settings.base_url).toBe("http://localhost:8010/v1");
+        expect(applied.tts?.settings.base_url).toBe("http://localhost:8010/v1");
+        expect(applied.tts?.settings.voice).toBe("hf_alpha");
+    });
+
+    it("names the missing provider instead of applying a preset", () => {
+        const onChange = vi.fn();
+        const available = [connection("OpenAI", "openai"), connection("Speaches", "speaches")];
+        render(<ConfigurationFields catalog={speechCatalog} connections={available} configuration={spec()} onChange={onChange} />);
+        fireEvent.click(screen.getByRole("button", { name: "हिन्दी Hindi" }));
+        expect(onChange).not.toHaveBeenCalled();
+        expect(vi.mocked(toast.error)).toHaveBeenCalledWith("Add Azure Speech in the STT or TTS tab first.");
+    });
+});
+
+describe("automatic local speech", () => {
+    const localStt = { credential_fields: {}, connection_fields: {}, title: "Local Models (Speaches)", settings_schema: { properties: {
+        model: { type: "string", title: "Model", default: "Systran/faster-distil-whisper-small.en" },
+        language: { type: "string", title: "Language", default: "en" },
+    } } };
+    const localTts = { ...localStt, settings_schema: { properties: {
+        ...localStt.settings_schema.properties,
+        voice: { type: "string", title: "Voice", default: "af_heart" },
+    } } };
+    const localCatalog: ModelConnectionCatalog = { services: {
+        llm: { openai: provider },
+        stt: { openai: provider, speaches: localStt },
+        tts: { openai: provider, speaches: localTts },
+        embeddings: { openai: provider },
+        realtime: { openai: provider },
+    } };
+    const onThisMachine = { ...connection("Local brain", "openai"), connection_settings: { base_url: "http://localhost:11434/v1" } };
+    const localVoice = connection("Local voice", "speaches");
+    const localSpec = (): ConfigurationSpec => ({ version: 3, mode: "pipeline", llm: { provider_connection_uuid: onThisMachine.uuid, settings: {} } });
+
+    function LocalEditor({ initial, available = [onThisMachine, localVoice] }: { initial: ConfigurationSpec; available?: ProviderConnection[] }) {
+        const [configuration, setConfiguration] = useState(initial);
+        return <ConfigurationFields catalog={localCatalog} connections={available} configuration={configuration} onChange={setConfiguration} />;
+    }
+
+    it("fills listening and voice on this machine and folds those tabs away", async () => {
+        render(<LocalEditor initial={localSpec()} />);
+        await waitFor(() => expect(screen.getByText(/set up automatically on this machine/)).toBeDefined());
+        expect(screen.getAllByRole("tab").map(item => item.textContent)).toEqual(["LLM openai", "Embedding Off"]);
+        expect(screen.queryByRole("tab", { name: "STT" })).toBeNull();
+        fireEvent.click(screen.getByRole("button", { name: "Change" }));
+        expect(screen.getByRole("tab", { name: "STT" }).textContent).toBe("STT Local Models (Speaches)");
+        expect(screen.getByRole("tab", { name: "TTS" }).textContent).toBe("TTS Local Models (Speaches)");
+        expect(screen.getByRole("tab", { name: "STT" }).getAttribute("aria-selected")).toBe("true");
+        expect(providerSelect("STT").textContent).toBe("Local Models (Speaches) Local voice");
+    });
+
+    it("leaves a speech service the user pointed at a cloud provider visible", () => {
+        const cloud = { ...connection("Cloud speech", "openai") };
+        render(<LocalEditor initial={{ ...localSpec(), stt: { provider_connection_uuid: cloud.uuid, settings: {} }, tts: { provider_connection_uuid: cloud.uuid, settings: {} } }} available={[onThisMachine, cloud]} />);
+        expect(screen.queryByText(/set up automatically/)).toBeNull();
+        expect(screen.getByRole("tab", { name: "STT" })).toBeDefined();
+        expect(screen.getByRole("tab", { name: "TTS" })).toBeDefined();
+    });
+
+    it("keeps both tabs when no local speech server is connected", () => {
+        render(<LocalEditor initial={localSpec()} available={[onThisMachine]} />);
+        expect(screen.queryByText(/set up automatically/)).toBeNull();
+        expect(screen.getByRole("tab", { name: "STT" }).textContent).toBe("STT Choose a provider");
+        expect(screen.getByRole("tab", { name: "TTS" }).textContent).toBe("TTS Choose a provider");
+    });
+});
+
+describe("local model downloads", () => {
+    const speachesEntry = { credential_fields: {}, connection_fields: {}, title: "Local Models (Speaches)", settings_schema: { properties: {
+        model: { type: "string", title: "Model", default: "Systran/faster-whisper-base" },
+        language: { type: "string", title: "Language", default: "en" },
+    } } };
+    const localCatalog: ModelConnectionCatalog = { services: {
+        llm: { openai: provider },
+        stt: { speaches: speachesEntry },
+        tts: { speaches: { ...speachesEntry, settings_schema: { properties: {
+            ...speachesEntry.settings_schema.properties,
+            voice: { type: "string", title: "Voice", default: "af_heart" },
+        } } } },
+        embeddings: { openai: provider },
+        realtime: { openai: provider },
+    } };
+    const ollama = { ...connection("Local brain", "openai"), connection_settings: { base_url: "http://localhost:11434/v1" } };
+    const voice = connection("Local voice", "speaches");
+    const listed = (id: string, installed: boolean, family: "ollama" | "speaches" = "ollama") => ({
+        family, id, kind: family === "ollama" ? "llm" : "stt", title: id, installed, downloading: false, progress: null,
+    });
+    const localSpec = (): ConfigurationSpec => ({ version: 3, mode: "pipeline", llm: { provider_connection_uuid: ollama.uuid, settings: { model: "qwen2.5:7b" } }, stt: null, tts: null });
+
+    function Editor({ available }: { available: ProviderConnection[] }) {
+        const [configuration, setConfiguration] = useState(localSpec);
+        return <ConfigurationFields catalog={localCatalog} connections={available} configuration={configuration} onChange={setConfiguration} />;
+    }
+
+    it("offers the download when the chosen model is not on this machine", async () => {
+        vi.mocked(listLocalModels).mockResolvedValue({ data: { servers: ["ollama"], models: [listed("qwen2.5:7b", false)] } } as never);
+        render(<Editor available={[ollama]} />);
+        expect(await screen.findByText(/is not on this machine yet/)).toBeDefined();
+        expect(screen.getByText("qwen2.5:7b")).toBeDefined();
+        fireEvent.click(screen.getByRole("button", { name: "Download" }));
+        await waitFor(() => expect(vi.mocked(downloadLocalModel)).toHaveBeenCalledWith({ body: { family: "ollama", model: "qwen2.5:7b" } }));
+    });
+
+    it("stays quiet once the model is installed", async () => {
+        vi.mocked(listLocalModels).mockResolvedValue({ data: { servers: ["ollama"], models: [listed("qwen2.5:7b", true)] } } as never);
+        render(<Editor available={[ollama]} />);
+        await waitFor(() => expect(vi.mocked(listLocalModels)).toHaveBeenCalled());
+        expect(screen.queryByText(/not on this machine yet/)).toBeNull();
+    });
+
+    it("downloads the automatic speech models in one click", async () => {
+        vi.mocked(listLocalModels).mockResolvedValue({ data: { servers: ["speaches"], models: [
+            listed("Systran/faster-whisper-base", false, "speaches"),
+            listed("speaches-ai/piper-en_US-lessac-medium", false, "speaches"),
+        ] } } as never);
+        render(<Editor available={[ollama, voice]} />);
+        expect(await screen.findByText(/need a one-time download/)).toBeDefined();
+        fireEvent.click(screen.getByRole("button", { name: "Download models" }));
+        await waitFor(() => expect(vi.mocked(downloadLocalModel)).toHaveBeenCalledWith({ body: { family: "speaches", model: "Systran/faster-whisper-base" } }));
+        await waitFor(() => expect(vi.mocked(downloadLocalModel)).toHaveBeenCalledWith({ body: { family: "speaches", model: "speaches-ai/piper-en_US-lessac-medium" } }));
     });
 });

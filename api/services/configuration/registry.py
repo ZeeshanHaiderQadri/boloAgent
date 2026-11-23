@@ -1799,15 +1799,18 @@ class RimeTTSConfiguration(BaseTTSConfiguration):
     )
 
 
-SPEACHES_TTS_MODELS = ["hexgrad/Kokoro-82M"]
+SPEACHES_TTS_MODELS = [
+    "speaches-ai/Kokoro-82M-v1.0-ONNX",
+    "Keshavji/piper-ur_PK-fasih-medium",
+]
 
 
 @register_tts(provider=SPEACHES_PROVIDER)
 class SpeachesTTSConfiguration(BaseTTSConfiguration):
     provider: Literal[ServiceProviders.SPEACHES] = ServiceProviders.SPEACHES
     model: str = Field(
-        default="kokoro",
-        description="Model name as served by your TTS endpoint (e.g. Kokoro-FastAPI).",
+        default="speaches-ai/Kokoro-82M-v1.0-ONNX",
+        description="Model ID as served by your TTS endpoint (Speaches repo ID).",
         json_schema_extra={
             "examples": SPEACHES_TTS_MODELS,
             "allow_custom_input": True,
@@ -1816,11 +1819,11 @@ class SpeachesTTSConfiguration(BaseTTSConfiguration):
     voice: str = Field(
         default="af_heart",
         json_schema_extra={"allow_custom_input": True},
-        description="Voice ID for the TTS engine.",
+        description="Voice ID for the TTS engine (Kokoro: af_heart, hf_alpha).",
     )
     base_url: str = Field(
         default="http://localhost:8000/v1",
-        description="OpenAI-compatible TTS endpoint (Kokoro-FastAPI, etc.).",
+        description="OpenAI-compatible TTS endpoint (Speaches, Kokoro-FastAPI).",
     )
     speed: float = Field(
         default=1.0, ge=0.25, le=4.0, description="Speech speed (0.25 to 4.0)."
@@ -2240,6 +2243,8 @@ class CartesiaSTTConfiguration(BaseSTTConfiguration):
 
 
 OPENAI_STT_MODELS = ["gpt-4o-transcribe"]
+# OpenAI transcription takes the same Whisper language set.
+OPENAI_STT_LANGUAGES = CARTESIA_INK_WHISPER_STT_LANGUAGES
 
 
 @register_stt(provider=OPENAI_PROVIDER)
@@ -2249,6 +2254,19 @@ class OpenAISTTConfiguration(BaseSTTConfiguration):
         default="gpt-4o-transcribe",
         description="OpenAI transcription model.",
         json_schema_extra={"examples": OPENAI_STT_MODELS},
+    )
+    language: str = Field(
+        default="en",
+        description=(
+            "ISO 639-1 language code of the audio. Set it to the language "
+            "callers speak: without it every language is transcribed as "
+            "English."
+        ),
+        json_schema_extra={
+            "examples": OPENAI_STT_LANGUAGES,
+            "allow_custom_input": True,
+            "docs_url": "https://platform.openai.com/docs/guides/speech-to-text#supported-languages",
+        },
     )
     base_url: str = Field(
         default="https://api.openai.com/v1",
@@ -2381,7 +2399,7 @@ SPEACHES_STT_MODELS = [
     "Systran/faster-distil-whisper-small.en",
     "Systran/faster-whisper-large-v3",
 ]
-SPEACHES_STT_LANGUAGES = ["en", "ar", "nl", "fr", "de", "hi", "it", "pt", "es"]
+SPEACHES_STT_LANGUAGES = ["en", "ar", "nl", "fr", "de", "hi", "it", "pt", "es", "ur"]
 
 
 @register_stt(provider=SPEACHES_PROVIDER)

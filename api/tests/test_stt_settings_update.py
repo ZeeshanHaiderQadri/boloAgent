@@ -101,6 +101,18 @@ from api.services.pipecat.agent_runtime_factory import AgentRuntimeFactory
             {"language": Language.PT},
         ),
         (
+            "OpenAISTTConfiguration",
+            "OpenAISTTService",
+            {"language": "ur"},
+            {"language": Language.UR},
+        ),
+        (
+            "OpenAISTTConfiguration",
+            "OpenAISTTService",
+            {"language": "en-US"},
+            {"language": Language.EN},
+        ),
+        (
             "ElevenlabsSTTConfiguration",
             "ElevenLabsRealtimeSTTService",
             {"language": "pt"},
@@ -283,7 +295,6 @@ def test_key_pool_comparison_does_not_select_new_credentials():
             {"model": "universal-streaming-multilingual"},
             {"language": "pt"},
         ),
-        ("OpenAISTTConfiguration", {}, {}),
     ],
 )
 def test_unsupported_updates_do_not_mutate_service(

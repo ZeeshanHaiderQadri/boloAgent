@@ -209,6 +209,54 @@ async def _save(conversation, user, request_id, snapshot: CopilotSnapshot):
     )
 
 
+async def record_voice_turn(
+    *,
+    organization_id: int,
+    user_id: int,
+    conversation_id: int,
+    role: str,
+    content: str,
+) -> None:
+    """Append one finished voice turn to the conversation's chat transcript.
+
+    Voice sessions share the chat thread id, so the chat page reads these
+    turns from the same checkpoint state as typed messages.
+    """
+    content = " ".join(content.split())
+    if not content:
+        return
+    conversation = await db_client.get_copilot_conversation(
+        conversation_id, organization_id
+    )
+    if conversation is None:
+        return
+
+    title = None
+    if role == "user" and conversation.title == DEFAULT_TITLE:
+        title = content[:60]
+
+    message = (
+        HumanMessage(content=content) if role == "user" else AIMessage(content=content)
+    )
+    thread = _thread_id(organization_id, user_id, conversation_id)
+    config = {"configurable": {"thread_id": thread}}
+    async with db_client.copilot_checkpointer(thread) as saver:
+        graph = build_copilot_graph(
+            CopilotChatModel(
+                organization_id=organization_id,
+                user_id=str(user_id),
+            ),
+            saver,
+        )
+        await graph.aupdate_state(config, {"messages": [message]}, as_node="agent")
+
+    await db_client.touch_copilot_conversation(
+        conversation_id=conversation_id,
+        organization_id=organization_id,
+        title=title,
+    )
+
+
 async def _attachment_note(organization_id: int, attachments: list[str]) -> str | None:
     lines: list[str] = []
     for document_uuid in dict.fromkeys(attachments):

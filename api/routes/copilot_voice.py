@@ -1,15 +1,23 @@
 """Voice surface for the workspace copilot: readiness and WebRTC signaling.
 
 The WebSocket contract matches the workflow test-call endpoint (offer,
-ice-candidate, renegotiate; answer, error, call-ended), so a client written for
-one can talk to the other. The difference is scope: this session is bound to
-one copilot conversation, runs read-only tools, and takes an org concurrency
-slot like any other call.
+ice-candidate, renegotiate; answer, error, warning, metrics, call-ended), so a
+client written for one can talk to the other. The difference is scope: this
+session is bound to one copilot conversation, runs read-only tools, and takes an
+org concurrency slot like any other call.
+
+The offer may name a ``language`` (``en``, ``ur`` or ``hi`` to pin the call;
+anything else keeps auto-detect). A provider that cannot serve the requested
+language does not fail the call: the caller gets a ``warning`` message and the
+session runs in the configured language. Recoverable speech failures are
+reported the same way, so a reply that never played is not mistaken for
+silence.
 """
 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 
 from aiortc.sdp import candidate_from_sdp
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -25,6 +33,7 @@ from api.services.call_concurrency import CallConcurrencyLimitError, call_concur
 from api.services.copilot import voice
 from api.services.copilot.service import load_conversation
 from api.services.copilot.tools import CopilotContext
+from api.services.copilot.voice_language import normalize_voice_language
 from api.services.pipecat.webrtc_ice import (
     ICE_INBOUND_POLICY,
     _keep_candidate,
@@ -146,6 +155,10 @@ class CopilotVoiceSession:
             set_current_run_id(self.conversation.id)
             set_current_org_id(self.ctx.organization_id)
 
+            self.ctx = replace(
+                self.ctx, language=normalize_voice_language(payload.get("language"))
+            )
+
             connection = SmallWebRTCConnection(
                 ice_servers=get_ice_servers(user_id=str(self.user.id)),
                 connection_timeout_secs=60,
@@ -162,7 +175,11 @@ class CopilotVoiceSession:
 
             self.pipeline_task = asyncio.create_task(
                 voice.run_voice_pipeline(
-                    connection, self.ctx, on_error=self._on_audio_error
+                    connection,
+                    self.ctx,
+                    on_error=self._on_audio_error,
+                    on_warning=self._on_voice_warning,
+                    on_metrics=self._on_turn_metrics,
                 )
             )
             self.pipeline_task.add_done_callback(self._on_pipeline_done)
@@ -261,6 +278,27 @@ class CopilotVoiceSession:
         )
         await self._fail_session(voice.voice_error_message(error))
 
+    async def _on_voice_warning(self, message: str) -> None:
+        """A provider cannot serve part of the call; the call continues."""
+        if self.closed:
+            return
+        logger.info(
+            f"Copilot voice warning for conversation "
+            f"{self.conversation.id} (language: {self.ctx.language}): {message}"
+        )
+        await self._send(
+            {
+                "type": "warning",
+                "payload": {"warning_type": "voice", "message": message},
+            }
+        )
+
+    async def _on_turn_metrics(self, values: dict[str, int]) -> None:
+        """Per-turn service latency in milliseconds, for the voice bar."""
+        if self.closed:
+            return
+        await self._send({"type": "metrics", "payload": values})
+
     async def _fail_session(self, message: str) -> None:
         await self._send_error(message, error_type="voice_pipeline_failed")
         await self._notify_call_ended("pipeline_failed")
@@ -269,6 +307,10 @@ class CopilotVoiceSession:
         if self.closed:
             return
         self.closed = True
+        logger.info(
+            f"Copilot voice call ended for conversation {self.conversation.id} "
+            f"(reason: {reason}, language: {self.ctx.language})"
+        )
         await self._send(
             {
                 "type": "call-ended",

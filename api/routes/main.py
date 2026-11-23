@@ -17,6 +17,7 @@ from api.routes.folder import router as folder_router
 from api.routes.knowledge_base import router as knowledge_base_router
 from api.routes.lead_projects import router as lead_projects_router
 from api.routes.leads import router as leads_router
+from api.routes.local_models import router as local_models_router
 from api.routes.model_connections import router as model_connections_router
 from api.routes.node_types import router as node_types_router
 from api.routes.organization import router as organization_router
@@ -67,6 +68,7 @@ router.include_router(whatsapp_router)
 router.include_router(tool_router)
 router.include_router(organization_router)
 router.include_router(model_connections_router)
+router.include_router(local_models_router)
 router.include_router(s3_router)
 router.include_router(service_keys_router)
 router.include_router(organization_usage_router)

@@ -565,7 +565,14 @@ def _stt_configurable_settings(config, *, for_update: bool = False) -> dict[str,
             return {"language": Language.EN}
     if provider == ServiceProviders.ELEVENLABS:
         return {"language": _resolve_elevenlabs_stt_language(language)}
-    return {}  # OpenAI currently exposes no per-agent settings besides model.
+    if provider == ServiceProviders.OPENAI:
+        # The API takes ISO 639-1 base codes and, left to pipecat's default,
+        # would transcribe every language as English.
+        try:
+            return {"language": Language(str(language or "en").split("-")[0].lower())}
+        except ValueError:
+            return {"language": Language.EN}
+    return {}
 
 
 def get_stt_settings_update(
@@ -695,7 +702,9 @@ def create_stt_service(
             kwargs["base_url"] = base_url
         return OpenAISTTService(
             api_key=user_config.stt.api_key,
-            settings=OpenAISTTSettings(model=user_config.stt.model),
+            settings=OpenAISTTSettings(
+                model=user_config.stt.model, **configurable_settings
+            ),
             should_interrupt=False,  # Let UserAggregator own interruption confirmation.
             **kwargs,
         )
@@ -897,6 +906,7 @@ def create_tts_service(
     *,
     organization_id: int | None = None,
     tts_cache_enabled: bool = False,
+    stop_frame_timeout_s: float | None = None,
 ):
     """Create and return appropriate TTS service based on user configuration
 
@@ -907,6 +917,9 @@ def create_tts_service(
         organization_id: Trusted tenant scope for TTS caching.
         tts_cache_enabled: Whether the workflow enables the speech cache. Supported
             for MiniMax.
+        stop_frame_timeout_s: Idle time before a context is considered finished.
+            Defaults to the service's 3s, which is too short for self-hosted or
+            routed OpenAI-compatible endpoints that need longer to synthesize.
     """
     # Synthesis carries the same residency question as transcription - the text
     # sent for speaking is drawn from the conversation - so the endpoint is
@@ -953,6 +966,8 @@ def create_tts_service(
         if base_url:
             _validate_runtime_service_url(base_url, "base_url")
             kwargs["base_url"] = base_url
+        if stop_frame_timeout_s is not None:
+            kwargs["stop_frame_timeout_s"] = stop_frame_timeout_s
         return OpenAITTSService(
             api_key=user_config.tts.api_key,
             sample_rate=OPENAI_SAMPLE_RATE,
@@ -1095,6 +1110,9 @@ def create_tts_service(
         return tts
     elif user_config.tts.provider == ServiceProviders.SPEACHES.value:
         _validate_runtime_service_url(user_config.tts.base_url, "base_url")
+        speaches_kwargs = {}
+        if stop_frame_timeout_s is not None:
+            speaches_kwargs["stop_frame_timeout_s"] = stop_frame_timeout_s
         return SpeachesTTSService(
             base_url=user_config.tts.base_url,
             api_key=user_config.tts.api_key or "none",
@@ -1105,6 +1123,7 @@ def create_tts_service(
             ),
             skip_text_types=["recording_router", "recording"],
             silence_time_s=1.0,
+            **speaches_kwargs,
         )
     elif user_config.tts.provider == ServiceProviders.RIME.value:
         speed = getattr(user_config.tts, "speed", None)

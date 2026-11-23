@@ -123,13 +123,14 @@ async def get_connection_models(
     models: dict[str, ModelInfo] = {}
     for entry in entries:
         if isinstance(entry, str):
-            model_id, name = entry, None
+            model_id, name, task = entry, None, None
         elif isinstance(entry, dict) and isinstance(entry.get("id"), str):
             model_id = entry["id"]
             name = entry.get("name") if isinstance(entry.get("name"), str) else None
+            task = entry.get("task") if isinstance(entry.get("task"), str) else None
         else:
             continue
         model_id = model_id.strip()
         if model_id and model_id not in models:
-            models[model_id] = ModelInfo(id=model_id, name=name)
+            models[model_id] = ModelInfo(id=model_id, name=name, task=task)
     return ModelsResponse(provider=provider, models=list(models.values()))

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cleanConfiguration, cleanSettings, compatibleConnections, configurationForMode, configurationMode, fieldForModel, resetDependentFields, selectionForConnection } from "./configuration";
+import { cleanConfiguration, cleanSettings, compatibleConnections, configurationForMode, configurationMode, fieldForModel, isLocalConnection, localModelFamily, resetDependentFields, selectionForConnection } from "./configuration";
 import type { ConfigurationSpec, ModelConnectionCatalog, ProviderConnection } from "./types";
 
 const connection = (uuid: string, provider: string): ProviderConnection => ({ uuid, provider, name: uuid, connection_settings: {}, configured_credentials: ["api_key"], revision: 1, is_active: true });
@@ -121,5 +121,31 @@ describe("model connection editor settings", () => {
         const result = fieldForModel({ anyOf: [{ type: "number", maximum: 2 }, { type: "null" }], custom_endpoint: { field: "base_url", default_hostname: "api.openai.com", maximum: 2, description: "Custom range" } }, { base_url: "https://models.example.com/v1" });
         expect(result.maximum).toBeUndefined();
         expect(result.anyOf?.[0].maximum).toBeUndefined();
+    });
+});
+
+describe("local model installs", () => {
+    const router = { ...connection("router", "openai"), connection_settings: { base_url: "http://host.docker.internal:8011/v1" } };
+
+    it("maps model ids on the local gateway to the server that serves them", () => {
+        expect(localModelFamily(router, "llm", "lfm3:1.7b-q4_K_M")).toBe("ollama");
+        expect(localModelFamily(router, "stt", "Systran/faster-whisper-base")).toBe("speaches");
+        expect(localModelFamily(router, "tts", "Keshavji/piper-ur_PK-fasih-medium")).toBe("speaches");
+        // Cloud-style ids and non-local connections are not installable here.
+        expect(localModelFamily(router, "llm", "openai/gpt-5-mini")).toBeNull();
+        expect(localModelFamily(connection("cloud", "openai"), "llm", "lfm3:1.7b-q4_K_M")).toBeNull();
+        expect(isLocalConnection(router)).toBe(true);
+    });
+
+    it("keeps a chat model on the speech gateway mapped to Ollama", () => {
+        // Same endpoint, listed as the Speaches voice connection: an installed
+        // Ollama model must not be reported as a missing Hugging Face download.
+        const voice = { ...connection("voice", "speaches"), connection_settings: { base_url: "http://host.docker.internal:8011/v1" } };
+        expect(localModelFamily(voice, "llm", "lfm3-omni:2b-q4_K_M")).toBe("ollama");
+        expect(localModelFamily(voice, "realtime", "lfm3-omni:2b-q4_K_M")).toBe("ollama");
+        expect(localModelFamily(voice, "tts", "Keshavji/piper-ur_PK-fasih-medium")).toBe("speaches");
+        expect(localModelFamily(voice, "stt", "Systran/faster-whisper-tiny")).toBe("speaches");
+        // A speech repo in the chat slot is not an Ollama model; offer nothing.
+        expect(localModelFamily(voice, "llm", "openai/gpt-5-mini")).toBeNull();
     });
 });
