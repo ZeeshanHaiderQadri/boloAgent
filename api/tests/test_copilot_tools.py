@@ -149,13 +149,14 @@ async def test_run_tool_reports_unknown_arguments_instead_of_ignoring_them():
         patch.object(copilot_agent, "audit_tool_call", new=AsyncMock()),
         patch("api.services.copilot.tools.db_client") as db,
     ):
+        db.list_leads = AsyncMock()
         message = await copilot_agent._run_tool(
             CopilotContext(organization_id=42, user_id=1, conversation_id=1),
             tool,
             call,
         )
 
-    assert db.list_leads.await_count == 0
+    db.list_leads.assert_not_awaited()
     assert "filters" in message.content
     assert "country" in message.content
 

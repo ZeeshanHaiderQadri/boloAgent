@@ -292,7 +292,12 @@ async def test_a_turn_records_start_and_finish():
 
     kinds = [call.kwargs["kind"] for call in record.await_args_list]
     assert kinds == [activity.TURN_STARTED, activity.TURN_FINISHED]
-    assert record.await_args_list[0].kwargs["turn_id"] == "req-1"
+    turn_ids = {call.kwargs["turn_id"] for call in record.await_args_list}
+    assert len(turn_ids) == 1
+    (turn_id,) = turn_ids
+    # The label is server-generated so a client id cannot merge two turns.
+    assert turn_id != "req-1"
+    assert len(turn_id) == 32
     assert record.await_args_list[1].kwargs["status"] == "idle"
     assert snapshot.messages[-1].content == "Hello there."
 
