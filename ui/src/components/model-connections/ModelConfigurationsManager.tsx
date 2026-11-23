@@ -17,6 +17,7 @@ import { useOrgConfig } from "@/context/OrgConfigContext";
 import { detailFromError } from "@/lib/apiError";
 
 import { configurationMode } from "./configuration";
+import { LocalModelsCard } from "./LocalModelsCard";
 import type { NamedModelConfiguration, ProviderConnection } from "./types";
 import { MODE_LABELS, ROLE_LABELS, ROLES } from "./types";
 import { useModelConnections } from "./useModelConnections";
@@ -57,6 +58,7 @@ export default function ModelConfigurationsManager({ docsUrl }: { docsUrl?: stri
         description={<>Create named model configurations using your <Link href="/provider-connections" className="underline">provider connections</Link> in Realtime, Bolo, or BYOK mode.
             {docsUrl && <> <a href={docsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline">Learn more<ExternalLink className="h-3 w-3" /></a></>}</>}
     >
+        <LocalModelsCard />
         <PageSection title="Named Model Configurations" description="Choose a setup for each workflow or make one your org default. Workflows inherit the default unless overridden."
             actions={<Button asChild><Link href="/model-configurations/new"><Plus className="h-4 w-4" />Add Configuration</Link></Button>}>
             {loading && !catalog && <div className="grid gap-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>}

@@ -5136,6 +5136,120 @@ export type LeadUpdateRequest = {
 };
 
 /**
+ * LocalModelDownloadRequest
+ */
+export type LocalModelDownloadRequest = {
+    /**
+     * Family
+     */
+    family: 'ollama' | 'speaches';
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * LocalModelDownloadResponse
+ */
+export type LocalModelDownloadResponse = {
+    /**
+     * Job Id
+     */
+    job_id: string;
+    /**
+     * Family
+     */
+    family: 'ollama' | 'speaches';
+    /**
+     * Model
+     */
+    model: string;
+};
+
+/**
+ * LocalModelDownloadStatus
+ */
+export type LocalModelDownloadStatus = {
+    /**
+     * Status
+     */
+    status: 'running' | 'done' | 'error';
+    /**
+     * Model
+     */
+    model: string;
+    /**
+     * Completed
+     */
+    completed?: number | null;
+    /**
+     * Total
+     */
+    total?: number | null;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+};
+
+/**
+ * LocalModelInfo
+ */
+export type LocalModelInfo = {
+    /**
+     * Family
+     */
+    family: 'ollama' | 'speaches';
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'llm' | 'stt' | 'tts';
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Description
+     */
+    description?: string | null;
+    /**
+     * Installed
+     */
+    installed: boolean;
+    /**
+     * Size Bytes
+     */
+    size_bytes?: number | null;
+    /**
+     * Downloading
+     */
+    downloading?: boolean;
+    /**
+     * Progress
+     */
+    progress?: number | null;
+};
+
+/**
+ * LocalModelsResponse
+ */
+export type LocalModelsResponse = {
+    /**
+     * Servers
+     */
+    servers: Array<'ollama' | 'speaches'>;
+    /**
+     * Models
+     */
+    models: Array<LocalModelInfo>;
+};
+
+/**
  * LoginRequest
  */
 export type LoginRequest = {
@@ -5476,6 +5590,10 @@ export type ModelInfo = {
      * Name
      */
     name?: string | null;
+    /**
+     * Task
+     */
+    task?: string | null;
 };
 
 /**
@@ -21359,6 +21477,176 @@ export type PreviewModelConfigurationResponses = {
 };
 
 export type PreviewModelConfigurationResponse = PreviewModelConfigurationResponses[keyof PreviewModelConfigurationResponses];
+
+export type ListLocalModelsData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/local-models';
+};
+
+export type ListLocalModelsErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListLocalModelsError = ListLocalModelsErrors[keyof ListLocalModelsErrors];
+
+export type ListLocalModelsResponses = {
+    /**
+     * Successful Response
+     */
+    200: LocalModelsResponse;
+};
+
+export type ListLocalModelsResponse = ListLocalModelsResponses[keyof ListLocalModelsResponses];
+
+export type DownloadLocalModelData = {
+    body: LocalModelDownloadRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/local-models/downloads';
+};
+
+export type DownloadLocalModelErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DownloadLocalModelError = DownloadLocalModelErrors[keyof DownloadLocalModelErrors];
+
+export type DownloadLocalModelResponses = {
+    /**
+     * Successful Response
+     */
+    202: LocalModelDownloadResponse;
+};
+
+export type DownloadLocalModelResponse = DownloadLocalModelResponses[keyof DownloadLocalModelResponses];
+
+export type GetLocalModelDownloadData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/local-models/downloads/{job_id}';
+};
+
+export type GetLocalModelDownloadErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetLocalModelDownloadError = GetLocalModelDownloadErrors[keyof GetLocalModelDownloadErrors];
+
+export type GetLocalModelDownloadResponses = {
+    /**
+     * Successful Response
+     */
+    200: LocalModelDownloadStatus;
+};
+
+export type GetLocalModelDownloadResponse = GetLocalModelDownloadResponses[keyof GetLocalModelDownloadResponses];
+
+export type DeleteLocalModelData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path: {
+        /**
+         * Family
+         */
+        family: 'ollama' | 'speaches';
+        /**
+         * Model
+         */
+        model: string;
+    };
+    query?: never;
+    url: '/api/v1/local-models/{family}/{model}';
+};
+
+export type DeleteLocalModelErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteLocalModelError = DeleteLocalModelErrors[keyof DeleteLocalModelErrors];
+
+export type DeleteLocalModelResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteLocalModelResponse = DeleteLocalModelResponses[keyof DeleteLocalModelResponses];
 
 export type GetSignedUrlApiV1S3SignedUrlGetData = {
     body?: never;

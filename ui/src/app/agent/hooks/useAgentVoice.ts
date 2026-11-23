@@ -14,6 +14,110 @@ import { detailFromError } from "@/lib/apiError";
 import { useAuth } from "@/lib/auth";
 
 export type AgentCallState = "idle" | "connecting" | "live";
+export type MicMode = "hands-free" | "push-to-talk";
+export type VoiceLanguage = "auto" | "en" | "ur" | "hi";
+
+const MIC_MODE_STORAGE_KEY = "bolo.agent.voiceMode";
+const LANGUAGE_STORAGE_KEY = "bolo.agent.voiceLanguage";
+
+const VOICE_LANGUAGES: VoiceLanguage[] = ["auto", "en", "ur", "hi"];
+
+export interface AudioLevels {
+  mic: number;
+  agent: number;
+}
+
+/** Last turn's service timings, in milliseconds. */
+export interface TurnLatency {
+  stt?: number;
+  llm?: number;
+  tts?: number;
+}
+
+/** Peak-meter for the local microphone and the agent's track. */
+class AudioMeter {
+  readonly levels: AudioLevels = { mic: 0, agent: 0 };
+
+  private context: AudioContext;
+  private sink: GainNode;
+  private mic?: AnalyserNode;
+  private agent?: AnalyserNode;
+  private buffers = new Map<AnalyserNode, Uint8Array>();
+  private frame: number | null = null;
+  private lastSample = 0;
+
+  constructor(localStream: MediaStream) {
+    this.context = new AudioContext();
+    void this.context.resume().catch(() => undefined);
+    this.sink = this.context.createGain();
+    this.sink.gain.value = 0;
+    this.sink.connect(this.context.destination);
+    this.mic = this.attach(localStream);
+  }
+
+  attachAgent(stream: MediaStream) {
+    if (this.agent) return;
+    this.agent = this.attach(stream);
+  }
+
+  start() {
+    const tick = (now: number) => {
+      if (now - this.lastSample >= 60) {
+        this.lastSample = now;
+        this.levels.mic = this.read(this.mic, this.levels.mic);
+        this.levels.agent = this.read(this.agent, this.levels.agent);
+      }
+      this.frame = requestAnimationFrame(tick);
+    };
+    this.frame = requestAnimationFrame(tick);
+  }
+
+  stop() {
+    if (this.frame !== null) cancelAnimationFrame(this.frame);
+    this.frame = null;
+    this.levels.mic = 0;
+    this.levels.agent = 0;
+    void this.context.close().catch(() => undefined);
+  }
+
+  private attach(stream: MediaStream) {
+    const analyser = this.context.createAnalyser();
+    analyser.fftSize = 512;
+    this.context.createMediaStreamSource(stream).connect(analyser);
+    analyser.connect(this.sink);
+    this.buffers.set(analyser, new Uint8Array(analyser.fftSize));
+    return analyser;
+  }
+
+  private read(analyser: AnalyserNode | undefined, previous: number) {
+    if (!analyser) return previous * 0.85;
+    const data = this.buffers.get(analyser);
+    if (!data) return previous * 0.85;
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (const sample of data) {
+      const value = (sample - 128) / 128;
+      sum += value * value;
+    }
+    const rms = Math.sqrt(sum / data.length);
+    return Math.max(Math.min(1, rms * 4.5), previous * 0.86);
+  }
+}
+
+function readStoredMicMode(): MicMode {
+  if (typeof window === "undefined") return "hands-free";
+  return window.localStorage.getItem(MIC_MODE_STORAGE_KEY) === "push-to-talk"
+    ? "push-to-talk"
+    : "hands-free";
+}
+
+function readStoredLanguage(): VoiceLanguage {
+  if (typeof window === "undefined") return "auto";
+  const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  return VOICE_LANGUAGES.includes(stored as VoiceLanguage)
+    ? (stored as VoiceLanguage)
+    : "auto";
+}
 
 const CALL_ERROR_MESSAGES: Record<string, string> = {
   voice_not_configured:
@@ -55,6 +159,77 @@ export function useAgentVoice() {
   const [callState, setCallState] = useState<AgentCallState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [micMode, setMicModeState] = useState<MicMode>(readStoredMicMode);
+  const [language, setLanguageState] = useState<VoiceLanguage>(readStoredLanguage);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [latency, setLatency] = useState<TurnLatency | null>(null);
+  const [micMuted, setMicMuted] = useState(false);
+  const [holding, setHolding] = useState(false);
+
+  const levelsRef = useRef<AudioLevels>({ mic: 0, agent: 0 });
+  const meterRef = useRef<AudioMeter | null>(null);
+
+  const micOpen =
+    callState === "live" && (micMode === "hands-free" ? !micMuted : holding);
+
+  const setMicMode = useCallback((mode: MicMode) => {
+    setMicModeState(mode);
+    try {
+      window.localStorage.setItem(MIC_MODE_STORAGE_KEY, mode);
+    } catch {
+      // Storage can be unavailable in private windows.
+    }
+  }, []);
+
+  const setLanguage = useCallback((value: VoiceLanguage) => {
+    setLanguageState(value);
+    try {
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, value);
+    } catch {
+      // Storage can be unavailable in private windows.
+    }
+  }, []);
+
+  const toggleMicMuted = useCallback(() => setMicMuted((value) => !value), []);
+  const startTalking = useCallback(() => setHolding(true), []);
+  const stopTalking = useCallback(() => setHolding(false), []);
+
+  useEffect(() => {
+    streamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = micOpen;
+    });
+  }, [micOpen]);
+
+  useEffect(() => {
+    if (callState !== "live" || micMode !== "push-to-talk") return;
+    const isTyping = (target: EventTarget | null) =>
+      target instanceof HTMLElement &&
+      (target.tagName === "TEXTAREA" ||
+        target.tagName === "INPUT" ||
+        target.isContentEditable);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || isTyping(event.target)) return;
+      // Cancel every Space, including auto-repeats: the start-call button
+      // keeps focus once the call is live, and an uncancelled keyup would
+      // activate it (its click ends the call).
+      event.preventDefault();
+      if (!event.repeat) setHolding(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || isTyping(event.target)) return;
+      event.preventDefault();
+      setHolding(false);
+    };
+    const onBlur = () => setHolding(false);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [callState, micMode]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -111,6 +286,15 @@ export function useAgentVoice() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
 
+    meterRef.current?.stop();
+    meterRef.current = null;
+    levelsRef.current.mic = 0;
+    levelsRef.current.agent = 0;
+    setHolding(false);
+    setMicMuted(false);
+    setWarning(null);
+    setLatency(null);
+
     const pc = pcRef.current;
     if (pc) {
       pc.getTransceivers().forEach((transceiver) => {
@@ -163,8 +347,12 @@ export function useAgentVoice() {
 
       setError(null);
       setNotice(null);
+      setWarning(null);
+      setLatency(null);
       setCallState("connecting");
       endingRef.current = false;
+      setMicMuted(false);
+      setHolding(false);
 
       const pcId = newPeerId();
       pcIdRef.current = pcId;
@@ -220,7 +408,9 @@ export function useAgentVoice() {
         });
 
         pc.addEventListener("track", (event) => {
-          if (event.track.kind !== "audio" || !audioRef.current) return;
+          if (event.track.kind !== "audio") return;
+          meterRef.current?.attachAgent(event.streams[0]);
+          if (!audioRef.current) return;
           audioRef.current.srcObject = event.streams[0];
           void audioRef.current.play().catch(() => {
             // Autoplay can be blocked; the call still works once audio resumes.
@@ -236,6 +426,16 @@ export function useAgentVoice() {
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
+        stream.getAudioTracks().forEach((track) => {
+          track.enabled = micMode === "hands-free";
+        });
+        try {
+          const meter = new AudioMeter(stream);
+          meter.start();
+          meterRef.current = meter;
+        } catch {
+          // Level metering is cosmetic; the call works without it.
+        }
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
         const baseUrl = client.getConfig().baseUrl || resolveBrowserBackendUrl();
@@ -257,6 +457,7 @@ export function useAgentVoice() {
                     sdp: offer.sdp,
                     type: offer.type,
                     pc_id: pcId,
+                    language,
                   },
                 }),
               );
@@ -278,6 +479,10 @@ export function useAgentVoice() {
                   sdpMLineIndex: number | null;
                 } | null;
                 error_type?: string;
+                warning_type?: string;
+                stt?: number;
+                llm?: number;
+                tts?: number;
                 message?: string;
                 reason?: string;
               };
@@ -311,6 +516,19 @@ export function useAgentVoice() {
                 });
               } catch {
                 // Trickled candidates can arrive after the call ends.
+              }
+              return;
+            }
+
+            if (message.type === "warning") {
+              setWarning(message.payload?.message ?? null);
+              return;
+            }
+
+            if (message.type === "metrics") {
+              const { stt, llm, tts } = message.payload ?? {};
+              if (stt !== undefined || llm !== undefined || tts !== undefined) {
+                setLatency({ stt, llm, tts });
               }
               return;
             }
@@ -351,7 +569,7 @@ export function useAgentVoice() {
         setError(startFailureMessage(cause));
       }
     },
-    [appConfig, authHeaders, callState, endCall, fail, getAccessToken, teardown, voiceStatus],
+    [appConfig, authHeaders, callState, endCall, fail, getAccessToken, language, micMode, teardown, voiceStatus],
   );
 
   const stop = useCallback(() => {
@@ -373,5 +591,19 @@ export function useAgentVoice() {
     refreshStatus,
     clearError: () => setError(null),
     clearNotice: () => setNotice(null),
+    micMode,
+    setMicMode,
+    language,
+    setLanguage,
+    warning,
+    clearWarning: () => setWarning(null),
+    latency,
+    micMuted,
+    toggleMicMuted,
+    micOpen,
+    holding,
+    startTalking,
+    stopTalking,
+    levelsRef,
   };
 }

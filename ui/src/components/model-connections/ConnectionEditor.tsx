@@ -115,6 +115,9 @@ export function ConnectionEditor({ catalog, connection, onSaved, providerKeys, r
                 <SchemaFields key={`credentials-${provider}`} secret schema={{ properties: entry.credential_fields, required: entry.credential_required }} values={credentials}
                     configuredFields={connection?.configured_credentials} onChange={(field, value) => setCredentials(previous => changeField(previous, field, value))} />
             </fieldset>}
+            {"base_url" in entry.connection_fields && <p className="text-xs text-muted-foreground">
+                When Bolo runs in Docker, reach a server on this machine through host.docker.internal instead of localhost or 127.0.0.1.
+            </p>}
         </>}
         <div className="flex flex-wrap items-center justify-end gap-3">
             {!name.trim() && <p className="text-xs text-muted-foreground">Name this connection to save it.</p>}

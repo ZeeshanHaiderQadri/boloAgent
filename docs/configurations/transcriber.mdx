@@ -9,9 +9,15 @@ Bolo platform supports Deepgram, OpenAI, Google, Azure Speech, AssemblyAI, Speec
 Transcriber providers receive the data needed to transcribe speech, such as call audio, language settings, keyterms, and request metadata. Review the provider's data processing, retention, model training, and regional hosting policies before using sensitive data.
 </Warning>
 
-For locally deployed or self-hosted STT models, Bolo also supports Speaches, an OpenAI API-compatible server for streaming transcription.
+For locally deployed or self-hosted STT models, Bolo also supports Speaches, an OpenAI API-compatible server for streaming transcription. Whisper models served through Speaches list Urdu (`ur`) alongside Hindi (`hi`); the voice and transcriber presets on the model configuration page set the right language for you. The Speaches connection needs no API key or paid subscription; see [Free local speech](./voice#free-local-speech) for the server and model download commands.
+
+If the Speaches connection uses an English-only distil model (any model whose ID ends in `.en`), choosing Urdu or Hindi on a call switches transcription to `Systran/faster-whisper-large-v3` for the session, so download that model once on the server.
 
 Example: Deepgram has their language support documentation at https://developers.deepgram.com/docs/models-languages-overview#nova-3
+
+## OpenAI language
+
+OpenAI transcription (`gpt-4o-transcribe`) takes an ISO 639-1 language code. Every request names one, so set **Language** in the STT tab to what callers speak — `ur` for Urdu, `hi` for Hindi. At the default `en`, other languages are rendered as English words instead of being auto-detected. Picking a language on a Bolo Agent call sets this for the session.
 
 ## Deepgram Flux language hints
 

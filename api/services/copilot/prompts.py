@@ -117,9 +117,51 @@ How you work on a voice call:
 """
 
 
-def voice_system_prompt(*, model_label: str, today: date | None = None) -> str:
+VOICE_GREETING = "Hi, this is Bolo Agent. What would you like to look up?"
+
+VOICE_GREETINGS: dict[str, str] = {
+    "auto": VOICE_GREETING,
+    "en": VOICE_GREETING,
+    "ur": "السلام علیکم! میں Bolo ایجنٹ ہوں۔ آپ کیا تلاش کرنا چاہیں گے؟",
+    "hi": "नमस्ते! मैं Bolo एजेंट हूँ। आप क्या देखना चाहेंगे?",
+}
+
+VOICE_LANGUAGE_RULES: dict[str, str] = {
+    "auto": """
+Language:
+- The caller may speak English, Urdu or Hindi. Answer in the language of their
+  latest message and stay in it until they switch. Never translate their words
+  into a different language.
+""",
+    "en": """
+Language:
+- Reply in English, even if the caller mixes in Urdu or Hindi words.
+""",
+    "ur": """
+Language:
+- The caller is speaking Urdu. Reply in Urdu written in Urdu script (اردو),
+  even if the caller uses Roman Urdu. Keep names, ids and brand names in Latin
+  letters when that is how they are stored.
+""",
+    "hi": """
+Language:
+- The caller is speaking Hindi. Reply in Hindi written in Devanagari (हिन्दी),
+  even if the caller mixes in English words. Keep names, ids and brand names in
+  Latin letters when that is how they are stored.
+""",
+}
+
+
+def greeting_for(language: str | None) -> str:
+    return VOICE_GREETINGS.get(language or "auto", VOICE_GREETING)
+
+
+def voice_system_prompt(
+    *, model_label: str, today: date | None = None, language: str = "auto"
+) -> str:
     today = today or date.today()
     identity = COPILOT_IDENTITY.format(
         agent=AGENT_NAME, today=today.isoformat(), model=model_label
     )
-    return identity + VOICE_RULES
+    rules = VOICE_LANGUAGE_RULES.get(language, VOICE_LANGUAGE_RULES["auto"])
+    return identity + VOICE_RULES + rules

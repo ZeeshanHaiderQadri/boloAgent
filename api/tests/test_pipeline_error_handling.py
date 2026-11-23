@@ -439,6 +439,26 @@ def test_bolo_workers_cancel_when_a_processor_becomes_permanently_unusable(
 
     assert result is worker
     assert captured["processor_unusable_policy"] is ProcessorUnusablePolicy.CANCEL
+    assert "idle_timeout_secs" not in captured
+
+
+def test_create_pipeline_task_forwards_an_idle_timeout_override(monkeypatch):
+    captured = {}
+    worker = SimpleNamespace(turn_tracking_observer=None)
+
+    def capture_worker(*args, **kwargs):
+        captured.update(kwargs)
+        return worker
+
+    monkeypatch.setenv("ENABLE_TURN_LOGGING", "false")
+    monkeypatch.setattr(pipeline_builder, "BoloPipelineWorker", capture_worker)
+
+    pipeline_builder.create_pipeline_task(
+        object(), workflow_run_id=88, idle_timeout_secs=None
+    )
+
+    assert "idle_timeout_secs" in captured
+    assert captured["idle_timeout_secs"] is None
 
 
 @pytest.mark.asyncio

@@ -8,16 +8,16 @@ import { AuthContext } from "@/lib/auth/providers/AuthProvider";
 import { cleanSettings } from "./configuration";
 import { SchemaFields } from "./SchemaFields";
 import { selectOption, selectOptions } from "./test-helpers";
-import type { FieldSchema } from "./types";
+import type { FieldSchema, ServiceRole } from "./types";
 
 vi.mock("@/client/sdk.gen", () => ({ listConnectionModels: vi.fn() }));
 
 const auth = { user: { id: "user" }, loading: false } as never;
 
-function Editor({ schema, initial, onSave = vi.fn(), connection }: { schema: FieldSchema; initial: Record<string, unknown>; onSave?: (values: Record<string, unknown>) => void; connection?: string }) {
+function Editor({ schema, initial, onSave = vi.fn(), connection, role }: { schema: FieldSchema; initial: Record<string, unknown>; onSave?: (values: Record<string, unknown>) => void; connection?: string; role?: ServiceRole }) {
     const [values, setValues] = useState(initial);
     return <form onSubmit={event => { event.preventDefault(); onSave(cleanSettings(values, schema)); }}>
-        <SchemaFields schema={schema} values={values} providerConnectionUuid={connection} onChange={(name, value) => setValues(previous => ({ ...previous, [name]: value }))} />
+        <SchemaFields schema={schema} values={values} role={role} providerConnectionUuid={connection} onChange={(name, value) => setValues(previous => ({ ...previous, [name]: value }))} />
         <button type="submit">Save</button>
     </form>;
 }
@@ -145,6 +145,33 @@ describe("provider field controls", () => {
         await waitFor(() => expect(screen.queryByText("Could not load models from the provider.")).toBeNull());
         expect(listConnectionModels).toHaveBeenCalledTimes(2);
         expect(selectOptions("Model")).toEqual(["auto", "live-model", "Enter a custom model ID…"]);
+    });
+
+    it("keeps voice models out of the chat model list", async () => {
+        vi.mocked(listConnectionModels).mockClear();
+        vi.mocked(listConnectionModels).mockResolvedValue({ data: { provider: "openai", models: [
+            { id: "lfm3:1.7b-q4_K_M" },
+            { id: "Keshavji/piper-ur_PK-fasih-medium", task: "text-to-speech" },
+            { id: "Systran/faster-whisper-base", task: "automatic-speech-recognition" },
+        ] } } as never);
+        render(<AuthContext.Provider value={auth}>
+            <Editor role="llm" connection="openai-mixed" schema={{ properties: { model: { type: "string", title: "Model", allow_custom_input: true, model_catalog: true } } }} initial={{ model: "lfm3:1.7b-q4_K_M" }} />
+        </AuthContext.Provider>);
+        await waitFor(() => expect(screen.getByLabelText("Model").getAttribute("data-slot")).toBe("model-combobox"));
+        expect(selectOptions("Model")).toEqual(["lfm3:1.7b-q4_K_M", "Enter a custom model ID…"]);
+    });
+
+    it("keeps transcriber models out of the voice list", async () => {
+        vi.mocked(listConnectionModels).mockClear();
+        vi.mocked(listConnectionModels).mockResolvedValue({ data: { provider: "speaches", models: [
+            { id: "speaches-ai/piper-en_US-lessac-medium", task: "text-to-speech" },
+            { id: "Systran/faster-whisper-base", task: "automatic-speech-recognition" },
+        ] } } as never);
+        render(<AuthContext.Provider value={auth}>
+            <Editor role="tts" connection="speaches-mixed" schema={{ properties: { model: { type: "string", title: "Model", allow_custom_input: true, model_catalog: true } } }} initial={{ model: "speaches-ai/piper-en_US-lessac-medium" }} />
+        </AuthContext.Provider>);
+        await waitFor(() => expect(screen.getByLabelText("Model").getAttribute("data-slot")).toBe("model-combobox"));
+        expect(selectOptions("Model")).toEqual(["speaches-ai/piper-en_US-lessac-medium", "Enter a custom model ID…"]);
     });
 
     it("uses removable input rows for free-form lists", () => {

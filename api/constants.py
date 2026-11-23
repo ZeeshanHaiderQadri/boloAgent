@@ -75,6 +75,12 @@ BACKEND_API_ENDPOINT = (
 )
 UI_APP_URL = os.getenv("UI_APP_URL", "http://localhost:3010")
 
+# Local model servers a self-hosted install can download to and remove from
+# (Models page → Local models). Empty disables that panel. The API talks to
+# these directly, so in Docker point them at host.docker.internal.
+LOCAL_OLLAMA_URL = (os.getenv("LOCAL_OLLAMA_URL") or "").rstrip("/")
+LOCAL_SPEACHES_URL = (os.getenv("LOCAL_SPEACHES_URL") or "").rstrip("/")
+
 DATABASE_URL = os.environ["DATABASE_URL"]
 REDIS_URL = os.environ["REDIS_URL"]
 

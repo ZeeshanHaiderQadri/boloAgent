@@ -113,6 +113,23 @@ class CopilotClient(WorkflowBuilderClient):
                 conversation.title = title[:120]
             await session.commit()
 
+    async def touch_copilot_conversation(
+        self,
+        *,
+        conversation_id: int,
+        organization_id: int,
+        title: str | None = None,
+    ) -> None:
+        """Bump the conversation without touching the replay guard."""
+        async with self.async_session() as session:
+            conversation = await session.get(CopilotConversationModel, conversation_id)
+            if conversation is None or conversation.organization_id != organization_id:
+                return
+            conversation.updated_at = datetime.now(UTC)
+            if title:
+                conversation.title = title[:120]
+            await session.commit()
+
     async def record_copilot_tool_call(
         self,
         *,

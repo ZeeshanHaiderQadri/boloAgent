@@ -29,3 +29,46 @@ def test_create_openai_tts_service_uses_openai_pcm_sample_rate():
     kwargs = mock_service.call_args.kwargs
     assert kwargs["sample_rate"] == OPENAI_SAMPLE_RATE
     assert kwargs["settings"].model == "gpt-4o-mini-tts"
+
+
+def test_create_openai_tts_service_forwards_idle_timeout():
+    user_config = SimpleNamespace(
+        tts=SimpleNamespace(
+            provider=ServiceProviders.OPENAI.value,
+            api_key="test-key",
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            base_url="http://host.docker.internal:31415/v1",
+        )
+    )
+    audio_config = SimpleNamespace(
+        transport_out_sample_rate=16000,
+        transport_in_sample_rate=16000,
+    )
+
+    with patch("api.services.pipecat.service_factory.OpenAITTSService") as mock_service:
+        create_tts_service(user_config, audio_config, stop_frame_timeout_s=15.0)
+
+    kwargs = mock_service.call_args.kwargs
+    assert kwargs["stop_frame_timeout_s"] == 15.0
+
+
+def test_create_openai_tts_service_keeps_default_idle_timeout():
+    user_config = SimpleNamespace(
+        tts=SimpleNamespace(
+            provider=ServiceProviders.OPENAI.value,
+            api_key="test-key",
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            base_url=None,
+        )
+    )
+    audio_config = SimpleNamespace(
+        transport_out_sample_rate=16000,
+        transport_in_sample_rate=16000,
+    )
+
+    with patch("api.services.pipecat.service_factory.OpenAITTSService") as mock_service:
+        create_tts_service(user_config, audio_config)
+
+    assert "stop_frame_timeout_s" not in mock_service.call_args.kwargs

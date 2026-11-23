@@ -74,6 +74,7 @@ class CopilotContext:
     organization_id: int
     user_id: int
     conversation_id: int
+    language: str = "auto"
 
 
 @dataclass(frozen=True)

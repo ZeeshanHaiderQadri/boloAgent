@@ -54,8 +54,35 @@ class CopilotState(TypedDict, total=False):
     model_error_kind: str | None
 
 
+COPILOT_ERROR_FLAG = "copilot_error"
+# Failures become assistant messages so the graph ends cleanly, but replaying
+# them would teach the model that it is offline. Checkpoints written before
+# the flag existed are matched by their canned opening words instead.
+MODEL_ERROR_PREFIXES = (
+    "Your LLM provider",
+    "Could not reach your LLM provider",
+    "The copilot needs your own LLM",
+    "The copilot could not reach your LLM",
+    "The copilot runs on your own LLM key",
+    "Add an API key for your LLM provider",
+    "Add your Azure OpenAI endpoint",
+    "No chat endpoint is configured",
+    "Vertex AI connections are not supported",
+)
+
+
+def is_model_error_message(message: AnyMessage) -> bool:
+    if not isinstance(message, AIMessage):
+        return False
+    if message.additional_kwargs.get(COPILOT_ERROR_FLAG):
+        return True
+    text = message.content if isinstance(message.content, str) else ""
+    return text.startswith(MODEL_ERROR_PREFIXES)
+
+
 def _bounded_history(messages: list[AnyMessage]) -> list[AnyMessage]:
     """Keep a valid provider sequence: start the window at a user turn."""
+    messages = [message for message in messages if not is_model_error_message(message)]
     window = messages[-HISTORY_WINDOW:]
     start = next(
         (
@@ -264,13 +291,21 @@ def _agent_node(model: CopilotChatModel, bound_model, web_providers: list[str]):
             )
         except CopilotConfigurationError as exc:
             return {
-                "messages": [AIMessage(content=str(exc))],
+                "messages": [
+                    AIMessage(
+                        content=str(exc), additional_kwargs={COPILOT_ERROR_FLAG: True}
+                    )
+                ],
                 "model_error": str(exc),
                 "model_error_kind": "configuration",
             }
         except CopilotUpstreamError as exc:
             return {
-                "messages": [AIMessage(content=str(exc))],
+                "messages": [
+                    AIMessage(
+                        content=str(exc), additional_kwargs={COPILOT_ERROR_FLAG: True}
+                    )
+                ],
                 "model_error": str(exc),
                 "model_error_kind": "upstream",
             }

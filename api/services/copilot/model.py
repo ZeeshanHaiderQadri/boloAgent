@@ -54,6 +54,26 @@ class CopilotUpstreamError(Exception):
         self.status_code = status_code
 
 
+def _error_detail(response: httpx.Response) -> str | None:
+    """The provider's own explanation for a refusal, if it sent one."""
+    try:
+        data = response.json()
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    error = data.get("error")
+    candidates = [data.get("detail"), data.get("message")]
+    if isinstance(error, dict):
+        candidates.append(error.get("message"))
+    elif isinstance(error, str):
+        candidates.append(error)
+    for value in candidates:
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())[:200]
+    return None
+
+
 def _provider(llm) -> str:
     return str(getattr(llm.provider, "value", llm.provider))
 
@@ -161,22 +181,35 @@ class CopilotChatModel(BaseChatModel):
             body["tool_choice"] = kwargs.get("tool_choice") or "auto"
 
         try:
-            async with httpx.AsyncClient(timeout=90) as client:
+            # A local model can spend over a minute evaluating the system
+            # prompt and tool schemas before it answers.
+            async with httpx.AsyncClient(timeout=150) as client:
                 response = await client.post(url, json=body, headers=headers)
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code
+            detail = _error_detail(exc.response)
             logger.warning(
                 "Copilot LLM upstream failed provider={} status={} organization_id={}",
                 _provider(llm),
                 status,
                 self.organization_id,
             )
+            message = f"Your LLM provider returned an error ({status})."
+            if detail:
+                message = f"Your LLM provider rejected the request ({status}): {detail}"
+            raise CopilotUpstreamError(message, status_code=status) from exc
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "Copilot LLM upstream timed out provider={} organization_id={}",
+                _provider(llm),
+                self.organization_id,
+            )
             raise CopilotUpstreamError(
-                f"Your LLM provider returned an error ({status}). Check the "
-                "connection in Model connections.",
-                status_code=status,
+                "Your LLM provider did not answer in time. A local model can "
+                "be slow on a long conversation; try again, or start a new "
+                "conversation."
             ) from exc
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning(

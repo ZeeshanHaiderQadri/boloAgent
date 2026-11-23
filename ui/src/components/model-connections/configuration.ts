@@ -69,6 +69,45 @@ export function schemaDefaults(schema?: FieldSchema): Record<string, unknown> {
         .map(([name, field]) => [name, field.default]));
 }
 
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal"]);
+
+/**
+ * Whether a connection points at software running on this machine (or the
+ * operator's LAN) rather than a cloud provider. The local speech stack is
+ * bundled with a local LLM, so the editor can configure it on its own.
+ */
+export function isLocalConnection(connection?: ProviderConnection | null): boolean {
+    // Speaches only ever runs self-hosted, next to the API.
+    if (connection?.provider === "speaches") return true;
+    const baseUrl = connection?.connection_settings?.base_url;
+    if (typeof baseUrl !== "string" || !baseUrl.trim()) return false;
+    let host: string;
+    try {
+        host = new URL(baseUrl.trim()).hostname.toLowerCase();
+    } catch {
+        return false;
+    }
+    return LOCAL_HOSTS.has(host) || host.endsWith(".local")
+        || /^(10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+}
+
+export type LocalModelFamily = "ollama" | "speaches";
+
+/**
+ * The local server that can install this connection's model, or null when the
+ * model does not live on this machine. Only Ollama and Speaches downloads can
+ * be started here; other local servers manage their own model files.
+ */
+export function localModelFamily(connection: ProviderConnection | undefined, role: ServiceRole, model: string): LocalModelFamily | null {
+    if (!model || !connection || !isLocalConnection(connection)) return null;
+    // The local gateway merges Ollama and Speaches behind one endpoint, so the
+    // role decides which server owns the model, not the connection's provider.
+    // Speech roles install through Speaches; chat roles install through
+    // Ollama, where a tag-shaped id ("name:tag") names an Ollama model.
+    if (role === "stt" || role === "tts") return "speaches";
+    return model.includes("/") ? null : "ollama";
+}
+
 export function compatibleConnections(catalog: ModelConnectionCatalog, connections: ProviderConnection[], role: ServiceRole) {
     return connections.filter(connection => {
         const entry = catalog.services[role]?.[connection.provider];

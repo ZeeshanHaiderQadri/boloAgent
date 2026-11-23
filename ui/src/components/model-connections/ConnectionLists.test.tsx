@@ -11,7 +11,8 @@ import { useModelConnections } from "./useModelConnections";
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
-vi.mock("@/client/sdk.gen", () => ({ archiveNamedModelConfiguration: vi.fn(), archiveProviderConnection: vi.fn(), deleteNamedModelConfiguration: vi.fn(), deleteProviderConnection: vi.fn(), restoreNamedModelConfiguration: vi.fn(), restoreProviderConnection: vi.fn(), setDefaultModelConfiguration: vi.fn() }));
+vi.mock("@/client/sdk.gen", () => ({ archiveNamedModelConfiguration: vi.fn(), archiveProviderConnection: vi.fn(), deleteNamedModelConfiguration: vi.fn(), deleteProviderConnection: vi.fn(), restoreNamedModelConfiguration: vi.fn(), restoreProviderConnection: vi.fn(), setDefaultModelConfiguration: vi.fn(), listLocalModels: vi.fn(async () => ({ data: { servers: [], models: [] } })), downloadLocalModel: vi.fn(), getLocalModelDownload: vi.fn(), deleteLocalModel: vi.fn() }));
+vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: { id: "user" }, loading: false }) }));
 vi.mock("./useModelConnections", () => ({ useModelConnections: vi.fn() }));
 vi.mock("@/context/OrgConfigContext", () => ({ useOrgConfig: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));

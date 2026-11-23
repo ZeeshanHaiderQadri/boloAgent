@@ -84,6 +84,7 @@ async def test_lists_models_with_the_connection_key_and_deduplicates(
                     {"id": "auto", "name": "Duplicate"},
                     {"id": "gpt-5-mini"},
                     "manual-model",
+                    {"id": "piper-ur", "task": "text-to-speech"},
                     {"name": "Missing id"},
                     {"id": "  "},
                 ]
@@ -97,9 +98,13 @@ async def test_lists_models_with_the_connection_key_and_deduplicates(
         "auto",
         "gpt-5-mini",
         "manual-model",
+        "piper-ur",
     ]
     assert response.models[0].name == "Auto router"
     assert response.models[1].name is None
+    # Speech tasks travel with the model so role pickers can filter them.
+    assert response.models[3].task == "text-to-speech"
+    assert response.models[2].task is None
     assert response.provider == "openai"
     assert len(requests) == 1
     assert str(requests[0].url) == "https://router.example.test/v1/models"
