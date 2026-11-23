@@ -220,10 +220,7 @@ def apply_voice_language(
             code = _STT_LANGUAGE_CODES.get(provider, {}).get(language)
             if code:
                 updates: dict[str, Any] = {"language": code}
-                if (
-                    provider == ServiceProviders.SARVAM.value
-                    and language == "ur"
-                ):
+                if provider == ServiceProviders.SARVAM.value and language == "ur":
                     # saarika does not list Urdu; saaras:v3 does.
                     updates["model"] = "saaras:v3"
                 if (

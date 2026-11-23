@@ -58,7 +58,9 @@ async def test_a_failed_turn_is_not_replayed_to_the_model():
 
     assert _replayed_ai_messages(model) == []
     state = await graph.aget_state(_config("thread"))
-    transcript = [m.content for m in state.values["messages"] if isinstance(m, AIMessage)]
+    transcript = [
+        m.content for m in state.values["messages"] if isinstance(m, AIMessage)
+    ]
     # The transcript keeps the failure; only the model's view drops it.
     assert any("error (400)" in content for content in transcript)
 

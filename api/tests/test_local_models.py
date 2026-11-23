@@ -59,7 +59,11 @@ async def test_lists_the_catalog_with_installed_models_and_download_progress(ser
         }
 
     async def speaches():
-        return {"Systran/faster-whisper-base": installed("speaches", "stt", "Systran/faster-whisper-base")}
+        return {
+            "Systran/faster-whisper-base": installed(
+                "speaches", "stt", "Systran/faster-whisper-base"
+            )
+        }
 
     async def running_job(family, model):
         if model == "speaches-ai/Kokoro-82M-v1.0-ONNX":
@@ -90,7 +94,11 @@ async def test_skips_a_server_that_is_not_responding(servers):
         return None
 
     async def speaches():
-        return {"speaches-ai/Kokoro-82M-v1.0-ONNX": installed("speaches", "tts", "speaches-ai/Kokoro-82M-v1.0-ONNX")}
+        return {
+            "speaches-ai/Kokoro-82M-v1.0-ONNX": installed(
+                "speaches", "tts", "speaches-ai/Kokoro-82M-v1.0-ONNX"
+            )
+        }
 
     servers.setattr(local_models, "_ollama_installed", unreachable)
     servers.setattr(local_models, "_speaches_installed", speaches)

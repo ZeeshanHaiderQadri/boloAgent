@@ -847,21 +847,13 @@ async def test_turn_marker_times_the_llm_first_token_once(monkeypatch):
     marker = voice._TurnMarker(latency)
     recorder = voice._ReplyRecorder(SimpleNamespace(record=AsyncMock()), latency)
     clock = SimpleNamespace(now=100.0)
-    monkeypatch.setattr(
-        voice, "time", SimpleNamespace(monotonic=lambda: clock.now)
-    )
+    monkeypatch.setattr(voice, "time", SimpleNamespace(monotonic=lambda: clock.now))
 
-    await marker.process_frame(
-        LLMContextFrame(LLMContext()), FrameDirection.DOWNSTREAM
-    )
+    await marker.process_frame(LLMContextFrame(LLMContext()), FrameDirection.DOWNSTREAM)
     clock.now = 100.7
-    await recorder.process_frame(
-        LLMTextFrame(text="Hello"), FrameDirection.DOWNSTREAM
-    )
+    await recorder.process_frame(LLMTextFrame(text="Hello"), FrameDirection.DOWNSTREAM)
     clock.now = 100.9
-    await recorder.process_frame(
-        LLMTextFrame(text=" there"), FrameDirection.DOWNSTREAM
-    )
+    await recorder.process_frame(LLMTextFrame(text=" there"), FrameDirection.DOWNSTREAM)
 
     assert reports == [{"llm": 700}]
 
@@ -878,9 +870,7 @@ async def test_latency_reporter_forwards_only_ttfb_from_the_speech_services():
             TTFBMetricsData(processor="tts", value=0.31),
             TTFBMetricsData(processor="other", value=9.0),
             TTFBMetricsData(processor="tts", value=0.0),
-            TTFAMetricsData(
-                processor="tts", ttfa=0.4, ttfb=0.3, leading_silence=0.1
-            ),
+            TTFAMetricsData(processor="tts", ttfa=0.4, ttfb=0.3, leading_silence=0.1),
         ]
     )
     await reporter.process_frame(frame, FrameDirection.DOWNSTREAM)

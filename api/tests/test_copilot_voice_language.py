@@ -75,7 +75,11 @@ def test_sarvam_urdu_switches_stt_model_and_warns_for_tts():
 def test_azure_urdu_switches_language_and_default_voice():
     config = _config(
         stt={"provider": "azure_speech", "language": "en-US"},
-        tts={"provider": "azure_speech", "language": "en-US", "voice": "en-US-AriaNeural"},
+        tts={
+            "provider": "azure_speech",
+            "language": "en-US",
+            "voice": "en-US-AriaNeural",
+        },
     )
 
     resolved, warning = apply_voice_language(config, "ur")
@@ -89,7 +93,11 @@ def test_azure_urdu_switches_language_and_default_voice():
 def test_azure_keeps_a_voice_that_already_matches_the_language():
     config = _config(
         stt={"provider": "azure_speech", "language": "en-US"},
-        tts={"provider": "azure_speech", "language": "hi-IN", "voice": "hi-IN-SwaraNeural"},
+        tts={
+            "provider": "azure_speech",
+            "language": "hi-IN",
+            "voice": "hi-IN-SwaraNeural",
+        },
     )
 
     resolved, _ = apply_voice_language(config, "hi")
@@ -100,7 +108,11 @@ def test_azure_keeps_a_voice_that_already_matches_the_language():
 def test_google_hindi_rewrites_the_voice_locale():
     config = _config(
         stt={"provider": "google", "language": "en-US"},
-        tts={"provider": "google", "language": "en-US", "voice": "en-US-Chirp3-HD-Charon"},
+        tts={
+            "provider": "google",
+            "language": "en-US",
+            "voice": "en-US-Chirp3-HD-Charon",
+        },
     )
 
     resolved, warning = apply_voice_language(config, "hi")
@@ -114,7 +126,11 @@ def test_google_hindi_rewrites_the_voice_locale():
 def test_google_urdu_is_reported_instead_of_switched():
     config = _config(
         stt={"provider": "google", "language": "en-US"},
-        tts={"provider": "google", "language": "en-US", "voice": "en-US-Chirp3-HD-Charon"},
+        tts={
+            "provider": "google",
+            "language": "en-US",
+            "voice": "en-US-Chirp3-HD-Charon",
+        },
     )
 
     resolved, warning = apply_voice_language(config, "ur")
@@ -127,7 +143,11 @@ def test_google_urdu_is_reported_instead_of_switched():
 
 def test_deepgram_flux_cannot_transcribe_urdu():
     config = _config(
-        stt={"provider": "deepgram", "model": "flux-general-multi", "language": "multi"},
+        stt={
+            "provider": "deepgram",
+            "model": "flux-general-multi",
+            "language": "multi",
+        },
         tts={"provider": "cartesia", "language": "en", "voice": "v1"},
     )
 
@@ -186,8 +206,16 @@ def test_speaches_urdu_switches_to_the_piper_model():
 
 def test_speaches_hindi_uses_the_kokoro_hindi_voice():
     config = _config(
-        stt={"provider": "speaches", "model": "Systran/faster-whisper-large-v3", "language": "en"},
-        tts={"provider": "speaches", "model": "Kokoro-82M-v1.0-ONNX", "voice": "af_heart"},
+        stt={
+            "provider": "speaches",
+            "model": "Systran/faster-whisper-large-v3",
+            "language": "en",
+        },
+        tts={
+            "provider": "speaches",
+            "model": "Kokoro-82M-v1.0-ONNX",
+            "voice": "af_heart",
+        },
     )
 
     resolved, warning = apply_voice_language(config, "hi")
@@ -201,8 +229,16 @@ def test_speaches_hindi_uses_the_kokoro_hindi_voice():
 
 def test_speaches_english_keeps_a_multilingual_model():
     config = _config(
-        stt={"provider": "speaches", "model": "Systran/faster-whisper-large-v3", "language": "ur"},
-        tts={"provider": "speaches", "model": "Keshavji/piper-ur_PK-fasih-medium", "voice": "fasih"},
+        stt={
+            "provider": "speaches",
+            "model": "Systran/faster-whisper-large-v3",
+            "language": "ur",
+        },
+        tts={
+            "provider": "speaches",
+            "model": "Keshavji/piper-ur_PK-fasih-medium",
+            "voice": "fasih",
+        },
     )
 
     resolved, _ = apply_voice_language(config, "en")

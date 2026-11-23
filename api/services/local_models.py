@@ -235,15 +235,17 @@ async def list_local_models() -> LocalModelsResponse:
         if entry["family"] not in servers:
             continue
         found = installed.get(key)
-        models.append(LocalModelInfo(
-            family=entry["family"],
-            id=entry["model"],
-            kind=entry["kind"],
-            title=entry["title"],
-            description=entry["description"],
-            installed=found is not None,
-            size_bytes=found.size_bytes if found else None,
-        ))
+        models.append(
+            LocalModelInfo(
+                family=entry["family"],
+                id=entry["model"],
+                kind=entry["kind"],
+                title=entry["title"],
+                description=entry["description"],
+                installed=found is not None,
+                size_bytes=found.size_bytes if found else None,
+            )
+        )
     known = {(entry["family"], entry["model"]) for entry in CATALOG}
     # Models the user installed by other means stay removable from here.
     for (family, model_id), found in installed.items():
@@ -276,14 +278,18 @@ async def download_status(job_id: str) -> LocalModelDownloadStatus | None:
     )
 
 
-async def download_model(family: LocalModelFamily, model: str) -> LocalModelDownloadResponse:
+async def download_model(
+    family: LocalModelFamily, model: str
+) -> LocalModelDownloadResponse:
     # Any well-formed id is accepted, not just the catalog: the editor offers to
     # install whichever model the user picked. The server decides if it exists.
     model = model.strip()
     if not _valid_model_id(model):
         raise LocalModelInvalid("Choose a valid model name.")
     if not _server_url(family):
-        raise LocalModelUnavailable("No local model server is configured for this deployment.")
+        raise LocalModelUnavailable(
+            "No local model server is configured for this deployment."
+        )
     installed = await _installed(family)
     if installed is None:
         raise LocalModelUnavailable("The local model server is not responding.")
@@ -293,7 +299,9 @@ async def download_model(family: LocalModelFamily, model: str) -> LocalModelDown
         raise LocalModelConflict("That model is already downloading.")
 
     job_id = uuid.uuid4().hex
-    await _save_job(job_id, family=family, model=model, status="running", completed=0, total=0)
+    await _save_job(
+        job_id, family=family, model=model, status="running", completed=0, total=0
+    )
     await _redis().set(_active_key(family, model), job_id, ex=_JOB_TTL_SECONDS)
     task = asyncio.create_task(_run_download(job_id, family, model))
     _tasks.add(task)
@@ -306,9 +314,13 @@ async def remove_model(family: LocalModelFamily, model: str) -> None:
     if not _valid_model_id(model):
         raise LocalModelInvalid("Choose a valid model name.")
     if not _server_url(family):
-        raise LocalModelUnavailable("No local model server is configured for this deployment.")
+        raise LocalModelUnavailable(
+            "No local model server is configured for this deployment."
+        )
     if await _redis().exists(_active_key(family, model)):
-        raise LocalModelConflict("Wait for the download to finish before removing that model.")
+        raise LocalModelConflict(
+            "Wait for the download to finish before removing that model."
+        )
     installed = await _installed(family)
     if installed is None:
         raise LocalModelUnavailable("The local model server is not responding.")
@@ -321,13 +333,19 @@ async def remove_model(family: LocalModelFamily, model: str) -> None:
                     "DELETE", f"{_server_url(family)}/api/delete", json={"model": model}
                 )
             else:
-                response = await client.delete(f"{_server_url(family)}/v1/models/{model}")
+                response = await client.delete(
+                    f"{_server_url(family)}/v1/models/{model}"
+                )
             response.raise_for_status()
     except httpx.HTTPError:
-        raise LocalModelError("The local model server could not remove that model.") from None
+        raise LocalModelError(
+            "The local model server could not remove that model."
+        ) from None
 
 
-async def _run_download(job_id: str, family: Literal["ollama", "speaches"], model: str) -> None:
+async def _run_download(
+    job_id: str, family: Literal["ollama", "speaches"], model: str
+) -> None:
     try:
         if family == "ollama":
             await _pull_ollama(job_id, model)
@@ -347,7 +365,9 @@ async def _pull_ollama(job_id: str, model: str) -> None:
     timeout = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream(
-            "POST", f"{LOCAL_OLLAMA_URL}/api/pull", json={"model": model, "stream": True}
+            "POST",
+            f"{LOCAL_OLLAMA_URL}/api/pull",
+            json={"model": model, "stream": True},
         ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():

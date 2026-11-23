@@ -172,7 +172,9 @@ class _VoiceErrorRelay(FrameProcessor):
                 if _is_permanent_error(frame):
                     await self._on_error(message)
                 else:
-                    logger.warning("Copilot voice pipeline error (recoverable): {}", message)
+                    logger.warning(
+                        "Copilot voice pipeline error (recoverable): {}", message
+                    )
                     if self._on_warning is not None:
                         await self._on_warning(
                             voice_warning_message(message, frame.category)
@@ -336,9 +338,7 @@ class _LatencyReporter(FrameProcessor):
         await self.push_frame(frame, direction)
 
 
-def voice_warning_message(
-    error: str, category: ErrorCategory | None = None
-) -> str:
+def voice_warning_message(error: str, category: ErrorCategory | None = None) -> str:
     """A short, actionable note for a speech failure that did not end the call."""
     text = " ".join(str(error or "").split())
     if category in (ErrorCategory.RATE_LIMIT, ErrorCategory.QUOTA):
