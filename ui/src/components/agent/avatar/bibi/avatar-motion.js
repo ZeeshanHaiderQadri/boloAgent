@@ -51,8 +51,16 @@ export function faceWeights(output, { cues = [], time = 0, speaking = false, lev
     if (next && blend) output[next.shape] += next.strength * blend;
   } else if (speaking) {
     const power = clamp01(level);
-    output.AA = power * .90;
-    output.SIL = (1 - power) * .84;
+    // Live audio only gives amplitude, so synthesize a syllable-ish wobble to
+    // spread the motion across jaw, lips and cheeks instead of a flat flap.
+    const phase = time * 8.4;
+    const openness = power * (0.78 + 0.22 * Math.sin(phase));
+    output.AA = clamp01(openness * .92);
+    output.EE = clamp01(power * .30 * Math.max(0, Math.sin(phase * 1.27 + .7)));
+    output.OH = clamp01(power * .26 * Math.max(0, Math.sin(phase * .83 + 2.4)));
+    output.OU = clamp01(power * .18 * Math.max(0, Math.sin(phase * .61 + 4.1)));
+    output.FV = clamp01(power * .12 * Math.max(0, Math.sin(phase * 1.9 + 1.6)));
+    output.SIL = clamp01((1 - power) * .72);
   }
 
   const speechWeight = VISEMES.reduce((sum, key) => sum + output[key], 0);

@@ -37,6 +37,9 @@ function mergeProfile(
   if (update.action !== undefined && update.action !== null) {
     next.action = update.action;
   }
+  if (update.size !== undefined && update.size !== null) {
+    next.size = update.size;
+  }
   if (update.pet_state !== undefined && update.pet_state !== null) {
     next.pet_state = update.pet_state;
   }

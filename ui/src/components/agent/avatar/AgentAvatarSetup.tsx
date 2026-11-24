@@ -30,8 +30,8 @@ const CHARACTERS: {
   name: string;
   blurb: string;
 }[] = [
-  { value: "female", name: "Bibi", blurb: "Warm, clear and quick." },
-  { value: "male", name: "Hacker", blurb: "Focused, precise and calm." },
+  { value: "female", name: "Bolo Bibi", blurb: "Warm, clear and quick." },
+  { value: "male", name: "Bolo Agent", blurb: "Focused, precise and calm." },
 ];
 
 const ACTIONS: { value: Action; label: string }[] = [

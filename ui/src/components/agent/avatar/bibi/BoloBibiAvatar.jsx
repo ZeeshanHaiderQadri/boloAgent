@@ -142,7 +142,9 @@ export default function BoloBibiAvatar({
       const media = config.audio;
       const speech = config.readSpeech?.();
       const speaking = speech?.playing ?? Boolean(media && !media.paused && !media.ended && !media.seeking);
-      const clock = speech?.time ?? media?.currentTime ?? 0;
+      // MediaStream playback can report a frozen currentTime, so fall back to
+      // the animation clock for the synthesized lip-sync phase.
+      const clock = speech?.time ?? (media?.currentTime || elapsed);
       const level = speaking ? (speech?.level ?? config.readSpeechLevel?.() ?? 0) : 0;
       const idle = config.idleMotion && !reduced.matches;
       const cycle = elapsed % 4.37;

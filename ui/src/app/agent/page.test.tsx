@@ -48,7 +48,7 @@ vi.mock("@/client/sdk.gen", () => ({
 vi.mock("@/components/agent/avatar/AgentAvatar", () => ({
   AgentAvatar: () => <div data-testid="avatar-canvas" />,
   avatarName: (character: string) =>
-    character === "male" ? "Hacker" : "Bibi",
+    character === "male" ? "Bolo Agent" : "Bolo Bibi",
   avatarPreview: () => "/avatars/preview.png",
 }));
 
@@ -585,7 +585,7 @@ describe("Bolo Agent page", () => {
     render(<AgentPage />);
 
     expect(await screen.findByText("Choose your agent's look")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^Hacker/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Bolo Agent/ }));
 
     await waitFor(() =>
       expect(
@@ -596,7 +596,7 @@ describe("Bolo Agent page", () => {
         ).value,
       ).toBe("male-voice"),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Use Hacker" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use Bolo Agent" }));
 
     await waitFor(() =>
       expect(mocks.updateAvatar).toHaveBeenCalledWith(

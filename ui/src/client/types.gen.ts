@@ -358,6 +358,10 @@ export type AvatarProfile = {
     action?: 'idle' | 'typing' | 'analyzing' | 'presenting';
     voice?: AvatarVoice;
     /**
+     * Size
+     */
+    size?: 'compact' | 'large';
+    /**
      * Pet State
      */
     pet_state?: 'expanded' | 'minimized' | 'hidden';
@@ -388,6 +392,10 @@ export type AvatarProfileUpdate = {
      */
     action?: 'idle' | 'typing' | 'analyzing' | 'presenting' | null;
     voice?: AvatarVoiceUpdate | null;
+    /**
+     * Size
+     */
+    size?: 'compact' | 'large' | null;
     /**
      * Pet State
      */

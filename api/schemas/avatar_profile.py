@@ -6,6 +6,7 @@ from api.schemas.voices import VoiceInfo
 
 AvatarCharacter = Literal["male", "female"]
 AvatarAction = Literal["idle", "typing", "analyzing", "presenting"]
+AvatarSize = Literal["compact", "large"]
 PetState = Literal["expanded", "minimized", "hidden"]
 
 
@@ -49,6 +50,9 @@ class AvatarProfile(BaseModel):
     # Male kit only: laptop / AR HUD poses. The female kit ignores it.
     action: AvatarAction = "idle"
     voice: AvatarVoice = Field(default_factory=AvatarVoice)
+    # How large the floating companion renders; the user can grow it while a
+    # call is running for a closer view of the face.
+    size: AvatarSize = "compact"
     pet_state: PetState = "expanded"
     position: AvatarPosition | None = None
 
@@ -97,6 +101,7 @@ class AvatarProfileUpdate(BaseModel):
     appearance: AvatarAppearanceUpdate | None = None
     action: AvatarAction | None = None
     voice: AvatarVoiceUpdate | None = None
+    size: AvatarSize | None = None
     pet_state: PetState | None = None
     position: AvatarPosition | None = None
 
@@ -120,6 +125,8 @@ class AvatarProfileUpdate(BaseModel):
                     setattr(merged.appearance, field, value)
         if self.action is not None:
             merged.action = self.action
+        if self.size is not None:
+            merged.size = self.size
         if self.voice is not None and self.voice.provider:
             # A non-empty update replaces the pair; omitting both keeps the
             # stored pick.

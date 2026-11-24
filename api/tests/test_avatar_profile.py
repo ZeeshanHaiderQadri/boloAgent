@@ -56,6 +56,7 @@ async def test_update_merges_partial_profile_and_stores_it():
                 character="female",
                 appearance=AvatarAppearanceUpdate(glasses=False),
                 action="typing",
+                size="large",
                 position={"x": 0.2, "y": 0.8},
             ),
         )
@@ -64,11 +65,13 @@ async def test_update_merges_partial_profile_and_stores_it():
     assert profile.appearance.glasses is False
     assert profile.appearance.hood is True
     assert profile.action == "typing"
+    assert profile.size == "large"
     assert profile.position.x == 0.2
     args = db.upsert_user_configuration_value.await_args.args
     assert args[0] == 9
     assert args[1] == "AVATAR"
     assert args[2]["character"] == "female"
+    assert args[2]["size"] == "large"
     assert args[2]["appearance"]["glasses"] is False
 
 

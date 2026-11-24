@@ -38,6 +38,7 @@ export interface AgentAvatarProps {
   audio?: HTMLAudioElement | null;
   readSpeechLevel?: () => number;
   posterUrl?: string;
+  emotion?: string;
   interactive?: boolean;
   idleMotion?: boolean;
   className?: string;
@@ -52,6 +53,7 @@ export function AgentAvatar({
   audio,
   readSpeechLevel,
   posterUrl,
+  emotion = "neutral",
   interactive = true,
   idleMotion = true,
   className,
@@ -64,6 +66,7 @@ export function AgentAvatar({
       <HackerAvatar
         modelUrl="/avatars/bolo-ethical-hacker.glb"
         posterUrl={posterUrl}
+        emotion={emotion}
         glasses={profile.appearance?.glasses ?? true}
         hood={profile.appearance?.hood ?? true}
         eyewear={
@@ -89,6 +92,7 @@ export function AgentAvatar({
     <BibiAvatar
       modelUrl="/avatars/bolo-bibi.glb"
       posterUrl={posterUrl}
+      emotion={emotion}
       glasses={profile.appearance?.glasses ?? true}
       audio={audio ?? null}
       readSpeechLevel={readSpeechLevel}
@@ -109,5 +113,5 @@ export function avatarPreview(character: AvatarProfile["character"]) {
 }
 
 export function avatarName(character: AvatarProfile["character"]) {
-  return character === "male" ? "Hacker" : "Bibi";
+  return character === "male" ? "Bolo Agent" : "Bolo Bibi";
 }
