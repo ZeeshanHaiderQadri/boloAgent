@@ -10,6 +10,7 @@ Azure OpenAI. ``bolo`` is rejected on purpose — it is Bolo-hosted inference.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import random
 import re
@@ -40,6 +41,11 @@ DEFAULT_BASE_URLS = {
 AZURE_API_VERSION = "2024-10-21"
 # Reasoning models reject a non-default temperature on some providers.
 _REASONING_MODEL = re.compile(r"^(o\d|gpt-5)", re.IGNORECASE)
+# Groq meters tokens per model, not per key, and the copilot prompt with its
+# tool schemas is ~6k tokens, so a tool turn's second call always 429s on the
+# 8k free tier. Each model has its own bucket: rotate to finish the turn in
+# seconds instead of stalling for the better part of a minute.
+_GROQ_FALLBACK_MODELS = ("openai/gpt-oss-20b", "qwen/qwen3.8-27b")
 
 
 class CopilotConfigurationError(Exception):
@@ -52,6 +58,17 @@ class CopilotUpstreamError(Exception):
     def __init__(self, message: str, *, status_code: int | None = None):
         super().__init__(message)
         self.status_code = status_code
+
+
+def _rate_limit_delay(response: httpx.Response) -> float:
+    """Seconds to wait before retrying a 429, capped so a turn cannot hang."""
+    headers = getattr(response, "headers", {}) or {}
+    header = headers.get("retry-after")
+    try:
+        delay = float(header) if header is not None else 6.0
+    except ValueError:
+        delay = 6.0
+    return max(1.0, min(delay, 20.0))
 
 
 def _error_detail(response: httpx.Response) -> str | None:
@@ -83,6 +100,14 @@ def _pick_key(llm) -> str:
     if isinstance(key, list):
         key = random.choice(key) if key else ""
     return (key or "").strip()
+
+
+def _candidate_models(provider: str, model: str | None) -> list[str]:
+    """Models to try for one call; each has its own rate-limit bucket."""
+    current = (model or "").strip()
+    if provider != ServiceProviders.GROQ.value:
+        return [current]
+    return [current, *[m for m in _GROQ_FALLBACK_MODELS if m != current]]
 
 
 def _endpoint(llm) -> tuple[str, dict[str, str], bool]:
@@ -180,11 +205,36 @@ class CopilotChatModel(BaseChatModel):
             body["tools"] = kwargs["tools"]
             body["tool_choice"] = kwargs.get("tool_choice") or "auto"
 
+        candidates = _candidate_models(_provider(llm), llm.model)
         try:
             # A local model can spend over a minute evaluating the system
             # prompt and tool schemas before it answers.
             async with httpx.AsyncClient(timeout=150) as client:
-                response = await client.post(url, json=body, headers=headers)
+                for candidate in candidates:
+                    if include_model:
+                        body["model"] = candidate
+                    response = await client.post(url, json=body, headers=headers)
+                    if response.status_code != 429:
+                        break
+                    logger.warning(
+                        "Copilot LLM rate limited provider={} model={} organization_id={}",
+                        _provider(llm),
+                        candidate,
+                        self.organization_id,
+                    )
+                if response.status_code == 429:
+                    # Every bucket is empty; wait once for the first to refill.
+                    delay = _rate_limit_delay(response)
+                    logger.warning(
+                        "Copilot LLM rate limited on every model provider={} retry_in={}s organization_id={}",
+                        _provider(llm),
+                        delay,
+                        self.organization_id,
+                    )
+                    await asyncio.sleep(delay)
+                    if include_model:
+                        body["model"] = candidates[0]
+                    response = await client.post(url, json=body, headers=headers)
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPStatusError as exc:
@@ -196,6 +246,13 @@ class CopilotChatModel(BaseChatModel):
                 status,
                 self.organization_id,
             )
+            if status == 429:
+                raise CopilotUpstreamError(
+                    "Your LLM provider is rate-limiting this workspace. Wait "
+                    "a few seconds and try again, or raise the limit on your "
+                    "provider's plan.",
+                    status_code=429,
+                ) from exc
             message = f"Your LLM provider returned an error ({status})."
             if detail:
                 message = f"Your LLM provider rejected the request ({status}): {detail}"

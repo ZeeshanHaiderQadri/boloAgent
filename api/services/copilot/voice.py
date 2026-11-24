@@ -16,6 +16,7 @@ import asyncio
 import time
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 from loguru import logger
@@ -75,6 +76,7 @@ from api.services.pipecat.worker_runner import (
     run_worker_runner,
 )
 
+from . import activity
 from .audit import audit_tool_call
 from .prompts import greeting_for, voice_system_prompt
 from .service import record_voice_turn
@@ -495,12 +497,76 @@ def voice_tools() -> tuple[CopilotTool, ...]:
     return tuple(tool for tool in TOOLS.values() if not tool.requires_approval)
 
 
+async def _record_voice_activity(
+    ctx: CopilotContext,
+    turn_id: str,
+    kind: str,
+    tool: CopilotTool,
+    *,
+    status: str | None = None,
+    arguments: Any = None,
+    result: Any = None,
+    error: str | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    await activity.record(
+        organization_id=ctx.organization_id,
+        conversation_id=ctx.conversation_id,
+        turn_id=turn_id,
+        kind=kind,
+        tool_name=tool.name,
+        risk=tool.risk,
+        status=status,
+        arguments=arguments,
+        result=result,
+        error=error,
+        duration_ms=duration_ms,
+    )
+
+
 def _voice_handler(
     ctx: CopilotContext, tool: CopilotTool
 ) -> Callable[[FunctionCallParams], Awaitable[None]]:
     async def handle(params: FunctionCallParams) -> None:
         started = time.monotonic()
         raw_arguments = dict(params.arguments or {})
+        # The workspace pane follows this conversation's activity events, so a
+        # spoken lookup has to publish the same rows as a typed one for the
+        # page it reads to open mid-call. One synthetic turn per tool call
+        # keeps running/finished state self-contained.
+        turn_id = f"voice-{uuid4().hex[:16]}"
+        await activity.record(
+            organization_id=ctx.organization_id,
+            conversation_id=ctx.conversation_id,
+            turn_id=turn_id,
+            kind=activity.TURN_STARTED,
+        )
+        await _record_voice_activity(
+            ctx, turn_id, activity.TOOL_STARTED, tool, arguments=raw_arguments
+        )
+
+        async def finish(
+            status: str, *, error: str | None = None, result: Any = None
+        ) -> None:
+            await _record_voice_activity(
+                ctx,
+                turn_id,
+                activity.TOOL_FINISHED,
+                tool,
+                status=status,
+                arguments=raw_arguments,
+                result=result,
+                error=error,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            await activity.record(
+                organization_id=ctx.organization_id,
+                conversation_id=ctx.conversation_id,
+                turn_id=turn_id,
+                kind=activity.TURN_FINISHED,
+                status="error" if status == "error" else "ok",
+            )
+
         try:
             arguments = tool.args_schema.model_validate(raw_arguments)
         except ValidationError as exc:
@@ -512,6 +578,7 @@ def _voice_handler(
                 raw_arguments,
                 error="validation",
             )
+            await finish("error", error="Invalid arguments")
             await params.result_callback(
                 {
                     "error": (
@@ -528,6 +595,7 @@ def _voice_handler(
             await audit_tool_call(
                 ctx, tool.name, tool.risk, "error", raw_arguments, error=str(exc)
             )
+            await finish("error", error=str(exc))
             await params.result_callback({"error": str(exc)})
             return
         except Exception:
@@ -544,6 +612,7 @@ def _voice_handler(
                 raw_arguments,
                 error="The tool failed before completing.",
             )
+            await finish("error", error="The tool failed before completing.")
             await params.result_callback(
                 {"error": "The lookup failed before completing."}
             )
@@ -558,6 +627,7 @@ def _voice_handler(
             result=result,
             duration_ms=int((time.monotonic() - started) * 1000),
         )
+        await finish("executed", result=result)
         await params.result_callback(result)
 
     return handle

@@ -196,13 +196,73 @@ async def test_upstream_status_is_sanitized():
         patch.object(
             httpx.AsyncClient,
             "post",
-            new=AsyncMock(return_value=_Response({}, status_code=429)),
+            new=AsyncMock(return_value=_Response({}, status_code=500)),
         ),
     ):
         with pytest.raises(CopilotUpstreamError) as excinfo:
             await model.ainvoke([HumanMessage(content="hi")])
-    assert excinfo.value.status_code == 429
+    assert excinfo.value.status_code == 500
     assert "sk-user-key" not in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_request_retries_then_succeeds():
+    llm = SimpleNamespace(
+        provider=ServiceProviders.OPENAI,
+        model="gpt-4.1",
+        api_key="sk-user-key",
+        temperature=None,
+        base_url=None,
+    )
+    model = CopilotChatModel(organization_id=3, user_id="u1")
+    with (
+        patch(
+            "api.services.copilot.model.get_resolved_ai_model_configuration",
+            new=AsyncMock(return_value=_resolve(llm)),
+        ),
+        patch.object(
+            httpx.AsyncClient,
+            "post",
+            new=AsyncMock(
+                side_effect=[_Response({}, status_code=429), _Response(_reply())]
+            ),
+        ),
+        patch("api.services.copilot.model.asyncio.sleep", new=AsyncMock()) as sleep,
+    ):
+        reply = await model.ainvoke([HumanMessage(content="hi")])
+    assert reply.content == "Hello"
+    sleep.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_groq_rate_limit_rotates_to_a_fresh_model_bucket():
+    llm = SimpleNamespace(
+        provider=ServiceProviders.GROQ,
+        model="openai/gpt-oss-120b",
+        api_key="gsk-user-key",
+        temperature=0.1,
+        base_url=None,
+    )
+    model = CopilotChatModel(organization_id=3, user_id="u1")
+    responses = [_Response({}, status_code=429), _Response(_reply())]
+    models: list[str] = []
+
+    async def fake_post(*_args, **kwargs):
+        models.append(kwargs["json"]["model"])
+        return responses[len(models) - 1]
+
+    with (
+        patch(
+            "api.services.copilot.model.get_resolved_ai_model_configuration",
+            new=AsyncMock(return_value=_resolve(llm)),
+        ),
+        patch.object(httpx.AsyncClient, "post", new=fake_post),
+        patch("api.services.copilot.model.asyncio.sleep", new=AsyncMock()) as sleep,
+    ):
+        reply = await model.ainvoke([HumanMessage(content="hi")])
+    assert reply.content == "Hello"
+    sleep.assert_not_awaited()
+    assert models == ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 
 
 @pytest.mark.asyncio
