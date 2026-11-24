@@ -56,6 +56,7 @@ from pydantic import ValidationError
 
 from api.enums import WorkflowRunMode
 from api.schemas.ai_model_configuration import EffectiveAIModelConfiguration
+from api.services.avatar_profile import apply_agent_voice, get_avatar_profile
 from api.services.configuration.ai_model_configuration import (
     get_resolved_ai_model_configuration,
 )
@@ -420,8 +421,14 @@ async def _speech_problem(role: str, connection: Any) -> str | None:
 
 async def voice_configuration(
     organization_id: int,
+    user_id: int | None = None,
 ) -> EffectiveAIModelConfiguration:
-    """Resolve and validate the BYOK services a voice session needs."""
+    """Resolve and validate the BYOK services a voice session needs.
+
+    With ``user_id``, the caller's avatar voice is applied when it matches the
+    organization's TTS provider. Workflows never pass a user, so they keep the
+    configured voice.
+    """
     resolved = await get_resolved_ai_model_configuration(
         organization_id=organization_id
     )
@@ -469,6 +476,8 @@ async def voice_configuration(
     ]
     if problems:
         raise VoiceConfigurationError(problems[0])
+    if user_id is not None:
+        config = apply_agent_voice(config, await get_avatar_profile(user_id))
     return config
 
 
@@ -601,7 +610,7 @@ async def run_voice_pipeline(
     on_metrics: Callable[[dict[str, int]], Awaitable[None]] | None = None,
 ) -> None:
     """Run one voice session until the peer connection closes."""
-    config = await voice_configuration(ctx.organization_id)
+    config = await voice_configuration(ctx.organization_id, ctx.user_id)
     config, language_warning = apply_voice_language(config, ctx.language)
     if language_warning and on_warning is not None:
         await on_warning(language_warning)

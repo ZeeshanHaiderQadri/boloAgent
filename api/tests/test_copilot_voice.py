@@ -250,7 +250,7 @@ async def test_voice_configuration_accepts_auto_and_listed_custom_models(monkeyp
 @pytest.mark.asyncio
 async def test_voice_readiness_reports_ready_services():
     config = _effective()
-    user = SimpleNamespace(selected_organization_id=42)
+    user = SimpleNamespace(id=9, selected_organization_id=42)
 
     with patch.object(
         copilot_voice.voice,
@@ -268,7 +268,7 @@ async def test_voice_readiness_reports_ready_services():
 
 @pytest.mark.asyncio
 async def test_voice_readiness_reports_missing_connections():
-    user = SimpleNamespace(selected_organization_id=42)
+    user = SimpleNamespace(id=9, selected_organization_id=42)
 
     with patch.object(
         copilot_voice.voice,

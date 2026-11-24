@@ -50,7 +50,7 @@ async def voice_status(user: UserModel = Depends(get_user)):
     if organization_id is None:
         raise HTTPException(400, "Select an organization first")
     try:
-        config = await voice.voice_configuration(organization_id)
+        config = await voice.voice_configuration(organization_id, user.id)
     except voice.VoiceConfigurationError as exc:
         return CopilotVoiceStatus(ready=False, message=str(exc))
     return CopilotVoiceStatus(ready=True, **voice.voice_status(config))
@@ -379,7 +379,7 @@ async def copilot_voice_signaling(
         return
 
     try:
-        await voice.voice_configuration(conversation.organization_id)
+        await voice.voice_configuration(conversation.organization_id, user.id)
     except voice.VoiceConfigurationError as exc:
         await websocket.accept()
         await websocket.send_json(
