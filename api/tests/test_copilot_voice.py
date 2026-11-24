@@ -250,7 +250,7 @@ async def test_voice_configuration_accepts_auto_and_listed_custom_models(monkeyp
 @pytest.mark.asyncio
 async def test_voice_readiness_reports_ready_services():
     config = _effective()
-    user = SimpleNamespace(selected_organization_id=42)
+    user = SimpleNamespace(id=9, selected_organization_id=42)
 
     with patch.object(
         copilot_voice.voice,
@@ -268,7 +268,7 @@ async def test_voice_readiness_reports_ready_services():
 
 @pytest.mark.asyncio
 async def test_voice_readiness_reports_missing_connections():
-    user = SimpleNamespace(selected_organization_id=42)
+    user = SimpleNamespace(id=9, selected_organization_id=42)
 
     with patch.object(
         copilot_voice.voice,
@@ -304,7 +304,10 @@ async def test_voice_handler_runs_scoped_tool_and_audits():
     )
     params = SimpleNamespace(arguments={"text": "hi"}, result_callback=AsyncMock())
 
-    with patch.object(voice, "audit_tool_call", AsyncMock()) as audit:
+    with (
+        patch.object(voice, "audit_tool_call", AsyncMock()) as audit,
+        patch.object(voice.activity, "record", AsyncMock()) as record,
+    ):
         await voice._voice_handler(CTX, tool)(params)
 
     handler.assert_awaited_once_with(CTX, _EchoArgs(text="hi"))
@@ -314,6 +317,17 @@ async def test_voice_handler_runs_scoped_tool_and_audits():
     assert args[:5] == (CTX, "echo", RISK_READ, "executed", {"text": "hi"})
     assert kwargs["result"] == {"echo": "hi"}
     assert isinstance(kwargs["duration_ms"], int)
+
+    # The workspace pane follows these rows, so a spoken lookup must open the
+    # page it read and then mark the turn finished.
+    kinds = [call.kwargs["kind"] for call in record.await_args_list]
+    assert kinds == ["turn_started", "tool_started", "tool_finished", "turn_finished"]
+    finished = record.await_args_list[2].kwargs
+    assert finished["tool_name"] == "echo"
+    assert finished["status"] == "executed"
+    assert finished["result"] == {"echo": "hi"}
+    assert finished["conversation_id"] == CTX.conversation_id
+    assert record.await_args_list[3].kwargs["status"] == "ok"
 
 
 @pytest.mark.asyncio
@@ -327,13 +341,27 @@ async def test_voice_handler_reports_validation_and_tool_errors():
     )
 
     invalid = SimpleNamespace(arguments={}, result_callback=AsyncMock())
-    with patch.object(voice, "audit_tool_call", AsyncMock()) as audit:
+    with (
+        patch.object(voice, "audit_tool_call", AsyncMock()) as audit,
+        patch.object(voice.activity, "record", AsyncMock()) as record,
+    ):
         await voice._voice_handler(CTX, tool)(invalid)
     assert "Invalid arguments" in invalid.result_callback.await_args.args[0]["error"]
     assert audit.await_args.kwargs["error"] == "validation"
+    assert [call.kwargs["kind"] for call in record.await_args_list] == [
+        "turn_started",
+        "tool_started",
+        "tool_finished",
+        "turn_finished",
+    ]
+    assert record.await_args_list[2].kwargs["status"] == "error"
+    assert record.await_args_list[3].kwargs["status"] == "error"
 
     failing = SimpleNamespace(arguments={"text": "hi"}, result_callback=AsyncMock())
-    with patch.object(voice, "audit_tool_call", AsyncMock()) as audit:
+    with (
+        patch.object(voice, "audit_tool_call", AsyncMock()) as audit,
+        patch.object(voice.activity, "record", AsyncMock()),
+    ):
         await voice._voice_handler(CTX, tool)(failing)
     failing.result_callback.assert_awaited_once_with({"error": "not in this workspace"})
     assert audit.await_args.kwargs["error"] == "not in this workspace"

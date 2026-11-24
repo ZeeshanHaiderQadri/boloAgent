@@ -191,6 +191,7 @@ class UserConfigurationKey(Enum):
 
     MODEL_CONFIGURATION = "MODEL_CONFIGURATION"  # Retired per-user v1 model configuration; rows kept, nothing reads them
     ONBOARDING = "ONBOARDING"  # Post-signup onboarding state (gate, tooltips, actions)
+    AVATAR = "AVATAR"  # Bolo Agent pet: character, look, position and voice
 
 
 class WorkflowStatus(Enum):

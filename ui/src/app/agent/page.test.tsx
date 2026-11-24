@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   activity: vi.fn(),
   voiceStatus: vi.fn(),
   turnCredentials: vi.fn(),
+  getAvatar: vi.fn(),
+  updateAvatar: vi.fn(),
+  avatarVoices: vi.fn(),
   auth: { user: { id: 1 } as { id: number } | null, loading: false },
 }));
 
@@ -35,6 +38,18 @@ vi.mock("@/client/sdk.gen", () => ({
   getActivityApiV1CopilotConversationsConversationIdActivityGet: mocks.activity,
   voiceStatusApiV1CopilotVoiceGet: mocks.voiceStatus,
   getTurnCredentialsApiV1TurnCredentialsGet: mocks.turnCredentials,
+  getUserAvatarApiV1UserAvatarGet: mocks.getAvatar,
+  updateUserAvatarApiV1UserAvatarPut: mocks.updateAvatar,
+  getUserAvatarVoicesApiV1UserAvatarVoicesGet: mocks.avatarVoices,
+}));
+
+// The 3D kits need WebGL and a live GLB; the page tests only care about the
+// avatar's chrome, so the canvas is stubbed out.
+vi.mock("@/components/agent/avatar/AgentAvatar", () => ({
+  AgentAvatar: () => <div data-testid="avatar-canvas" />,
+  avatarName: (character: string) =>
+    character === "male" ? "Bolo Agent" : "Bolo Bibi",
+  avatarPreview: () => "/avatars/preview.png",
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -63,6 +78,15 @@ const snapshot = {
   pending_approvals: [],
 };
 
+const avatarProfile = {
+  character: "female" as const,
+  setup_completed: true,
+  enabled: false,
+  appearance: { glasses: true, hood: false, hud: false },
+  action: "idle" as const,
+  pet_state: "expanded" as const,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
@@ -72,6 +96,13 @@ beforeEach(() => {
   mocks.getConversation.mockResolvedValue({ data: snapshot });
   mocks.activity.mockResolvedValue({ data: { events: [] } });
   mocks.voiceStatus.mockResolvedValue({ data: { ready: true } });
+  mocks.getAvatar.mockResolvedValue({ data: { ...avatarProfile } });
+  mocks.updateAvatar.mockImplementation(async ({ body }) => ({
+    data: { ...avatarProfile, ...body },
+  }));
+  mocks.avatarVoices.mockResolvedValue({
+    data: { configured: false, voices: [] },
+  });
 });
 
 describe("Bolo Agent page", () => {
@@ -522,5 +553,86 @@ describe("Bolo Agent page", () => {
     expect(
       screen.getByRole("button", { name: "Send message" }),
     ).toBeTruthy();
+  });
+
+  it("asks first-time users to pick an avatar and saves the choice", async () => {
+    mocks.getAvatar.mockResolvedValue({
+      data: {
+        ...avatarProfile,
+        setup_completed: false,
+        appearance: { glasses: true, hood: true, hud: true },
+      },
+    });
+    mocks.avatarVoices.mockImplementation(
+      async ({ query }: { query: { character: string } }) =>
+        query.character === "male"
+          ? {
+              data: {
+                configured: true,
+                provider: "cartesia",
+                voices: [{ voice_id: "male-voice", name: "Ranger" }],
+              },
+            }
+          : {
+              data: {
+                configured: true,
+                provider: "cartesia",
+                voices: [{ voice_id: "female-voice", name: "Pipa" }],
+              },
+            },
+    );
+
+    render(<AgentPage />);
+
+    expect(await screen.findByText("Choose your agent's look")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Bolo Agent/ }));
+
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("combobox", {
+            name: "Avatar voice",
+          }) as HTMLSelectElement
+        ).value,
+      ).toBe("male-voice"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Use Bolo Agent" }));
+
+    await waitFor(() =>
+      expect(mocks.updateAvatar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            character: "male",
+            setup_completed: true,
+            enabled: true,
+            pet_state: "expanded",
+            appearance: { glasses: true, hood: true, hud: true },
+            action: "idle",
+            voice: { provider: "cartesia", voice_id: "male-voice" },
+          }),
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("Choose your agent's look")).toBeNull(),
+    );
+  });
+
+  it("remembers a skipped avatar setup without showing the pet", async () => {
+    mocks.getAvatar.mockResolvedValue({
+      data: { ...avatarProfile, setup_completed: false },
+    });
+
+    render(<AgentPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
+
+    await waitFor(() =>
+      expect(mocks.updateAvatar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: { setup_completed: true, enabled: false },
+        }),
+      ),
+    );
+    expect(screen.queryByText("Choose your agent's look")).toBeNull();
   });
 });

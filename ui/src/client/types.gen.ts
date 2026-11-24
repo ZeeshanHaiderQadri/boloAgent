@@ -279,6 +279,197 @@ export type AutoscaleMetricResponse = {
 };
 
 /**
+ * AvatarAppearance
+ *
+ * Which gadgets the 3D kit renders.
+ */
+export type AvatarAppearance = {
+    /**
+     * Glasses
+     */
+    glasses?: boolean;
+    /**
+     * Hood
+     */
+    hood?: boolean;
+    /**
+     * Hud
+     */
+    hud?: boolean;
+};
+
+/**
+ * AvatarAppearanceUpdate
+ */
+export type AvatarAppearanceUpdate = {
+    /**
+     * Glasses
+     */
+    glasses?: boolean | null;
+    /**
+     * Hood
+     */
+    hood?: boolean | null;
+    /**
+     * Hud
+     */
+    hud?: boolean | null;
+};
+
+/**
+ * AvatarPosition
+ *
+ * Viewport-relative position, so the pet lands in the same spot on any
+ * screen size. Null means the UI's default corner.
+ */
+export type AvatarPosition = {
+    /**
+     * X
+     */
+    x: number;
+    /**
+     * Y
+     */
+    y: number;
+};
+
+/**
+ * AvatarProfile
+ *
+ * Per-user Bolo Agent avatar, stored under UserConfigurationKey.AVATAR.
+ */
+export type AvatarProfile = {
+    /**
+     * Character
+     */
+    character?: 'male' | 'female' | null;
+    /**
+     * Setup Completed
+     */
+    setup_completed?: boolean;
+    /**
+     * Enabled
+     */
+    enabled?: boolean;
+    appearance?: AvatarAppearance;
+    /**
+     * Action
+     */
+    action?: 'idle' | 'typing' | 'analyzing' | 'presenting';
+    voice?: AvatarVoice;
+    /**
+     * Size
+     */
+    size?: 'compact' | 'large';
+    /**
+     * Pet State
+     */
+    pet_state?: 'expanded' | 'minimized' | 'hidden';
+    position?: AvatarPosition | null;
+};
+
+/**
+ * AvatarProfileUpdate
+ *
+ * Partial update merged into the stored profile.
+ */
+export type AvatarProfileUpdate = {
+    /**
+     * Character
+     */
+    character?: 'male' | 'female' | null;
+    /**
+     * Setup Completed
+     */
+    setup_completed?: boolean | null;
+    /**
+     * Enabled
+     */
+    enabled?: boolean | null;
+    appearance?: AvatarAppearanceUpdate | null;
+    /**
+     * Action
+     */
+    action?: 'idle' | 'typing' | 'analyzing' | 'presenting' | null;
+    voice?: AvatarVoiceUpdate | null;
+    /**
+     * Size
+     */
+    size?: 'compact' | 'large' | null;
+    /**
+     * Pet State
+     */
+    pet_state?: 'expanded' | 'minimized' | 'hidden' | null;
+    position?: AvatarPosition | null;
+};
+
+/**
+ * AvatarVoice
+ *
+ * The user's pick from their own TTS connection.
+ *
+ * ``provider`` is stored next to the id so a later switch of the voice
+ * connection cannot silently read the id against a different catalog: the
+ * override only applies while the agent's TTS provider still matches.
+ */
+export type AvatarVoice = {
+    /**
+     * Provider
+     */
+    provider?: string | null;
+    /**
+     * Voice Id
+     */
+    voice_id?: string | null;
+};
+
+/**
+ * AvatarVoiceOptions
+ *
+ * Voices from the user's own TTS connection, filtered by gender.
+ */
+export type AvatarVoiceOptions = {
+    /**
+     * Configured
+     */
+    configured?: boolean;
+    /**
+     * Provider
+     */
+    provider?: string | null;
+    /**
+     * Model
+     */
+    model?: string | null;
+    /**
+     * Current Voice Id
+     */
+    current_voice_id?: string | null;
+    /**
+     * Voices
+     */
+    voices?: Array<VoiceInfo>;
+    /**
+     * Message
+     */
+    message?: string | null;
+};
+
+/**
+ * AvatarVoiceUpdate
+ */
+export type AvatarVoiceUpdate = {
+    /**
+     * Provider
+     */
+    provider?: string | null;
+    /**
+     * Voice Id
+     */
+    voice_id?: string | null;
+};
+
+/**
  * BatchRecordingCreateRequestSchema
  *
  * Request schema for creating one or more recording records after upload.
@@ -13862,6 +14053,128 @@ export type UpdateUserOnboardingStateApiV1UserOnboardingStatePutResponses = {
 };
 
 export type UpdateUserOnboardingStateApiV1UserOnboardingStatePutResponse = UpdateUserOnboardingStateApiV1UserOnboardingStatePutResponses[keyof UpdateUserOnboardingStateApiV1UserOnboardingStatePutResponses];
+
+export type GetUserAvatarApiV1UserAvatarGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/user/avatar';
+};
+
+export type GetUserAvatarApiV1UserAvatarGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetUserAvatarApiV1UserAvatarGetError = GetUserAvatarApiV1UserAvatarGetErrors[keyof GetUserAvatarApiV1UserAvatarGetErrors];
+
+export type GetUserAvatarApiV1UserAvatarGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AvatarProfile;
+};
+
+export type GetUserAvatarApiV1UserAvatarGetResponse = GetUserAvatarApiV1UserAvatarGetResponses[keyof GetUserAvatarApiV1UserAvatarGetResponses];
+
+export type UpdateUserAvatarApiV1UserAvatarPutData = {
+    body: AvatarProfileUpdate;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/user/avatar';
+};
+
+export type UpdateUserAvatarApiV1UserAvatarPutErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateUserAvatarApiV1UserAvatarPutError = UpdateUserAvatarApiV1UserAvatarPutErrors[keyof UpdateUserAvatarApiV1UserAvatarPutErrors];
+
+export type UpdateUserAvatarApiV1UserAvatarPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: AvatarProfile;
+};
+
+export type UpdateUserAvatarApiV1UserAvatarPutResponse = UpdateUserAvatarApiV1UserAvatarPutResponses[keyof UpdateUserAvatarApiV1UserAvatarPutResponses];
+
+export type GetUserAvatarVoicesApiV1UserAvatarVoicesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+        /**
+         * X-Api-Key
+         */
+        'X-API-Key'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Character
+         */
+        character: 'male' | 'female';
+    };
+    url: '/api/v1/user/avatar/voices';
+};
+
+export type GetUserAvatarVoicesApiV1UserAvatarVoicesGetErrors = {
+    /**
+     * Not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetUserAvatarVoicesApiV1UserAvatarVoicesGetError = GetUserAvatarVoicesApiV1UserAvatarVoicesGetErrors[keyof GetUserAvatarVoicesApiV1UserAvatarVoicesGetErrors];
+
+export type GetUserAvatarVoicesApiV1UserAvatarVoicesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AvatarVoiceOptions;
+};
+
+export type GetUserAvatarVoicesApiV1UserAvatarVoicesGetResponse = GetUserAvatarVoicesApiV1UserAvatarVoicesGetResponses[keyof GetUserAvatarVoicesApiV1UserAvatarVoicesGetResponses];
 
 export type ValidateUserConfigurationsApiV1UserConfigurationsUserValidateGetData = {
     body?: never;

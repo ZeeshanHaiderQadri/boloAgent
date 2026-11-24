@@ -288,8 +288,9 @@ export function useAgentVoice() {
 
     meterRef.current?.stop();
     meterRef.current = null;
-    levelsRef.current.mic = 0;
-    levelsRef.current.agent = 0;
+    // Replace, don't mutate: readers keep the ref, not the object, so the
+    // closed meter's levels must not linger on screen.
+    levelsRef.current = { mic: 0, agent: 0 };
     setHolding(false);
     setMicMuted(false);
     setWarning(null);
@@ -409,9 +410,12 @@ export function useAgentVoice() {
 
         pc.addEventListener("track", (event) => {
           if (event.track.kind !== "audio") return;
-          meterRef.current?.attachAgent(event.streams[0]);
+          // Some browsers deliver a bare track with no stream; wrapping it
+          // keeps the meter and the audio element alive (lip-sync needs both).
+          const stream = event.streams[0] ?? new MediaStream([event.track]);
+          meterRef.current?.attachAgent(stream);
           if (!audioRef.current) return;
-          audioRef.current.srcObject = event.streams[0];
+          audioRef.current.srcObject = stream;
           void audioRef.current.play().catch(() => {
             // Autoplay can be blocked; the call still works once audio resumes.
           });
@@ -433,6 +437,9 @@ export function useAgentVoice() {
           const meter = new AudioMeter(stream);
           meter.start();
           meterRef.current = meter;
+          // The meters and the avatar's lip-sync read this ref; without the
+          // hand-off the agent level stays 0 and the mouth never moves.
+          levelsRef.current = meter.levels;
         } catch {
           // Level metering is cosmetic; the call works without it.
         }

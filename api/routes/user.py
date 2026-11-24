@@ -10,6 +10,12 @@ from api.db.models import (
 )
 from api.errors.failure import ErrorSource, classify_exception, log_failure
 from api.errors.mps import MPSUnavailableError
+from api.schemas.avatar_profile import (
+    AvatarCharacter,
+    AvatarProfile,
+    AvatarProfileUpdate,
+    AvatarVoiceOptions,
+)
 from api.schemas.onboarding_state import OnboardingState, OnboardingStateUpdate
 from api.schemas.voices import VoiceInfo, VoicesResponse
 from api.schemas.widget_texts import WidgetTexts
@@ -21,6 +27,11 @@ from api.schemas.workflow_configurations import (
     get_default_workflow_configurations,
 )
 from api.services.auth.depends import get_user
+from api.services.avatar_profile import (
+    avatar_voice_options,
+    get_avatar_profile,
+    update_avatar_profile,
+)
 from api.services.configuration.ai_model_configuration import (
     get_resolved_ai_model_configuration,
 )
@@ -228,6 +239,35 @@ async def update_user_onboarding_state(
     user: UserModel = Depends(get_user),
 ) -> OnboardingState:
     return await update_onboarding_state(user.id, request)
+
+
+@router.get("/avatar")
+async def get_user_avatar(user: UserModel = Depends(get_user)) -> AvatarProfile:
+    return await get_avatar_profile(user.id)
+
+
+@router.put("/avatar")
+async def update_user_avatar(
+    request: AvatarProfileUpdate,
+    user: UserModel = Depends(get_user),
+) -> AvatarProfile:
+    return await update_avatar_profile(user.id, request)
+
+
+@router.get("/avatar/voices")
+async def get_user_avatar_voices(
+    character: AvatarCharacter,
+    user: UserModel = Depends(get_user),
+) -> AvatarVoiceOptions:
+    """Gender-matched voices from the user's own TTS connection."""
+    if not user.selected_organization_id:
+        raise HTTPException(status_code=400, detail="No organization selected")
+    profile = await get_avatar_profile(user.id)
+    return await avatar_voice_options(
+        user.selected_organization_id,
+        character,
+        current_voice_id=profile.voice.voice_id,
+    )
 
 
 @router.get("/configurations/user/validate")

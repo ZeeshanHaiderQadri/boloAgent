@@ -51,8 +51,11 @@ import type {
   CopilotSnapshot,
   CopilotTranscriptMessage,
 } from "@/client/types.gen";
-import type { BoloFaceStatus } from "@/components/agent/BoloFace";
-import { BoloFace } from "@/components/agent/BoloFace";
+import { avatarName } from "@/components/agent/avatar/AgentAvatar";
+import {
+  AgentAvatarPet,
+} from "@/components/agent/avatar/AgentAvatarPet";
+import { AgentAvatarSetup } from "@/components/agent/avatar/AgentAvatarSetup";
 import { PageShell } from "@/components/layout/PageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -83,6 +86,7 @@ import { cn } from "@/lib/utils";
 import { isTurnRunning,LiveWorkspace } from "./components/LiveWorkspace";
 import { TalkControls, VoiceLanguageSelect } from "./components/TalkControls";
 import { useAgentActivity } from "./hooks/useAgentActivity";
+import { useAgentAvatar } from "./hooks/useAgentAvatar";
 import { useAgentVoice } from "./hooks/useAgentVoice";
 import { toolLabel } from "./lib/labels";
 const SUGGESTIONS = [
@@ -300,6 +304,9 @@ function ApprovalCard({
 export default function AgentPage() {
   const { user, loading: authLoading, getAccessToken, redirectToLogin } = useAuth();
   const voice = useAgentVoice();
+  const avatar = useAgentAvatar();
+  const [avatarSetupOpen, setAvatarSetupOpen] = useState(false);
+  const avatarPrompted = useRef(false);
 
   const [conversations, setConversations] = useState<
     CopilotConversationSummary[] | null
@@ -333,6 +340,14 @@ export default function AgentPage() {
     async () => ({ Authorization: `Bearer ${await getAccessToken()}` }),
     [getAccessToken],
   );
+
+  useEffect(() => {
+    if (avatarPrompted.current) return;
+    if (avatar.loading || !avatar.profile) return;
+    if (avatar.profile.setup_completed) return;
+    avatarPrompted.current = true;
+    setAvatarSetupOpen(true);
+  }, [avatar.loading, avatar.profile]);
 
   const [pane, setPane] = useState<"chat" | "workspace">("chat");
   const [historyOpen, setHistoryOpen] = useState(loadHistoryOpen);
@@ -923,16 +938,6 @@ export default function AgentPage() {
     voice.callState === "idle" &&
     (voice.voiceStatus?.ready ?? false);
   const callDisabled = voice.callState === "idle" && !canStartCall;
-  const faceStatus: BoloFaceStatus =
-    voice.callState === "connecting"
-      ? "connecting"
-      : voice.micMode === "push-to-talk"
-        ? voice.holding
-          ? "listening"
-          : "hold-to-talk"
-        : voice.micMuted
-          ? "muted"
-          : "listening";
   const attaching = attachments.some(
     (item) => item.status === "uploading" || item.status === "processing",
   );
@@ -952,14 +957,26 @@ export default function AgentPage() {
             and asks before it changes anything.
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => void startFreshConversation()}
-          disabled={busy}
-        >
-          <MessageSquarePlus className="mr-2 h-4 w-4" />
-          New conversation
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => setAvatarSetupOpen(true)}
+            disabled={avatar.loading}
+          >
+            <Palette className="mr-2 h-4 w-4" />
+            {avatar.profile?.character
+              ? avatarName(avatar.profile.character)
+              : "Avatar"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void startFreshConversation()}
+            disabled={busy}
+          >
+            <MessageSquarePlus className="mr-2 h-4 w-4" />
+            New conversation
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -1085,15 +1102,6 @@ export default function AgentPage() {
           </CardContent>
         </Card>
 
-        {voice.callState !== "idle" && (
-          <div className="animate-in fade-in slide-in-from-bottom-3 duration-500">
-            <BoloFace
-              levels={voice.levelsRef}
-              status={faceStatus}
-              className="mx-auto w-full max-w-[240px]"
-            />
-          </div>
-        )}
           </div>
         )}
 
@@ -1601,6 +1609,25 @@ export default function AgentPage() {
           />
         </Card>
       </div>
+
+      {voice.callState !== "idle" && !avatarSetupOpen && avatar.profile && (
+        <AgentAvatarPet
+          profile={avatar.profile}
+          audio={voice.audioRef.current}
+          readSpeechLevel={() => voice.levelsRef.current.agent}
+          live={voice.callState === "live"}
+          onSave={avatar.save}
+          onCustomize={() => setAvatarSetupOpen(true)}
+        />
+      )}
+
+      <AgentAvatarSetup
+        open={avatarSetupOpen}
+        profile={avatar.profile}
+        onClose={() => setAvatarSetupOpen(false)}
+        onSave={avatar.save}
+        loadVoices={avatar.loadVoices}
+      />
 
       <Dialog
         open={toDelete !== null}
